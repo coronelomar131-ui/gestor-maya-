@@ -105,12 +105,75 @@ async function getMLProduct(itemId) {
   }
 }
 
-// Get ML Access Token (placeholder - needs OAuth flow)
-async function getMLAccessToken() {
-  // TODO: Implement proper OAuth flow
-  // For now, this is a placeholder
-  return null;
+// Store ML Access Token (in memory for now, use Redis in production)
+let mlAccessToken = null;
+let mlTokenExpiry = 0;
+
+// Get ML Access Token via OAuth
+async function getMLAccessToken(refreshToken = null) {
+  try {
+    // Check if we have a valid cached token
+    if (mlAccessToken && Date.now() < mlTokenExpiry) {
+      return mlAccessToken;
+    }
+
+    // If no token yet, use client credentials flow
+    if (!refreshToken) {
+      // For now, return null - full OAuth requires user interaction
+      // In production, store refresh_token from user's initial OAuth login
+      return null;
+    }
+
+    const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: ML_APP_ID,
+      client_secret: ML_SECRET_KEY,
+      refresh_token: refreshToken
+    });
+
+    mlAccessToken = response.data.access_token;
+    mlTokenExpiry = Date.now() + (response.data.expires_in * 1000);
+
+    return mlAccessToken;
+  } catch (error) {
+    console.error('Error getting ML access token:', error.message);
+    return null;
+  }
 }
+
+// OAuth callback from Mercado Libre
+app.get('/api/ml/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).json({ error: 'No authorization code provided' });
+    }
+
+    // Exchange code for access token
+    const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
+      grant_type: 'authorization_code',
+      client_id: ML_APP_ID,
+      client_secret: ML_SECRET_KEY,
+      code: code,
+      redirect_uri: `https://gestor-maya.vercel.app/api/ml/callback`
+    });
+
+    mlAccessToken = response.data.access_token;
+    mlTokenExpiry = Date.now() + (response.data.expires_in * 1000);
+
+    // Store refresh token in a safe place (cookie or localStorage in client)
+    res.json({
+      success: true,
+      accessToken: mlAccessToken,
+      refreshToken: response.data.refresh_token,
+      expiresIn: response.data.expires_in
+    });
+  } catch (error) {
+    console.error('OAuth callback error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Sync product to Mercado Libre (when you update inventory in your app)
 app.post('/api/sync-to-ml', async (req, res) => {
@@ -140,7 +203,7 @@ app.post('/api/sync-to-ml', async (req, res) => {
 app.get('/api/ordenes-ml', async (req, res) => {
   try {
     if (!db) return res.json({ ordenes: [] });
-    
+
     const snapshot = await db.collection('ordenes')
       .where('fuente', '==', 'mercado_libre')
       .orderBy('fecha', 'desc')
@@ -153,6 +216,119 @@ app.get('/api/ordenes-ml', async (req, res) => {
     console.error('Error fetching ML orders:', error.message);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Get all products from Mercado Libre
+app.get('/api/ml/productos', async (req, res) => {
+  try {
+    const token = mlAccessToken || process.env.ML_ACCESS_TOKEN;
+
+    if (!token) {
+      return res.status(401).json({
+        error: 'No access token. Please login with Mercado Libre first.',
+        loginUrl: `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=https://gestor-maya.vercel.app/api/ml/callback`
+      });
+    }
+
+    // Get user info first
+    const userResponse = await axios.get('https://api.mercadolibre.com/users/me', {
+      params: { access_token: token }
+    });
+
+    const userId = userResponse.data.id;
+
+    // Get user's items (products)
+    const itemsResponse = await axios.get(`https://api.mercadolibre.com/users/${userId}/items/search`, {
+      params: { access_token: token }
+    });
+
+    const itemIds = itemsResponse.data.results || [];
+
+    // Fetch details for each item
+    const productos = await Promise.all(
+      itemIds.slice(0, 50).map(async (itemId) => {
+        try {
+          const itemResponse = await axios.get(`https://api.mercadolibre.com/items/${itemId}`, {
+            params: { access_token: token }
+          });
+          return itemResponse.data;
+        } catch (error) {
+          console.error(`Error fetching item ${itemId}:`, error.message);
+          return null;
+        }
+      })
+    );
+
+    // Filter out nulls and sync to Firebase
+    const validProductos = productos.filter(p => p !== null);
+
+    if (db) {
+      for (const producto of validProductos) {
+        await db.collection('inventario').doc(`ml_${producto.id}`).set({
+          id: producto.id,
+          titulo: producto.title,
+          precio: producto.price,
+          stock: producto.available_quantity,
+          descripcion: producto.description,
+          enlaceMl: producto.permalink,
+          imagen: producto.thumbnail,
+          sincronizadoDesdeML: true,
+          fechaSincronizacion: new Date(),
+          fuente: 'mercado_libre'
+        }, { merge: true });
+      }
+    }
+
+    res.json({
+      success: true,
+      totalProductos: validProductos.length,
+      productos: validProductos
+    });
+  } catch (error) {
+    console.error('Error fetching ML products:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync inventory from app to Mercado Libre
+app.post('/api/ml/sync-inventario', async (req, res) => {
+  try {
+    const { itemId, cantidad, precio } = req.body;
+    const token = mlAccessToken || process.env.ML_ACCESS_TOKEN;
+
+    if (!token) {
+      return res.status(401).json({ error: 'No access token' });
+    }
+
+    const response = await axios.put(
+      `https://api.mercadolibre.com/items/${itemId}`,
+      {
+        available_quantity: cantidad,
+        price: precio
+      },
+      { params: { access_token: token } }
+    );
+
+    // Update Firebase
+    if (db) {
+      await db.collection('inventario').doc(`ml_${itemId}`).update({
+        stock: cantidad,
+        precio: precio,
+        ultimaSincronizacion: new Date()
+      });
+    }
+
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error('Error syncing to ML:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get login URL for Mercado Libre OAuth
+app.get('/api/ml/login-url', (req, res) => {
+  const loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=https://gestor-maya.vercel.app/api/ml/callback`;
+  res.json({ loginUrl });
 });
 
 // Serve static files (HTML, CSS, JS)

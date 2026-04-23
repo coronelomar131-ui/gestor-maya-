@@ -834,6 +834,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" onclick="showModule('reportes')">
         <span class="nav-icon">📈</span> Reportes
       </div>
+      <div class="nav-section">Integraciones</div>
+      <div class="nav-item" onclick="showModule('mercadolibre')">
+        <span class="nav-icon">🛒</span> Mercado Libre
+      </div>
       <div class="nav-section" id="nav-admin-section" style="display:none">Admin</div>
       <div class="nav-item" id="nav-usuarios" style="display:none" onclick="showModule('usuarios')">
         <span class="nav-icon">⚙️</span> Usuarios
@@ -1044,6 +1048,42 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div class="table-header"><div class="table-title">📈 Ventas por mes</div></div>
           <div id="chart-container" style="padding:20px">
             <canvas id="ventas-chart" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- MERCADO LIBRE -->
+      <div class="module-view" id="mod-mercadolibre">
+        <div class="firebase-notice">🛒 Sincronización en tiempo real con Mercado Libre</div>
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">Productos Mercado Libre</div>
+            <button class="btn btn-primary btn-sm" onclick="loginMercadoLibre()">🔗 Conectar ML</button>
+            <button class="btn btn-secondary btn-sm" onclick="cargarProductosML()">↻ Actualizar</button>
+          </div>
+          <div style="padding:20px">
+            <div id="ml-productos-container">
+              <p style="color:var(--gray)">Cargando productos...</p>
+            </div>
+          </div>
+        </div>
+        <div class="table-card" style="margin-top:20px">
+          <div class="table-header"><div class="table-title">Órdenes desde Mercado Libre</div></div>
+          <div style="overflow-x:auto">
+            <table id="ml-ordenes-table">
+              <thead>
+                <tr>
+                  <th>ID Orden</th>
+                  <th>Cantidad</th>
+                  <th>Total</th>
+                  <th>Estado</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody id="ml-ordenes-tbody">
+                <tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes sincronizadas</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1787,6 +1827,7 @@ window.showModule = function(name) {
     proveedores: ['Proveedores', 'Directorio de proveedores'],
     entregas: ['Entregas', 'Logística y control de entregas'],
     reportes: ['Reportes', 'Análisis y métricas del negocio'],
+    mercadolibre: ['Mercado Libre', 'Sincronización con Mercado Libre'],
     usuarios: ['Usuarios', 'Gestión de accesos']
   };
   const t = titles[name] || [name, ''];
@@ -1848,6 +1889,137 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
     if (e.target === this) this.classList.remove('open');
   });
 });
+
+// ═════════════════════════════════════════════════════════════
+// MERCADO LIBRE INTEGRATION
+// ═════════════════════════════════════════════════════════════
+
+window.loginMercadoLibre = async function() {
+  try {
+    const response = await fetch('/api/ml/login-url');
+    const data = await response.json();
+    window.location.href = data.loginUrl;
+  } catch (error) {
+    window.toast('Error al conectar con Mercado Libre: ' + error.message, 'error');
+  }
+};
+
+window.cargarProductosML = async function() {
+  try {
+    const container = document.getElementById('ml-productos-container');
+    container.innerHTML = '<p style="color:var(--gray)">Cargando productos...</p>';
+
+    const response = await fetch('/api/ml/productos');
+    const data = await response.json();
+
+    if (data.error) {
+      if (data.loginUrl) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:40px">
+            <p style="color:var(--gray);margin-bottom:20px">No estás conectado con Mercado Libre</p>
+            <button class="btn btn-primary" onclick="loginMercadoLibre()">🔗 Conectar Mercado Libre</button>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
+      }
+      return;
+    }
+
+    if (!data.productos || data.productos.length === 0) {
+      container.innerHTML = '<p style="color:var(--gray)">No hay productos en Mercado Libre</p>';
+      return;
+    }
+
+    let html = `<div style="display:grid;gap:15px">`;
+    data.productos.forEach(p => {
+      html += `
+        <div style="border:1px solid var(--border);border-radius:8px;padding:15px;background:var(--surface2)">
+          <div style="display:flex;gap:15px">
+            ${p.thumbnail ? `<img src="${p.thumbnail}" style="width:80px;height:80px;border-radius:6px;object-fit:cover">` : ''}
+            <div style="flex:1">
+              <div style="font-weight:600;margin-bottom:5px">${p.title}</div>
+              <div style="color:var(--gray);font-size:0.9em;margin-bottom:10px">Stock: <strong>${p.available_quantity}</strong> | Precio: <strong>$${p.price}</strong></div>
+              <button class="btn btn-sm btn-secondary" onclick="abrirSyncML('${p.id}','${p.title}',${p.price},${p.available_quantity})">⚙️ Sincronizar</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+    container.innerHTML = html;
+
+    window.toast(`✅ ${data.totalProductos} productos cargados desde Mercado Libre`, 'success');
+  } catch (error) {
+    window.toast('Error: ' + error.message, 'error');
+  }
+};
+
+window.abrirSyncML = function(itemId, title, price, quantity) {
+  const nuevoPrice = prompt(`Nuevo precio para "${title}":`, price);
+  if (nuevoPrice === null) return;
+
+  const nuevaCantidad = prompt(`Nueva cantidad:`, quantity);
+  if (nuevaCantidad === null) return;
+
+  syncInventarioML(itemId, parseInt(nuevaCantidad), parseFloat(nuevoPrice));
+};
+
+window.syncInventarioML = async function(itemId, cantidad, precio) {
+  try {
+    const response = await fetch('/api/ml/sync-inventario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId, cantidad, precio })
+    });
+
+    const data = await response.json();
+    if (data.error) {
+      window.toast('Error: ' + data.error, 'error');
+    } else {
+      window.toast('✅ Producto sincronizado con Mercado Libre', 'success');
+      cargarProductosML();
+      cargarOrdenesML();
+    }
+  } catch (error) {
+    window.toast('Error: ' + error.message, 'error');
+  }
+};
+
+window.cargarOrdenesML = async function() {
+  try {
+    const response = await fetch('/api/ordenes-ml');
+    const data = await response.json();
+
+    const tbody = document.getElementById('ml-ordenes-tbody');
+    if (!data.ordenes || data.ordenes.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes sincronizadas</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.ordenes.map(o => `
+      <tr>
+        <td>${o.id || 'N/A'}</td>
+        <td>${o.total_items || '—'}</td>
+        <td>$${o.total_amount || '—'}</td>
+        <td><span class="badge" style="background:var(--blue)">${o.status || 'pending'}</span></td>
+        <td>${new Date(o.fecha?.toDate?.() || o.fecha).toLocaleDateString('es-MX')}</td>
+      </tr>
+    `).join('');
+  } catch (error) {
+    console.error('Error cargando órdenes:', error);
+  }
+};
+
+// Auto-load when showing mercadolibre module
+const originalShowModule = window.showModule;
+window.showModule = function(name) {
+  originalShowModule(name);
+  if (name === 'mercadolibre') {
+    cargarProductosML();
+    cargarOrdenesML();
+  }
+};
 </script>
 
 </body>
