@@ -2205,6 +2205,28 @@ window.showModule = function(name) {
     cargarOrdenesML();
   }
 };
+
+// Detectar callback de Mercado Libre
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (code) {
+    fetch('/api/ml?action=exchange&code=' + code)
+      .then(r => r.json())
+      .then(data => {
+        if (data.accessToken) {
+          localStorage.setItem('ml_token', data.accessToken);
+          localStorage.setItem('ml_user_id', data.userId);
+          window.history.replaceState({}, '', '/');
+          window.toast('✅ Mercado Libre conectado!', 'success');
+          setTimeout(() => cargarProductosML(), 500);
+        } else {
+          window.toast('Error ML: ' + (data.error || 'Sin token'), 'error');
+        }
+      })
+      .catch(e => window.toast('Error: ' + e.message, 'error'));
+  }
+})();
 </script>
 
 </body>
