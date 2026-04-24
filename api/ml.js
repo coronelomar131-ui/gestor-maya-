@@ -20,7 +20,7 @@ async function getValidMLToken(mlUserId) {
   try {
     const tokenDoc = await db.collection('ml_tokens').doc(mlUserId).get();
 
-    if (!tokenDoc.exists()) {
+    if (!tokenDoc.exists) {
       throw new Error('No ML token found');
     }
 
