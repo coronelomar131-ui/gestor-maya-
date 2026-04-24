@@ -81,7 +81,11 @@ module.exports = async function handler(req, res) {
           refreshToken: tokenResponse.data.refresh_token || null
         });
       } catch (error) {
-        return res.status(400).json({ error: 'Token exchange failed: ' + error.message });
+        console.error('ML Error:', error.response?.data || error.message);
+        return res.status(400).json({
+          error: 'Token exchange failed: ' + (error.response?.data?.message || error.message),
+          details: error.response?.data
+        });
       }
     }
 
