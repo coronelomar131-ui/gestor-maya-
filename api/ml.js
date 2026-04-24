@@ -62,6 +62,7 @@ module.exports = async function handler(req, res) {
       }
 
       try {
+        console.log('Code received:', code, 'Length:', code?.length);
         const tokenResponse = await axios.post('https://api.mercadolibre.com/oauth/token', {
           grant_type: 'authorization_code',
           client_id: ML_APP_ID,

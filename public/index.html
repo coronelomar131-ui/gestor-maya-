@@ -2103,7 +2103,7 @@ window.cargarOrdenesML = async function() {
 
 window.sincronizarInventarioML = async function() {
   try {
-    const user = auth.currentUser;
+    const user = window._firebaseAuth?.currentUser;
     if (!user) {
       window.toast('⚠️ Debes estar autenticado', 'error');
       return;
@@ -2196,8 +2196,8 @@ window.mostrarAlertaML = function(mensaje) {
 window.setupMLAutoSync = function() {
   setInterval(() => {
     try {
-      if (typeof auth !== 'undefined' && auth.currentUser) {
-        const user = auth.currentUser;
+      if (window._firebaseAuth?.currentUser) {
+        const user = window._firebaseAuth.currentUser;
         if (db && user) {
           db.collection('usuarios').doc(user.uid).get().then(doc => {
             if (doc.exists && doc.data().ml_access_token) {
