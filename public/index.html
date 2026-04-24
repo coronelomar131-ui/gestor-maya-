@@ -1906,20 +1906,15 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 
 window.loginMercadoLibre = async function() {
   try {
-    const user = auth.currentUser;
-    if (!user) {
-      window.toast('⚠️ Debes estar autenticado primero', 'error');
-      return;
-    }
-
     const response = await fetch('/api/ml?action=login-url');
     const data = await response.json();
-
-    // Store user ID before redirecting so we can capture the OAuth callback
-    localStorage.setItem('ml_auth_user_id', user.uid);
-    window.location.href = data.loginUrl;
+    if(data.loginUrl) {
+      window.location.href = data.loginUrl;
+    } else {
+      window.toast('Error: ' + (data.error || 'Sin URL'), 'error');
+    }
   } catch (error) {
-    window.toast('Error al conectar con Mercado Libre: ' + error.message, 'error');
+    window.toast('Error: ' + error.message, 'error');
   }
 };
 
