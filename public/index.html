@@ -2177,14 +2177,20 @@ window.mostrarAlertaML = function(mensaje) {
 // Auto-sync every 5 minutes when user is logged in
 window.setupMLAutoSync = function() {
   setInterval(() => {
-    const user = auth.currentUser;
-    if (user) {
-      db.collection('usuarios').doc(user.uid).get().then(doc => {
-        if (doc.exists && doc.data().ml_access_token) {
-          // Silent sync - don't show status
-          console.log('Auto-syncing ML inventory...');
+    try {
+      if (typeof auth !== 'undefined' && auth.currentUser) {
+        const user = auth.currentUser;
+        if (db && user) {
+          db.collection('usuarios').doc(user.uid).get().then(doc => {
+            if (doc.exists && doc.data().ml_access_token) {
+              // Silent sync - don't show status
+              console.log('Auto-syncing ML inventory...');
+            }
+          });
         }
-      });
+      }
+    } catch (e) {
+      // Silently ignore if auth not ready
     }
   }, 5 * 60 * 1000); // 5 minutes
 };
