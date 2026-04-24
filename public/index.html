@@ -767,8 +767,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   if (code) {
-    window.history.replaceState({}, '', '/');
     const verifier = localStorage.getItem('ml_code_verifier');
+    console.log('Verifier encontrado:', !!verifier);
+    window.history.replaceState({}, '', '/');
     const verifierParam = verifier ? '&code_verifier=' + encodeURIComponent(verifier) : '';
     fetch('/api/ml?action=exchange&code=' + encodeURIComponent(code) + verifierParam)
       .then(r => r.json())
