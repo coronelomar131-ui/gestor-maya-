@@ -79,6 +79,8 @@ async function refreshMLToken(mlUserId, refreshToken) {
 // Save tokens to Firestore after exchange
 async function saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn = 21600) {
   try {
+    if (!mlUserId) throw new Error('mlUserId is empty');
+
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
     await db.collection('ml_tokens').doc(mlUserId).set({
@@ -217,7 +219,7 @@ module.exports = async function handler(req, res) {
           headers: { 'Authorization': `Bearer ${tokenResponse.data.access_token}` }
         });
 
-        const mlUserId = mlUserResponse.data.id;
+        const mlUserId = String(mlUserResponse.data.id);
         const accessToken = tokenResponse.data.access_token;
         const refreshToken = tokenResponse.data.refresh_token;
         const expiresIn = tokenResponse.data.expires_in || 21600;
