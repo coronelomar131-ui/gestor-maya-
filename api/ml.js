@@ -83,9 +83,9 @@ async function saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn = 216
 
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-    await db.collection('ml_tokens').doc(mlUserId).set({
+    await db.collection('ml_tokens').doc(String(mlUserId)).set({
       access_token: accessToken,
-      refresh_token: refreshToken,
+      refresh_token: refreshToken || null,
       expires_at: expiresAt,
       created_at: new Date(),
       updated_at: new Date()
