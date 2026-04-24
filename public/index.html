@@ -762,6 +762,24 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 </style>
 </head>
 <body>
+<script>
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (code) {
+    window.history.replaceState({}, '', '/');
+    fetch('/api/ml?action=exchange&code=' + encodeURIComponent(code))
+      .then(r => r.json())
+      .then(data => {
+        if (data.accessToken) {
+          localStorage.setItem('ml_token', data.accessToken);
+          localStorage.setItem('ml_user_id', data.userId);
+          window.mlConnected = true;
+        }
+      });
+  }
+})();
+</script>
 
 <!-- LOADING -->
 <div class="loading-overlay" id="loading">
