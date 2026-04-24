@@ -73,6 +73,7 @@ module.exports = async function handler(req, res) {
         params.append('client_secret', ML_SECRET_KEY);
         params.append('code', code);
         params.append('redirect_uri', redirect_uri);
+        params.append('code_verifier', req.query.code_verifier);
 
         console.log('Params enviados:', params.toString());
 
@@ -102,7 +103,13 @@ module.exports = async function handler(req, res) {
 
     // Get OAuth login URL
     if (action === 'login-url') {
-      const loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent('https://gestor-maya.vercel.app/callback')}&response_type=code`;
+      const { code_challenge, code_challenge_method } = req.query;
+      let loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent('https://gestor-maya.vercel.app/callback')}`;
+
+      if (code_challenge && code_challenge_method) {
+        loginUrl += `&code_challenge=${code_challenge}&code_challenge_method=${code_challenge_method}`;
+      }
+
       return res.status(200).json({ loginUrl });
     }
 
