@@ -2017,6 +2017,18 @@ window.cargarProductosML = async function() {
     const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
     const data = await response.json();
 
+    if (data.error === 'token_expired' || response.status === 401) {
+      localStorage.removeItem('ml_access_token');
+      localStorage.removeItem('ml_user_id');
+      container.innerHTML = `
+        <div style="text-align:center;padding:40px">
+          <p style="color:#fbbf24;margin-bottom:20px">⚠️ Sesión de ML expirada</p>
+          <button class="btn btn-primary" onclick="loginMercadoLibre()">🔗 Reconectar Mercado Libre</button>
+        </div>
+      `;
+      return;
+    }
+
     if (data.error) {
       container.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
       return;
