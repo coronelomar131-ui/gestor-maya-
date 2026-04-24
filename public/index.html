@@ -2203,8 +2203,6 @@ window.sincronizarInventarioML = async function() {
       return;
     }
 
-    const user = window._firebaseAuth?.currentUser;
-
     // Fetch products from ML
     const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
     const data = await response.json();
