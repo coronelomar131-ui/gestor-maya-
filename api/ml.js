@@ -6,9 +6,10 @@ const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tU
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
   admin.initializeApp({
-    projectId: 'mayav3-f9d9b',
-    databaseURL: 'https://mayav3-f9d9b.firebaseio.com'
+    credential: admin.credential.cert(serviceAccount),
+    projectId: 'mayav3-f9d9b'
   });
 }
 
