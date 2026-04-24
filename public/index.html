@@ -2022,6 +2022,8 @@ window.cargarProductosML = async function() {
 
     const accessToken = localStorage.getItem('ml_access_token');
     const userId = localStorage.getItem('ml_user_id');
+    console.log('Token guardado:', accessToken?.substring(0,20));
+    console.log('UserId guardado:', userId);
 
     if (!accessToken || !userId) {
       container.innerHTML = `
@@ -2139,6 +2141,8 @@ window.sincronizarInventarioML = async function() {
     // Get ML credentials from localStorage
     const accessToken = localStorage.getItem('ml_access_token');
     const userId = localStorage.getItem('ml_user_id');
+    console.log('Token guardado en sync:', accessToken?.substring(0,20));
+    console.log('UserId guardado en sync:', userId);
 
     if (!accessToken || !userId) {
       statusDiv.innerHTML = '🔗 <strong>Necesitas conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
