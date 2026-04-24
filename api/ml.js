@@ -15,9 +15,17 @@ module.exports = async function handler(req, res) {
     // Get user's products from ML
     if (action === 'productos' && accessToken) {
       const response = await axios.get(
-        `https://api.mercadolibre.com/users/${userId}/items/search`,
-        { params: { access_token: accessToken } }
+        'https://api.mercadolibre.com/users/me/items/search',
+        {
+          params: {
+            access_token: accessToken,
+            status: 'active'
+          }
+        }
       );
+
+      console.log('Usuario ML:', userId);
+      console.log('Items encontrados:', response.data.results?.length);
 
       const itemIds = response.data.results || [];
       const productos = await Promise.all(
