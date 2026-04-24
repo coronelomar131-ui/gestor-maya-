@@ -780,20 +780,6 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           window.mlConnected = true;
           if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
 
-          // Save to Firestore if user is authenticated
-          const user = window._firebaseAuth?.currentUser;
-          if (user && window.db) {
-            try {
-              window.db.collection('ml_tokens').doc(user.uid).set({
-                ml_access_token: data.accessToken,
-                ml_user_id: data.userId,
-                updated_at: new Date()
-              }).catch(err => console.error('Error saving to Firestore:', err));
-            } catch (e) {
-              console.error('Firestore save error:', e);
-            }
-          }
-
           setTimeout(() => {
             if (window.cargarProductosML) window.cargarProductosML();
           }, 1000);
@@ -1400,6 +1386,23 @@ function hideLoading() {
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
+
+    // Migrate ML token from localStorage to Firestore
+    const mlToken = localStorage.getItem('ml_access_token');
+    const mlUserId = localStorage.getItem('ml_user_id');
+    if (mlToken && mlUserId && db) {
+      try {
+        await db.collection('ml_tokens').doc(user.uid).set({
+          ml_access_token: mlToken,
+          ml_user_id: mlUserId,
+          updated_at: new Date()
+        }, {merge: true});
+        console.log('ML token migrado a Firestore');
+      } catch (e) {
+        console.error('Error migrando ML token:', e);
+      }
+    }
+
     await loadUserProfile(user.uid);
     showApp();
     startListeners();
