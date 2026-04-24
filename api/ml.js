@@ -94,7 +94,6 @@ module.exports = async function handler(req, res) {
         params.append('client_secret', ML_SECRET_KEY);
         params.append('code', code);
         params.append('redirect_uri', redirect_uri);
-        params.append('code_verifier', req.query.code_verifier);
 
         console.log('Params enviados:', params.toString());
 
