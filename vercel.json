@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "npm install",
   "builds": [
     {
       "src": "api/index.js",
@@ -16,8 +17,12 @@
       "dest": "api/index.js"
     },
     {
+      "src": "/public/(.*)",
+      "dest": "public/$1"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/public/index.html"
+      "dest": "public/index.html"
     }
   ]
 }
