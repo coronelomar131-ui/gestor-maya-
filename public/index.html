@@ -1896,7 +1896,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 
 window.loginMercadoLibre = async function() {
   try {
-    const response = await fetch('/api/ml/login-url');
+    const response = await fetch('/api/ml?action=login-url');
     const data = await response.json();
     window.location.href = data.loginUrl;
   } catch (error) {
@@ -1909,20 +1909,24 @@ window.cargarProductosML = async function() {
     const container = document.getElementById('ml-productos-container');
     container.innerHTML = '<p style="color:var(--gray)">Cargando productos...</p>';
 
-    const response = await fetch('/api/ml/productos');
+    const accessToken = localStorage.getItem('ml_access_token');
+    const userId = localStorage.getItem('ml_user_id');
+
+    if (!accessToken || !userId) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:40px">
+          <p style="color:var(--gray);margin-bottom:20px">No estás conectado con Mercado Libre</p>
+          <button class="btn btn-primary" onclick="loginMercadoLibre()">🔗 Conectar Mercado Libre</button>
+        </div>
+      `;
+      return;
+    }
+
+    const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
     const data = await response.json();
 
     if (data.error) {
-      if (data.loginUrl) {
-        container.innerHTML = `
-          <div style="text-align:center;padding:40px">
-            <p style="color:var(--gray);margin-bottom:20px">No estás conectado con Mercado Libre</p>
-            <button class="btn btn-primary" onclick="loginMercadoLibre()">🔗 Conectar Mercado Libre</button>
-          </div>
-        `;
-      } else {
-        container.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
-      }
+      container.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
       return;
     }
 
@@ -1949,7 +1953,7 @@ window.cargarProductosML = async function() {
     html += `</div>`;
     container.innerHTML = html;
 
-    window.toast(`✅ ${data.totalProductos} productos cargados desde Mercado Libre`, 'success');
+    window.toast(`✅ ${data.productos.length} productos cargados desde Mercado Libre`, 'success');
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
   }
@@ -1967,19 +1971,20 @@ window.abrirSyncML = function(itemId, title, price, quantity) {
 
 window.syncInventarioML = async function(itemId, cantidad, precio) {
   try {
-    const response = await fetch('/api/ml/sync-inventario', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itemId, cantidad, precio })
-    });
+    const accessToken = localStorage.getItem('ml_access_token');
+    if (!accessToken) {
+      window.toast('⚠️ No hay token de acceso a Mercado Libre', 'error');
+      return;
+    }
 
+    const response = await fetch(`/api/ml?action=sync&itemId=${itemId}&quantity=${cantidad}&price=${precio}&accessToken=${accessToken}`);
     const data = await response.json();
+
     if (data.error) {
       window.toast('Error: ' + data.error, 'error');
     } else {
       window.toast('✅ Producto sincronizado con Mercado Libre', 'success');
       cargarProductosML();
-      cargarOrdenesML();
     }
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
