@@ -2132,25 +2132,19 @@ window.cargarOrdenesML = async function() {
 
 window.sincronizarInventarioML = async function() {
   try {
-    const user = window._firebaseAuth?.currentUser;
-    if (!user) {
-      window.toast('⚠️ Debes estar autenticado', 'error');
-      return;
-    }
-
     const statusDiv = document.getElementById('ml-sync-status');
     statusDiv.style.display = 'block';
 
-    const userDocRef = db.collection('usuarios').doc(user.uid);
-    const userDoc = await userDocRef.get();
+    // Get ML credentials from localStorage
+    const accessToken = localStorage.getItem('ml_access_token');
+    const userId = localStorage.getItem('ml_user_id');
 
-    if (!userDoc.exists || !userDoc.data().ml_access_token) {
+    if (!accessToken || !userId) {
       statusDiv.innerHTML = '🔗 <strong>Necesitas conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
       return;
     }
 
-    const accessToken = userDoc.data().ml_access_token;
-    const userId = userDoc.data().ml_user_id;
+    const user = window._firebaseAuth?.currentUser;
 
     // Fetch products from ML
     const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
@@ -2164,7 +2158,7 @@ window.sincronizarInventarioML = async function() {
     // Sync each product to Firestore
     let syncedCount = 0;
     for (const producto of data.productos) {
-      await db.collection('inventario').doc(`ml_${producto.id}`).set({
+      const syncData = {
         codigo: `ML-${producto.id}`,
         nombre: producto.title,
         precio: producto.price,
@@ -2174,9 +2168,14 @@ window.sincronizarInventarioML = async function() {
         sincronizadoML: true,
         mlId: producto.id,
         enlaceML: producto.permalink,
-        ultimaSincronizacion: new Date(),
-        usuario: user.uid
-      }, { merge: true });
+        ultimaSincronizacion: new Date()
+      };
+
+      if (user) {
+        syncData.usuario = user.uid;
+      }
+
+      await db.collection('inventario').doc(`ml_${producto.id}`).set(syncData, { merge: true });
       syncedCount++;
     }
 
