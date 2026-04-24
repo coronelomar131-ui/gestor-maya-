@@ -18,8 +18,10 @@ module.exports = async function handler(req, res) {
         const response = await axios.get(
           'https://api.mercadolibre.com/users/me/items/search',
           {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            },
             params: {
-              access_token: accessToken,
               status: 'active'
             }
           }
@@ -32,7 +34,9 @@ module.exports = async function handler(req, res) {
         const productos = await Promise.all(
           itemIds.slice(0, 50).map(async (id) => {
             try {
-              const item = await axios.get(`https://api.mercadolibre.com/items/${id}`);
+              const item = await axios.get(`https://api.mercadolibre.com/items/${id}`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+              });
               return item.data;
             } catch (e) {
               return null;
