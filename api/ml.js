@@ -14,35 +14,48 @@ module.exports = async function handler(req, res) {
 
     // Get user's products from ML
     if (action === 'productos' && accessToken) {
-      const response = await axios.get(
-        'https://api.mercadolibre.com/users/me/items/search',
-        {
-          params: {
-            access_token: accessToken,
-            status: 'active'
+      try {
+        const response = await axios.get(
+          'https://api.mercadolibre.com/users/me/items/search',
+          {
+            params: {
+              access_token: accessToken,
+              status: 'active'
+            }
           }
+        );
+
+        console.log('Usuario ML:', userId);
+        console.log('Items encontrados:', response.data.results?.length);
+
+        const itemIds = response.data.results || [];
+        const productos = await Promise.all(
+          itemIds.slice(0, 50).map(async (id) => {
+            try {
+              const item = await axios.get(`https://api.mercadolibre.com/items/${id}`);
+              return item.data;
+            } catch (e) {
+              return null;
+            }
+          })
+        );
+
+        return res.status(200).json({
+          success: true,
+          productos: productos.filter(p => p)
+        });
+      } catch (error) {
+        if (error.response?.status === 400 || error.response?.status === 401) {
+          return res.status(401).json({
+            error: 'token_expired',
+            message: 'Token de ML expirado, reconecta ML'
+          });
         }
-      );
-
-      console.log('Usuario ML:', userId);
-      console.log('Items encontrados:', response.data.results?.length);
-
-      const itemIds = response.data.results || [];
-      const productos = await Promise.all(
-        itemIds.slice(0, 50).map(async (id) => {
-          try {
-            const item = await axios.get(`https://api.mercadolibre.com/items/${id}`);
-            return item.data;
-          } catch (e) {
-            return null;
-          }
-        })
-      );
-
-      return res.status(200).json({
-        success: true,
-        productos: productos.filter(p => p)
-      });
+        console.error('Error en productos ML:', error.response?.data || error.message);
+        return res.status(500).json({
+          error: error.response?.data?.message || error.message
+        });
+      }
     }
 
     // Sync product to ML
