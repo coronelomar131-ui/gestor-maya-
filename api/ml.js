@@ -54,6 +54,37 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // Exchange authorization code for access token
+    if (action === 'exchange') {
+      const { code } = req.query;
+      if (!code) {
+        return res.status(400).json({ error: 'No authorization code' });
+      }
+
+      try {
+        const tokenResponse = await axios.post('https://api.mercadolibre.com/oauth/token', {
+          grant_type: 'authorization_code',
+          client_id: ML_APP_ID,
+          client_secret: ML_SECRET_KEY,
+          code: code,
+          redirect_uri: 'https://gestor-maya.vercel.app'
+        });
+
+        const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
+          params: { access_token: tokenResponse.data.access_token }
+        });
+
+        return res.status(200).json({
+          success: true,
+          accessToken: tokenResponse.data.access_token,
+          userId: mlUserResponse.data.id,
+          refreshToken: tokenResponse.data.refresh_token || null
+        });
+      } catch (error) {
+        return res.status(400).json({ error: 'Token exchange failed: ' + error.message });
+      }
+    }
+
     // Get OAuth login URL
     if (action === 'login-url') {
       const loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent('https://gestor-maya.vercel.app')}&response_type=code`;

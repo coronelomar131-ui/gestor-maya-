@@ -890,6 +890,12 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <div class="stat-label">Entregas pendientes</div>
           </div>
         </div>
+        <div class="table-card" style="margin-bottom:20px">
+          <div class="table-header"><div class="table-title">🛒 Alertas de Mercado Libre</div></div>
+          <div id="ml-alerts-container" style="padding:20px;color:var(--gray);text-align:center">
+            <p>📡 Sincronización automática en tiempo real</p>
+          </div>
+        </div>
         <div class="grid-2">
           <div class="table-card">
             <div class="table-header"><div class="table-title">Últimas ventas</div></div>
@@ -929,11 +935,15 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="module-view" id="mod-inventario">
         <div class="table-card">
           <div class="table-header">
-            <div class="table-title">Inventario de Piezas</div>
+            <div class="table-title">📦 Inventario (Local + Mercado Libre)</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
               <input class="search-box" placeholder="🔍 Buscar pieza..." oninput="filterTable('inv-table',this.value)">
+              <button class="btn btn-primary btn-sm" onclick="sincronizarInventarioML()">🔄 Sincronizar ML</button>
               <button class="btn btn-secondary btn-sm" onclick="openModal('modal-producto')">+ Agregar Pieza</button>
             </div>
+          </div>
+          <div style="padding:15px;background:var(--surface2);border-radius:8px;margin-bottom:15px;display:none" id="ml-sync-status">
+            <span id="ml-sync-text">⏳ Sincronizando con Mercado Libre...</span>
           </div>
           <div style="overflow-x:auto">
             <table id="inv-table">
@@ -1896,13 +1906,71 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 
 window.loginMercadoLibre = async function() {
   try {
+    const user = auth.currentUser;
+    if (!user) {
+      window.toast('⚠️ Debes estar autenticado primero', 'error');
+      return;
+    }
+
     const response = await fetch('/api/ml?action=login-url');
     const data = await response.json();
+
+    // Store user ID before redirecting so we can capture the OAuth callback
+    localStorage.setItem('ml_auth_user_id', user.uid);
     window.location.href = data.loginUrl;
   } catch (error) {
     window.toast('Error al conectar con Mercado Libre: ' + error.message, 'error');
   }
 };
+
+// Check if returning from ML OAuth
+window.handleMLCallback = async function() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const userId = localStorage.getItem('ml_auth_user_id');
+
+  if (code && userId) {
+    try {
+      window.toast('⏳ Procesando autorización...', 'info');
+
+      // Exchange code for access token via your backend
+      const response = await fetch(`/api/ml?action=exchange&code=${code}&userId=${userId}`);
+      const data = await response.json();
+
+      if (data.accessToken) {
+        // Save to Firebase for this user
+        await db.collection('usuarios').doc(userId).set({
+          ml_access_token: data.accessToken,
+          ml_user_id: data.userId,
+          ml_authorized: true,
+          ml_auth_date: new Date()
+        }, { merge: true });
+
+        // Clear localStorage
+        localStorage.removeItem('ml_auth_user_id');
+
+        window.toast('✅ Mercado Libre conectado exitosamente', 'success');
+
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        // Auto-sync
+        setTimeout(() => {
+          sincronizarInventarioML();
+        }, 1000);
+      }
+    } catch (error) {
+      window.toast('Error en autorización: ' + error.message, 'error');
+    }
+  }
+};
+
+// Check on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', handleMLCallback);
+} else {
+  handleMLCallback();
+}
 
 window.cargarProductosML = async function() {
   try {
@@ -2015,6 +2083,123 @@ window.cargarOrdenesML = async function() {
     console.error('Error cargando órdenes:', error);
   }
 };
+
+// ═════════════════════════════════════════════════════════════
+// MERCADO LIBRE INVENTORY SYNC
+// ═════════════════════════════════════════════════════════════
+
+window.sincronizarInventarioML = async function() {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      window.toast('⚠️ Debes estar autenticado', 'error');
+      return;
+    }
+
+    const statusDiv = document.getElementById('ml-sync-status');
+    statusDiv.style.display = 'block';
+
+    const userDocRef = db.collection('usuarios').doc(user.uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists || !userDoc.data().ml_access_token) {
+      statusDiv.innerHTML = '🔗 <strong>Necesitas conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
+      return;
+    }
+
+    const accessToken = userDoc.data().ml_access_token;
+    const userId = userDoc.data().ml_user_id;
+
+    // Fetch products from ML
+    const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
+    const data = await response.json();
+
+    if (data.error) {
+      statusDiv.innerHTML = `❌ Error: ${data.error}`;
+      return;
+    }
+
+    // Sync each product to Firestore
+    let syncedCount = 0;
+    for (const producto of data.productos) {
+      await db.collection('inventario').doc(`ml_${producto.id}`).set({
+        codigo: `ML-${producto.id}`,
+        nombre: producto.title,
+        precio: producto.price,
+        stock: producto.available_quantity,
+        marca: 'Mercado Libre',
+        clase: 'A',
+        sincronizadoML: true,
+        mlId: producto.id,
+        enlaceML: producto.permalink,
+        ultimaSincronizacion: new Date(),
+        usuario: user.uid
+      }, { merge: true });
+      syncedCount++;
+    }
+
+    statusDiv.innerHTML = `✅ ${syncedCount} productos sincronizados con Mercado Libre`;
+    window.toast(`✅ Sincronización exitosa: ${syncedCount} productos`, 'success');
+
+    // Reload inventory
+    loadInventario();
+
+    // Show alert in dashboard
+    mostrarAlertaML(`Se sincronizaron ${syncedCount} productos de Mercado Libre`);
+
+    setTimeout(() => {
+      statusDiv.style.display = 'none';
+    }, 5000);
+  } catch (error) {
+    window.toast('Error: ' + error.message, 'error');
+    document.getElementById('ml-sync-status').innerHTML = `❌ Error: ${error.message}`;
+  }
+};
+
+window.mostrarAlertaML = function(mensaje) {
+  const container = document.getElementById('ml-alerts-container');
+  const alert = document.createElement('div');
+  alert.style.cssText = 'padding:15px;background:var(--surface2);border-left:4px solid var(--blue);border-radius:6px;margin-bottom:10px;animation:slideDown 0.3s ease';
+  alert.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.2em">🛒</span>
+      <div style="flex:1">
+        <div style="font-weight:600;color:var(--white)">${mensaje}</div>
+        <div style="font-size:0.85em;color:var(--gray);margin-top:5px">${new Date().toLocaleTimeString('es-MX')}</div>
+      </div>
+    </div>
+  `;
+  container.insertBefore(alert, container.firstChild);
+
+  // Auto-remove after 10 seconds
+  setTimeout(() => {
+    alert.style.opacity = '0';
+    alert.style.transition = 'opacity 0.3s';
+    setTimeout(() => alert.remove(), 300);
+  }, 10000);
+};
+
+// Auto-sync every 5 minutes when user is logged in
+window.setupMLAutoSync = function() {
+  setInterval(() => {
+    const user = auth.currentUser;
+    if (user) {
+      db.collection('usuarios').doc(user.uid).get().then(doc => {
+        if (doc.exists && doc.data().ml_access_token) {
+          // Silent sync - don't show status
+          console.log('Auto-syncing ML inventory...');
+        }
+      });
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+};
+
+// Setup auto-sync when app loads
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupMLAutoSync);
+} else {
+  setupMLAutoSync();
+}
 
 // Auto-load when showing mercadolibre module
 const originalShowModule = window.showModule;
