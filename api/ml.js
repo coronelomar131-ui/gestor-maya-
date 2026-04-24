@@ -1,10 +1,10 @@
-import axios from 'axios';
+const axios = require('axios');
 
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
 const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tUrXwr';
 
 // Get Mercado Libre products
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
