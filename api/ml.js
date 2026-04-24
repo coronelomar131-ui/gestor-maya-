@@ -101,6 +101,8 @@ module.exports = async function handler(req, res) {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
+        console.log('ML token response:', JSON.stringify(tokenResponse.data));
+
         const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
           params: { access_token: tokenResponse.data.access_token }
         });
