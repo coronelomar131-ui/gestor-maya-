@@ -774,10 +774,19 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       .then(r => r.json())
       .then(data => {
         if (data.accessToken) {
-          localStorage.setItem('ml_token', data.accessToken);
+          localStorage.setItem('ml_access_token', data.accessToken);
           localStorage.setItem('ml_user_id', data.userId);
           window.mlConnected = true;
+          if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
+          setTimeout(() => {
+            if (window.cargarProductosML) window.cargarProductosML();
+          }, 300);
+        } else {
+          if (window.toast) window.toast('Error ML: ' + (data.error || 'Sin token'), 'error');
         }
+      })
+      .catch(e => {
+        if (window.toast) window.toast('Error: ' + e.message, 'error');
       });
   }
 })();
@@ -2250,27 +2259,6 @@ window.showModule = function(name) {
   }
 };
 
-// Detectar callback de Mercado Libre
-(function() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  if (code) {
-    fetch('/api/ml?action=exchange&code=' + code)
-      .then(r => r.json())
-      .then(data => {
-        if (data.accessToken) {
-          localStorage.setItem('ml_token', data.accessToken);
-          localStorage.setItem('ml_user_id', data.userId);
-          window.history.replaceState({}, '', '/');
-          window.toast('✅ Mercado Libre conectado!', 'success');
-          setTimeout(() => cargarProductosML(), 500);
-        } else {
-          window.toast('Error ML: ' + (data.error || 'Sin token'), 'error');
-        }
-      })
-      .catch(e => window.toast('Error: ' + e.message, 'error'));
-  }
-})();
 </script>
 
 </body>
