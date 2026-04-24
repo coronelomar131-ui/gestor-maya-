@@ -62,13 +62,22 @@ module.exports = async function handler(req, res) {
       }
 
       try {
+        const redirect_uri = 'https://gestor-maya.vercel.app/callback';
         console.log('Code received:', code, 'Length:', code?.length);
-        const tokenResponse = await axios.post('https://api.mercadolibre.com/oauth/token', {
-          grant_type: 'authorization_code',
-          client_id: ML_APP_ID,
-          client_secret: ML_SECRET_KEY,
-          code: code,
-          redirect_uri: 'https://gestor-maya.vercel.app/callback'
+        console.log('Redirect URI usado:', redirect_uri);
+        console.log('App ID:', ML_APP_ID);
+
+        const params = new URLSearchParams();
+        params.append('grant_type', 'authorization_code');
+        params.append('client_id', ML_APP_ID);
+        params.append('client_secret', ML_SECRET_KEY);
+        params.append('code', code);
+        params.append('redirect_uri', redirect_uri);
+
+        console.log('Params enviados:', params.toString());
+
+        const tokenResponse = await axios.post('https://api.mercadolibre.com/oauth/token', params, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
         const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
@@ -82,6 +91,7 @@ module.exports = async function handler(req, res) {
           refreshToken: tokenResponse.data.refresh_token || null
         });
       } catch (error) {
+        console.log('ML Response:', JSON.stringify(error.response?.data));
         console.error('ML Error:', error.response?.data || error.message);
         return res.status(400).json({
           error: 'Token exchange failed: ' + (error.response?.data?.message || error.message),
