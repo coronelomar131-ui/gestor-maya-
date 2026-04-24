@@ -67,7 +67,7 @@ module.exports = async function handler(req, res) {
           client_id: ML_APP_ID,
           client_secret: ML_SECRET_KEY,
           code: code,
-          redirect_uri: 'https://gestor-maya.vercel.app'
+          redirect_uri: 'https://gestor-maya.vercel.app/api/ml?action=exchange'
         });
 
         const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
@@ -87,7 +87,7 @@ module.exports = async function handler(req, res) {
 
     // Get OAuth login URL
     if (action === 'login-url') {
-      const loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent('https://gestor-maya.vercel.app')}&response_type=code`;
+      const loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent('https://gestor-maya.vercel.app/api/ml?action=exchange')}&response_type=code`;
       return res.status(200).json({ loginUrl });
     }
 
