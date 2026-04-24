@@ -771,9 +771,12 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     fetch('/api/ml?action=exchange&code=' + encodeURIComponent(code))
       .then(r => r.json())
       .then(data => {
+        console.log('Exchange response:', JSON.stringify(data));
         if (data.accessToken) {
+          console.log('Guardando token en localStorage:', data.accessToken.substring(0, 20));
           localStorage.setItem('ml_access_token', data.accessToken);
           localStorage.setItem('ml_user_id', data.userId);
+          console.log('Verificando localStorage:', localStorage.getItem('ml_access_token')?.substring(0, 20));
           window.mlConnected = true;
           if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
 
