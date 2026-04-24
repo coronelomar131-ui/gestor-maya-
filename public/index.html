@@ -772,11 +772,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       .then(r => r.json())
       .then(data => {
         console.log('Exchange response:', JSON.stringify(data));
-        if (data.accessToken) {
-          console.log('Guardando token en localStorage:', data.accessToken.substring(0, 20));
-          localStorage.setItem('ml_access_token', data.accessToken);
-          localStorage.setItem('ml_user_id', data.userId);
-          console.log('Verificando localStorage:', localStorage.getItem('ml_access_token')?.substring(0, 20));
+        if (data.mlUserId) {
+          console.log('Guardando ML user ID:', data.mlUserId);
+          localStorage.setItem('ml_user_id', data.mlUserId);
+          console.log('Verificando localStorage:', localStorage.getItem('ml_user_id'));
           window.mlConnected = true;
           if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
 
@@ -1387,19 +1386,17 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
 
-    // Migrate ML token from localStorage to Firestore
-    const mlToken = localStorage.getItem('ml_access_token');
+    // Link Firebase user with ML user ID
     const mlUserId = localStorage.getItem('ml_user_id');
-    if (mlToken && mlUserId && db) {
+    if (mlUserId && db) {
       try {
-        await db.collection('ml_tokens').doc(user.uid).set({
-          ml_access_token: mlToken,
+        await db.collection('usuarios').doc(user.uid).update({
           ml_user_id: mlUserId,
           updated_at: new Date()
-        }, {merge: true});
-        console.log('ML token migrado a Firestore');
+        });
+        console.log('ML user ID linked to Firebase user');
       } catch (e) {
-        console.error('Error migrando ML token:', e);
+        console.error('Error linking ML user:', e);
       }
     }
 
@@ -2020,35 +2017,10 @@ window.cargarProductosML = async function() {
     const container = document.getElementById('ml-productos-container');
     container.innerHTML = '<p style="color:var(--gray)">Cargando productos...</p>';
 
-    let accessToken = null;
-    let userId = null;
+    let mlUserId = localStorage.getItem('ml_user_id');
+    console.log('ML User ID al cargar productos:', mlUserId);
 
-    // Try to get from Firestore first
-    const user = window._firebaseAuth?.currentUser;
-    if (user && window.db) {
-      try {
-        const docSnap = await window.db.collection('ml_tokens').doc(user.uid).get();
-        if (docSnap.exists()) {
-          accessToken = docSnap.data().ml_access_token;
-          userId = docSnap.data().ml_user_id;
-          console.log('Token loaded from Firestore');
-        }
-      } catch (e) {
-        console.log('Firestore read error, falling back to localStorage:', e);
-      }
-    }
-
-    // Fallback to localStorage
-    if (!accessToken) {
-      accessToken = localStorage.getItem('ml_access_token');
-      userId = localStorage.getItem('ml_user_id');
-      console.log('Token loaded from localStorage');
-    }
-
-    console.log('Token al cargar productos:', accessToken?.substring(0,20));
-    console.log('UserId al cargar productos:', userId);
-
-    if (!accessToken || !userId) {
+    if (!mlUserId) {
       container.innerHTML = `
         <div style="text-align:center;padding:40px">
           <p style="color:var(--gray);margin-bottom:20px">No estás conectado con Mercado Libre</p>
@@ -2058,10 +2030,7 @@ window.cargarProductosML = async function() {
       return;
     }
 
-    const token = localStorage.getItem('ml_access_token');
-    console.log('Token al cargar productos:', token ? token.substring(0,20) : 'VACÍO');
-
-    const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
+    const response = await fetch(`/api/ml?action=productos&mlUserId=${mlUserId}`);
     const data = await response.json();
 
     if (data.error === 'token_expired' || response.status === 401) {
@@ -2176,41 +2145,16 @@ window.sincronizarInventarioML = async function() {
     const statusDiv = document.getElementById('ml-sync-status');
     statusDiv.style.display = 'block';
 
-    let accessToken = null;
-    let userId = null;
+    let mlUserId = localStorage.getItem('ml_user_id');
+    console.log('ML User ID en sync:', mlUserId);
 
-    // Try to get from Firestore first
-    const user = window._firebaseAuth?.currentUser;
-    if (user && window.db) {
-      try {
-        const docSnap = await window.db.collection('ml_tokens').doc(user.uid).get();
-        if (docSnap.exists()) {
-          accessToken = docSnap.data().ml_access_token;
-          userId = docSnap.data().ml_user_id;
-          console.log('Token loaded from Firestore in sync');
-        }
-      } catch (e) {
-        console.log('Firestore read error in sync, falling back to localStorage:', e);
-      }
-    }
-
-    // Fallback to localStorage
-    if (!accessToken) {
-      accessToken = localStorage.getItem('ml_access_token');
-      userId = localStorage.getItem('ml_user_id');
-      console.log('Token loaded from localStorage in sync');
-    }
-
-    console.log('Token en sync:', accessToken?.substring(0,20));
-    console.log('UserId en sync:', userId);
-
-    if (!accessToken || !userId) {
+    if (!mlUserId) {
       statusDiv.innerHTML = '🔗 <strong>Necesitas conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
       return;
     }
 
     // Fetch products from ML
-    const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
+    const response = await fetch(`/api/ml?action=productos&mlUserId=${mlUserId}`);
     const data = await response.json();
 
     if (data.error) {

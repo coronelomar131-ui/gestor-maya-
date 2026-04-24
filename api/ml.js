@@ -1,7 +1,99 @@
 const axios = require('axios');
+const admin = require('firebase-admin');
 
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
 const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tUrXwr';
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: 'mayav3-f9d9b',
+    databaseURL: 'https://mayav3-f9d9b.firebaseio.com'
+  });
+}
+
+const db = admin.firestore();
+
+// Get or refresh ML token
+async function getValidMLToken(mlUserId) {
+  try {
+    const tokenDoc = await db.collection('ml_tokens').doc(mlUserId).get();
+
+    if (!tokenDoc.exists()) {
+      throw new Error('No ML token found');
+    }
+
+    const tokenData = tokenDoc.data();
+    const now = new Date();
+    const expiresAt = tokenData.expires_at?.toDate?.() || new Date(0);
+
+    // If token is still valid (not expired), return it
+    if (expiresAt > now) {
+      console.log('Using valid access token for:', mlUserId);
+      return tokenData.access_token;
+    }
+
+    // Token expired, try to refresh
+    console.log('Access token expired, refreshing...');
+    return await refreshMLToken(mlUserId, tokenData.refresh_token);
+  } catch (error) {
+    console.error('Error getting ML token:', error.message);
+    throw error;
+  }
+}
+
+// Refresh expired token
+async function refreshMLToken(mlUserId, refreshToken) {
+  try {
+    const params = new URLSearchParams();
+    params.append('grant_type', 'refresh_token');
+    params.append('client_id', ML_APP_ID);
+    params.append('client_secret', ML_SECRET_KEY);
+    params.append('refresh_token', refreshToken);
+
+    const response = await axios.post('https://api.mercadolibre.com/oauth/token', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+
+    const newAccessToken = response.data.access_token;
+    const expiresIn = response.data.expires_in || 21600; // 6 hours default
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Save new token to Firestore
+    await db.collection('ml_tokens').doc(mlUserId).update({
+      access_token: newAccessToken,
+      refresh_token: response.data.refresh_token || refreshToken,
+      expires_at: expiresAt,
+      updated_at: new Date()
+    });
+
+    console.log('Token refreshed successfully for:', mlUserId);
+    return newAccessToken;
+  } catch (error) {
+    console.error('Error refreshing ML token:', error.response?.data || error.message);
+    throw new Error('Failed to refresh ML token');
+  }
+}
+
+// Save tokens to Firestore after exchange
+async function saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn = 21600) {
+  try {
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    await db.collection('ml_tokens').doc(mlUserId).set({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_at: expiresAt,
+      created_at: new Date(),
+      updated_at: new Date()
+    }, { merge: true });
+
+    console.log('ML tokens saved to Firestore for:', mlUserId);
+  } catch (error) {
+    console.error('Error saving ML tokens to Firestore:', error.message);
+    throw error;
+  }
+}
 
 // Get Mercado Libre products
 module.exports = async function handler(req, res) {
@@ -10,11 +102,13 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { action, userId, accessToken, itemId, quantity, price } = req.query;
+    const { action, mlUserId, itemId, quantity, price } = req.query;
 
     // Get user's products from ML
-    if (action === 'productos' && accessToken) {
+    if (action === 'productos' && mlUserId) {
       try {
+        const accessToken = await getValidMLToken(mlUserId);
+
         const response = await axios.get(
           'https://api.mercadolibre.com/users/me/items/search',
           {
@@ -27,7 +121,7 @@ module.exports = async function handler(req, res) {
           }
         );
 
-        console.log('Usuario ML:', userId);
+        console.log('Usuario ML:', mlUserId);
         console.log('Items encontrados:', response.data.results?.length);
 
         const itemIds = response.data.results || [];
@@ -52,7 +146,7 @@ module.exports = async function handler(req, res) {
         if (error.response?.status === 400 || error.response?.status === 401) {
           return res.status(401).json({
             error: 'token_expired',
-            message: 'Token de ML expirado, reconecta ML'
+            message: 'Token de ML expiró o es inválido, reconecta ML'
           });
         }
         console.error('Error en productos ML:', error.response?.data || error.message);
@@ -63,20 +157,31 @@ module.exports = async function handler(req, res) {
     }
 
     // Sync product to ML
-    if (action === 'sync' && accessToken && itemId) {
-      const response = await axios.put(
-        `https://api.mercadolibre.com/items/${itemId}`,
-        {
-          available_quantity: parseInt(quantity),
-          price: parseFloat(price)
-        },
-        { params: { access_token: accessToken } }
-      );
+    if (action === 'sync' && mlUserId && itemId) {
+      try {
+        const accessToken = await getValidMLToken(mlUserId);
 
-      return res.status(200).json({
-        success: true,
-        data: response.data
-      });
+        const response = await axios.put(
+          `https://api.mercadolibre.com/items/${itemId}`,
+          {
+            available_quantity: parseInt(quantity),
+            price: parseFloat(price)
+          },
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          }
+        );
+
+        return res.status(200).json({
+          success: true,
+          data: response.data
+        });
+      } catch (error) {
+        console.error('Error syncing product:', error.message);
+        return res.status(500).json({
+          error: 'Sync failed: ' + error.message
+        });
+      }
     }
 
     // Exchange authorization code for access token
@@ -108,14 +213,21 @@ module.exports = async function handler(req, res) {
         console.log('ML token response:', JSON.stringify(tokenResponse.data));
 
         const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
-          params: { access_token: tokenResponse.data.access_token }
+          headers: { 'Authorization': `Bearer ${tokenResponse.data.access_token}` }
         });
+
+        const mlUserId = mlUserResponse.data.id;
+        const accessToken = tokenResponse.data.access_token;
+        const refreshToken = tokenResponse.data.refresh_token;
+        const expiresIn = tokenResponse.data.expires_in || 21600;
+
+        // Save tokens to Firestore
+        await saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn);
 
         return res.status(200).json({
           success: true,
-          accessToken: tokenResponse.data.access_token,
-          userId: mlUserResponse.data.id,
-          refreshToken: tokenResponse.data.refresh_token || null
+          mlUserId: mlUserId,
+          message: 'Tokens saved to database'
         });
       } catch (error) {
         console.log('ML Response:', JSON.stringify(error.response?.data));
@@ -129,13 +241,7 @@ module.exports = async function handler(req, res) {
 
     // Get OAuth login URL
     if (action === 'login-url') {
-      const { code_challenge, code_challenge_method } = req.query;
       let loginUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent('https://gestor-maya.vercel.app/callback')}`;
-
-      if (code_challenge && code_challenge_method) {
-        loginUrl += `&code_challenge=${code_challenge}&code_challenge_method=${code_challenge_method}`;
-      }
-
       return res.status(200).json({ loginUrl });
     }
 
