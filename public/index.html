@@ -778,7 +778,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
           setTimeout(() => {
             if (window.cargarProductosML) window.cargarProductosML();
-          }, 300);
+          }, 1000);
         } else {
           if (window.toast) window.toast('Error ML: ' + (data.error || 'Sin token'), 'error');
         }
@@ -2013,6 +2013,9 @@ window.cargarProductosML = async function() {
       `;
       return;
     }
+
+    const token = localStorage.getItem('ml_access_token');
+    console.log('Token al cargar productos:', token ? token.substring(0,20) : 'VACÍO');
 
     const response = await fetch(`/api/ml?action=productos&userId=${userId}&accessToken=${accessToken}`);
     const data = await response.json();
