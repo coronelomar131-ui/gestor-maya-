@@ -776,6 +776,21 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           localStorage.setItem('ml_user_id', data.userId);
           window.mlConnected = true;
           if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
+
+          // Save to Firestore if user is authenticated
+          const user = window._firebaseAuth?.currentUser;
+          if (user && window.db) {
+            try {
+              window.db.collection('ml_tokens').doc(user.uid).set({
+                ml_access_token: data.accessToken,
+                ml_user_id: data.userId,
+                updated_at: new Date()
+              }).catch(err => console.error('Error saving to Firestore:', err));
+            } catch (e) {
+              console.error('Firestore save error:', e);
+            }
+          }
+
           setTimeout(() => {
             if (window.cargarProductosML) window.cargarProductosML();
           }, 1000);
@@ -1999,10 +2014,33 @@ window.cargarProductosML = async function() {
     const container = document.getElementById('ml-productos-container');
     container.innerHTML = '<p style="color:var(--gray)">Cargando productos...</p>';
 
-    const accessToken = localStorage.getItem('ml_access_token');
-    const userId = localStorage.getItem('ml_user_id');
-    console.log('Token guardado:', accessToken?.substring(0,20));
-    console.log('UserId guardado:', userId);
+    let accessToken = null;
+    let userId = null;
+
+    // Try to get from Firestore first
+    const user = window._firebaseAuth?.currentUser;
+    if (user && window.db) {
+      try {
+        const docSnap = await window.db.collection('ml_tokens').doc(user.uid).get();
+        if (docSnap.exists()) {
+          accessToken = docSnap.data().ml_access_token;
+          userId = docSnap.data().ml_user_id;
+          console.log('Token loaded from Firestore');
+        }
+      } catch (e) {
+        console.log('Firestore read error, falling back to localStorage:', e);
+      }
+    }
+
+    // Fallback to localStorage
+    if (!accessToken) {
+      accessToken = localStorage.getItem('ml_access_token');
+      userId = localStorage.getItem('ml_user_id');
+      console.log('Token loaded from localStorage');
+    }
+
+    console.log('Token al cargar productos:', accessToken?.substring(0,20));
+    console.log('UserId al cargar productos:', userId);
 
     if (!accessToken || !userId) {
       container.innerHTML = `
@@ -2132,11 +2170,33 @@ window.sincronizarInventarioML = async function() {
     const statusDiv = document.getElementById('ml-sync-status');
     statusDiv.style.display = 'block';
 
-    // Get ML credentials from localStorage
-    const accessToken = localStorage.getItem('ml_access_token');
-    const userId = localStorage.getItem('ml_user_id');
-    console.log('Token guardado en sync:', accessToken?.substring(0,20));
-    console.log('UserId guardado en sync:', userId);
+    let accessToken = null;
+    let userId = null;
+
+    // Try to get from Firestore first
+    const user = window._firebaseAuth?.currentUser;
+    if (user && window.db) {
+      try {
+        const docSnap = await window.db.collection('ml_tokens').doc(user.uid).get();
+        if (docSnap.exists()) {
+          accessToken = docSnap.data().ml_access_token;
+          userId = docSnap.data().ml_user_id;
+          console.log('Token loaded from Firestore in sync');
+        }
+      } catch (e) {
+        console.log('Firestore read error in sync, falling back to localStorage:', e);
+      }
+    }
+
+    // Fallback to localStorage
+    if (!accessToken) {
+      accessToken = localStorage.getItem('ml_access_token');
+      userId = localStorage.getItem('ml_user_id');
+      console.log('Token loaded from localStorage in sync');
+    }
+
+    console.log('Token en sync:', accessToken?.substring(0,20));
+    console.log('UserId en sync:', userId);
 
     if (!accessToken || !userId) {
       statusDiv.innerHTML = '🔗 <strong>Necesitas conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
