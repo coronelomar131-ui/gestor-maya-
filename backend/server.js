@@ -154,12 +154,15 @@ app.get('/ml/login-url', (req, res) => {
 app.get('/ml/callback', async (req, res) => {
   try {
     const { code } = req.query;
+    console.log('=== ML Callback Started ===');
+    console.log('Code received:', code, 'Length:', code?.length);
+
     if (!code) {
+      console.log('ERROR: No authorization code provided');
       return res.status(400).json({ error: 'No authorization code' });
     }
 
-    console.log('Code received:', code, 'Length:', code?.length);
-
+    console.log('Step 1: Exchanging code for token...');
     const params = new URLSearchParams();
     params.append('grant_type', 'authorization_code');
     params.append('client_id', ML_APP_ID);
@@ -171,8 +174,10 @@ app.get('/ml/callback', async (req, res) => {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
 
-    console.log('ML token response:', JSON.stringify(tokenResponse.data));
+    console.log('Step 2: Token exchange successful, got access token');
+    console.log('ML token response data keys:', Object.keys(tokenResponse.data));
 
+    console.log('Step 3: Fetching user info from ML...');
     const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
       headers: { 'Authorization': `Bearer ${tokenResponse.data.access_token}` }
     });
@@ -182,14 +187,28 @@ app.get('/ml/callback', async (req, res) => {
     const refreshToken = tokenResponse.data.refresh_token;
     const expiresIn = tokenResponse.data.expires_in || 21600;
 
+    console.log('Step 4: Got mlUserId:', mlUserId);
+    console.log('Step 5: Saving tokens to Firestore...');
+
     // Save tokens to Firestore
     await saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn);
 
+    console.log('Step 6: Tokens saved successfully');
+
     // Redirect to frontend with ml_connected flag and mlUserId
     const frontendUrl = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
+    console.log('Step 7: Redirecting to:', `${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
+    console.log('Step 8: Executing res.redirect()');
+
     res.redirect(`${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
+
+    console.log('Step 9: Redirect sent');
   } catch (error) {
-    console.error('ML Error:', error.response?.data || error.message);
+    console.error('=== ML Callback ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error response data:', error.response?.data);
+    console.error('Error response status:', error.response?.status);
+    console.error('Full error:', error);
     res.status(400).json({
       error: 'Token exchange failed: ' + (error.response?.data?.message || error.message),
       details: error.response?.data
