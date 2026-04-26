@@ -195,14 +195,25 @@ app.get('/ml/callback', async (req, res) => {
 
     console.log('Step 6: Tokens saved successfully');
 
-    // Redirect to frontend with ml_connected flag and mlUserId
+    // Send HTML page with JavaScript redirect
     const frontendUrl = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
-    console.log('Step 7: Redirecting to:', `${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
-    console.log('Step 8: Executing res.redirect()');
+    console.log('Step 7: Sending HTML redirect page to:', `${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
 
-    res.redirect(`${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
-
-    console.log('Step 9: Redirect sent');
+    res.send(`
+<html>
+<head>
+  <title>Conectando Mercado Libre...</title>
+</head>
+<body>
+  <p>Conectando con Mercado Libre...</p>
+  <script>
+    console.log('JavaScript redirect executing, mlUserId: ${mlUserId}');
+    localStorage.setItem('ml_user_id', '${mlUserId}');
+    window.location.href = '${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}';
+  </script>
+</body>
+</html>
+    `);
   } catch (error) {
     console.error('=== ML Callback ERROR ===');
     console.error('Error message:', error.message);
