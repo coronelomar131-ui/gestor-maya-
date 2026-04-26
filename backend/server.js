@@ -21,15 +21,25 @@ const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tU
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI || 'http://localhost:3000/ml/callback';
 
 // Initialize Firebase Admin
-if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: process.env.FIREBASE_PROJECT_ID || 'mayav3-f9d9b'
-  });
+let db;
+try {
+  if (!admin.apps.length) {
+    console.log('Initializing Firebase Admin...');
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    if (!serviceAccount.project_id) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT missing or invalid - no project_id found');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: process.env.FIREBASE_PROJECT_ID || 'mayav3-f9d9b'
+    });
+    console.log('Firebase Admin initialized successfully');
+  }
+  db = admin.firestore();
+} catch (error) {
+  console.error('Firebase initialization error:', error.message);
+  process.exit(1);
 }
-
-const db = admin.firestore();
 
 // ═══════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
