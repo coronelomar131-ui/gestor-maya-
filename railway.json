@@ -1,4 +1,4 @@
 {
-  "builder": "nixpacks",
-  "start": "cd backend && npm install && npm start"
+  "builder": "nixpacks"
 }
+
