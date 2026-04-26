@@ -302,8 +302,6 @@ app.use((req, res) => {
 // START SERVER
 // ═══════════════════════════════════════════════════════════
 
-app.listen(PORT, () => {
-  console.log(`🚀 Backend server running on port ${PORT}`);
-  console.log(`🔗 CORS origin: ${process.env.CORS_ORIGIN || 'https://gestor-maya.vercel.app'}`);
-  console.log(`📍 ML Redirect URI: ${ML_REDIRECT_URI}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
