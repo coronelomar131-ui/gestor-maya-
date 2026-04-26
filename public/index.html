@@ -765,30 +765,19 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script>
 (function() {
   const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  if (code) {
-    window.history.replaceState({}, '', '/');
-    fetch('https://gestor-maya-production.up.railway.app/ml/callback?code=' + encodeURIComponent(code))
-      .then(r => r.json())
-      .then(data => {
-        console.log('Exchange response:', JSON.stringify(data));
-        if (data.mlUserId) {
-          console.log('Guardando ML user ID:', data.mlUserId);
-          localStorage.setItem('ml_user_id', data.mlUserId);
-          console.log('Verificando localStorage:', localStorage.getItem('ml_user_id'));
-          window.mlConnected = true;
-          if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
+  const mlConnected = params.get('ml_connected');
+  const mlUserId = params.get('mlUserId');
 
-          setTimeout(() => {
-            if (window.cargarProductosML) window.cargarProductosML();
-          }, 1000);
-        } else {
-          if (window.toast) window.toast('Error ML: ' + (data.error || 'Sin token'), 'error');
-        }
-      })
-      .catch(e => {
-        if (window.toast) window.toast('Error: ' + e.message, 'error');
-      });
+  if (mlConnected === 'true' && mlUserId) {
+    console.log('ML conectado desde callback, mlUserId:', mlUserId);
+    window.history.replaceState({}, '', '/');
+    localStorage.setItem('ml_user_id', mlUserId);
+    window.mlConnected = true;
+    if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
+
+    setTimeout(() => {
+      if (window.cargarProductosML) window.cargarProductosML();
+    }, 1000);
   }
 })();
 </script>

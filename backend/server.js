@@ -185,9 +185,9 @@ app.get('/ml/callback', async (req, res) => {
     // Save tokens to Firestore
     await saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn);
 
-    // Redirect to frontend with mlUserId
+    // Redirect to frontend with ml_connected flag and mlUserId
     const frontendUrl = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
-    res.redirect(`${frontendUrl}?ml_user_id=${mlUserId}`);
+    res.redirect(`${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
   } catch (error) {
     console.error('ML Error:', error.response?.data || error.message);
     res.status(400).json({
