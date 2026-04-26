@@ -129,6 +129,11 @@ async function saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn = 216
 // ROUTES
 // ═══════════════════════════════════════════════════════════
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'Maya Backend corriendo', version: '1.0' });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
