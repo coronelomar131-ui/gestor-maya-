@@ -55,19 +55,37 @@ async function getValidMLToken(mlUserId) {
 
     const tokenData = tokenDoc.data();
     const now = new Date();
-    const expiresAt = tokenData.expires_at?.toDate?.() || new Date(0);
+
+    // Convert Firestore Timestamp to Date
+    let expiresAt = tokenData.expires_at;
+    if (expiresAt && typeof expiresAt.toDate === 'function') {
+      expiresAt = expiresAt.toDate();
+    } else if (expiresAt instanceof Date) {
+      // Already a Date
+    } else {
+      expiresAt = new Date(0);
+    }
+
+    // Debug logging
+    const minutesUntilExpiry = (expiresAt - now) / (1000 * 60);
+    console.log('=== Token Validation Debug ===');
+    console.log('mlUserId:', mlUserId);
+    console.log('expires_at (converted):', expiresAt);
+    console.log('now:', now);
+    console.log('Minutes until expiry:', minutesUntilExpiry.toFixed(2));
+    console.log('Token valid?', expiresAt > now);
 
     // If token is still valid, return it
     if (expiresAt > now) {
-      console.log('Using valid access token for:', mlUserId);
+      console.log('✅ Using valid access token for:', mlUserId);
       return tokenData.access_token;
     }
 
     // Token expired, try to refresh
-    console.log('Access token expired, refreshing...');
+    console.log('⏰ Access token expired, refreshing...');
     return await refreshMLToken(mlUserId, tokenData.refresh_token);
   } catch (error) {
-    console.error('Error getting ML token:', error.message);
+    console.error('❌ Error getting ML token:', error.message);
     throw error;
   }
 }
@@ -110,17 +128,31 @@ async function saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn = 216
 
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-    await db.collection('ml_tokens').doc(String(mlUserId)).set({
+    console.log('Saving tokens to Firestore:');
+    console.log('  - mlUserId:', mlUserId);
+    console.log('  - expiresAt:', expiresAt);
+    console.log('  - expiresIn:', expiresIn, 'seconds');
+    console.log('  - refreshToken provided?', !!refreshToken);
+
+    const tokenData = {
       access_token: accessToken,
       refresh_token: refreshToken || null,
       expires_at: expiresAt,
       created_at: new Date(),
       updated_at: new Date()
-    }, { merge: true });
+    };
 
-    console.log('ML tokens saved to Firestore for:', mlUserId);
+    console.log('Token data to save:', {
+      ...tokenData,
+      access_token: tokenData.access_token.substring(0, 20) + '...',
+      refresh_token: tokenData.refresh_token ? tokenData.refresh_token.substring(0, 20) + '...' : null
+    });
+
+    await db.collection('ml_tokens').doc(String(mlUserId)).set(tokenData, { merge: true });
+
+    console.log('✅ ML tokens saved successfully to Firestore for:', mlUserId);
   } catch (error) {
-    console.error('Error saving ML tokens to Firestore:', error.message);
+    console.error('❌ Error saving ML tokens to Firestore:', error.message);
     throw error;
   }
 }
@@ -174,8 +206,11 @@ app.get('/ml/callback', async (req, res) => {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
 
-    console.log('Step 2: Token exchange successful, got access token');
-    console.log('ML token response data keys:', Object.keys(tokenResponse.data));
+    console.log('Step 2: Token exchange successful');
+    console.log('ML token response keys:', Object.keys(tokenResponse.data));
+    console.log('access_token present?', !!tokenResponse.data.access_token);
+    console.log('refresh_token present?', !!tokenResponse.data.refresh_token);
+    console.log('refresh_token value:', tokenResponse.data.refresh_token || 'NOT PROVIDED BY ML');
 
     console.log('Step 3: Fetching user info from ML...');
     const mlUserResponse = await axios.get('https://api.mercadolibre.com/users/me', {
@@ -188,7 +223,10 @@ app.get('/ml/callback', async (req, res) => {
     const expiresIn = tokenResponse.data.expires_in || 21600;
 
     console.log('Step 4: Got mlUserId:', mlUserId);
-    console.log('Step 5: Saving tokens to Firestore...');
+    console.log('Step 5: About to save tokens to Firestore');
+    console.log('  - accessToken:', accessToken.substring(0, 20) + '...');
+    console.log('  - refreshToken:', refreshToken ? refreshToken.substring(0, 20) + '...' : 'null/undefined');
+    console.log('  - expiresIn:', expiresIn, 'seconds');
 
     // Save tokens to Firestore
     await saveMLTokens(mlUserId, accessToken, refreshToken, expiresIn);
