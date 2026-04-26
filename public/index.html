@@ -768,7 +768,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   const code = params.get('code');
   if (code) {
     window.history.replaceState({}, '', '/');
-    fetch('/api/ml?action=exchange&code=' + encodeURIComponent(code))
+    fetch('https://gestor-maya-production.up.railway.app/ml/callback?code=' + encodeURIComponent(code))
       .then(r => r.json())
       .then(data => {
         console.log('Exchange response:', JSON.stringify(data));
@@ -1951,7 +1951,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 
 window.loginMercadoLibre = async function() {
   try {
-    const response = await fetch('/api/ml?action=login-url');
+    const response = await fetch('https://gestor-maya-production.up.railway.app/ml/login-url');
     const data = await response.json();
     if(data.loginUrl) {
       window.location.href = data.loginUrl;
@@ -2030,7 +2030,7 @@ window.cargarProductosML = async function() {
       return;
     }
 
-    const response = await fetch(`/api/ml?action=productos&mlUserId=${mlUserId}`);
+    const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/productos/${mlUserId}`);
     const data = await response.json();
 
     if (data.error === 'token_expired' || response.status === 401) {
@@ -2154,7 +2154,7 @@ window.sincronizarInventarioML = async function() {
     }
 
     // Fetch products from ML
-    const response = await fetch(`/api/ml?action=productos&mlUserId=${mlUserId}`);
+    const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/productos/${mlUserId}`);
     const data = await response.json();
 
     if (data.error) {
