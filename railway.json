@@ -1,4 +1,10 @@
 {
-  "builder": "nixpacks"
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "cd backend && node server.js",
+    "restartPolicyType": "ON_FAILURE"
+  }
 }
 
