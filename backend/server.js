@@ -227,7 +227,68 @@ app.get('/ml/callback', async (req, res) => {
   }
 });
 
-// Get user's products from ML
+// Get user's inventory from ML
+app.get('/ml/inventory/:mlUserId', async (req, res) => {
+  try {
+    const { mlUserId } = req.params;
+
+    if (!mlUserId) {
+      return res.status(400).json({ error: 'mlUserId is required' });
+    }
+
+    console.log('Fetching inventory for mlUserId:', mlUserId);
+    const accessToken = await getValidMLToken(mlUserId);
+
+    const response = await axios.get(
+      'https://api.mercadolibre.com/users/me/items/search',
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: {
+          status: 'active'
+        }
+      }
+    );
+
+    console.log('Items encontrados:', response.data.results?.length);
+
+    const itemIds = response.data.results || [];
+    const inventory = await Promise.all(
+      itemIds.slice(0, 50).map(async (id) => {
+        try {
+          const item = await axios.get(`https://api.mercadolibre.com/items/${id}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          });
+          return item.data;
+        } catch (e) {
+          console.error('Error fetching item:', id, e.message);
+          return null;
+        }
+      })
+    );
+
+    res.json({
+      success: true,
+      mlUserId: mlUserId,
+      count: inventory.filter(p => p).length,
+      items: inventory.filter(p => p)
+    });
+  } catch (error) {
+    if (error.response?.status === 400 || error.response?.status === 401) {
+      return res.status(401).json({
+        error: 'token_expired',
+        message: 'Token de ML expiró o es inválido, reconecta ML'
+      });
+    }
+    console.error('Error en inventory ML:', error.response?.data || error.message);
+    res.status(500).json({
+      error: error.response?.data?.message || error.message
+    });
+  }
+});
+
+// Legacy endpoint - keeps /ml/productos for backwards compatibility
 app.get('/ml/productos/:mlUserId', async (req, res) => {
   try {
     const { mlUserId } = req.params;
