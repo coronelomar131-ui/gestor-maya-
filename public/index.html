@@ -768,10 +768,13 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   const mlConnected = params.get('ml_connected');
   const mlUserId = params.get('mlUserId');
 
+  console.log('ML params detected:', { mlConnected, mlUserId });
+
   if (mlConnected === 'true' && mlUserId) {
-    console.log('ML conectado desde callback, mlUserId:', mlUserId);
-    window.history.replaceState({}, '', '/');
+    console.log('Guardando mlUserId en localStorage:', mlUserId);
     localStorage.setItem('ml_user_id', mlUserId);
+    console.log('Verificando localStorage después de guardar:', localStorage.getItem('ml_user_id'));
+    window.history.replaceState({}, '', '/');
     window.mlConnected = true;
     if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
 
@@ -2102,7 +2105,7 @@ window.syncInventarioML = async function(itemId, cantidad, precio) {
 
 window.cargarOrdenesML = async function() {
   try {
-    const response = await fetch('/api/ordenes-ml');
+    const response = await fetch('https://gestor-maya-production.up.railway.app/ml/ordenes');
     const data = await response.json();
 
     const tbody = document.getElementById('ml-ordenes-tbody');
