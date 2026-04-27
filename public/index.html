@@ -2135,23 +2135,52 @@ window.abrirSyncML = function(itemId, title, price, quantity) {
 
 window.syncInventarioML = async function(itemId, cantidad, precio) {
   try {
-    const accessToken = localStorage.getItem('ml_access_token');
-    if (!accessToken) {
-      window.toast('⚠️ No hay token de acceso a Mercado Libre', 'error');
+    // Get ML User ID from localStorage (set when user connects with ML)
+    const mlUserId = localStorage.getItem('ml_user_id');
+    if (!mlUserId) {
+      window.toast('⚠️ Necesitas conectar con Mercado Libre primero', 'error');
       return;
     }
 
-    const response = await fetch(`/api/ml?action=sync&itemId=${itemId}&quantity=${cantidad}&price=${precio}&accessToken=${accessToken}`);
+    // Get ML token from Firestore (stored securely server-side)
+    const tokenDoc = await db.collection('ml_tokens').doc(mlUserId).get();
+    if (!tokenDoc.exists) {
+      window.toast('⚠️ Token de Mercado Libre no encontrado', 'error');
+      return;
+    }
+
+    const accessToken = tokenDoc.data().access_token;
+    if (!accessToken) {
+      window.toast('⚠️ Token de acceso inválido', 'error');
+      return;
+    }
+
+    // Use Railway backend to sync product
+    const response = await fetch('https://gestor-maya-production.up.railway.app/ml/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mlUserId: mlUserId,
+        itemId: itemId,
+        quantity: cantidad,
+        price: precio
+      })
+    });
+
     const data = await response.json();
 
     if (data.error) {
-      window.toast('Error: ' + data.error, 'error');
+      window.toast('❌ Error: ' + data.error, 'error');
     } else {
       window.toast('✅ Producto sincronizado con Mercado Libre', 'success');
-      cargarProductosML();
+      // Reload products list
+      if (window.cargarProductosML) {
+        cargarProductosML();
+      }
     }
   } catch (error) {
-    window.toast('Error: ' + error.message, 'error');
+    window.toast('❌ Error: ' + error.message, 'error');
+    console.error('Sync error:', error);
   }
 };
 
@@ -2222,8 +2251,9 @@ window.sincronizarInventarioML = async function() {
         ultimaSincronizacion: new Date()
       };
 
-      if (currentUser) {
-        syncData.usuario = currentUser.uid;
+      const authUser = auth.currentUser;
+      if (authUser) {
+        syncData.usuario = authUser.uid;
       }
 
       await db.collection('inventario').doc(`ml_${producto.id}`).set(syncData, { merge: true });
