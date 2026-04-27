@@ -2222,8 +2222,8 @@ window.sincronizarInventarioML = async function() {
         ultimaSincronizacion: new Date()
       };
 
-      if (user) {
-        syncData.usuario = user.uid;
+      if (currentUser) {
+        syncData.usuario = currentUser.uid;
       }
 
       await db.collection('inventario').doc(`ml_${producto.id}`).set(syncData, { merge: true });

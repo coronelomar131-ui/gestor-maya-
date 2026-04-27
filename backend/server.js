@@ -298,8 +298,9 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
     console.log('Items encontrados:', response.data.results?.length);
 
     const itemIds = response.data.results || [];
+    console.log('Total items from ML API:', itemIds.length);
     const inventory = await Promise.all(
-      itemIds.slice(0, 50).map(async (id) => {
+      itemIds.map(async (id) => {
         try {
           const item = await axios.get(`https://api.mercadolibre.com/items/${id}`, {
             headers: { 'Authorization': `Bearer ${accessToken}` }
