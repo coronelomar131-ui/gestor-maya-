@@ -1344,7 +1344,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCgMRItmi_9_NjEvYmqp8_Bg2K8XqWY4IE",
@@ -1386,7 +1386,7 @@ onAuthStateChanged(auth, async (user) => {
     const mlUserId = localStorage.getItem('ml_user_id');
     if (mlUserId && db) {
       try {
-        await db.collection('usuarios').doc(user.uid).update({
+        await updateDoc(doc(db, 'usuarios', user.uid), {
           ml_user_id: mlUserId,
           updated_at: new Date()
         });
@@ -1975,7 +1975,7 @@ window.handleMLCallback = async function() {
 
       if (data.accessToken) {
         // Save to Firebase for this user
-        await db.collection('usuarios').doc(userId).set({
+        await setDoc(doc(db, 'usuarios', userId), {
           ml_access_token: data.accessToken,
           ml_user_id: data.userId,
           ml_authorized: true,
@@ -2147,7 +2147,7 @@ window.syncInventarioML = async function(itemId, cantidad, precio) {
     }
 
     // Get ML token from Firestore (stored securely server-side)
-    const tokenDoc = await db.collection('ml_tokens').doc(mlUserId).get();
+    const tokenDoc = await getDoc(doc(db, 'ml_tokens', mlUserId));
     if (!tokenDoc.exists) {
       window.toast('⚠️ Token de Mercado Libre no encontrado', 'error');
       return;
@@ -2260,7 +2260,7 @@ window.sincronizarInventarioML = async function() {
         syncData.usuario = authUser.uid;
       }
 
-      await db.collection('inventario').doc(`ml_${producto.id}`).set(syncData, { merge: true });
+      await setDoc(doc(db, 'inventario', `ml_${producto.id}`), syncData, { merge: true });
       syncedCount++;
     }
 
@@ -2314,8 +2314,8 @@ window.setupMLAutoSync = function() {
       if (window._firebaseAuth?.currentUser) {
         const user = window._firebaseAuth.currentUser;
         if (db && user) {
-          db.collection('usuarios').doc(user.uid).get().then(doc => {
-            if (doc.exists && doc.data().ml_access_token) {
+          getDoc(doc(db, 'usuarios', user.uid)).then(docSnapshot => {
+            if (docSnapshot.exists() && docSnapshot.data().ml_access_token) {
               // Silent sync - don't show status
               console.log('Auto-syncing ML inventory...');
             }
