@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "mlUserId": "1166342749",
+  "count": 3,
+  "items": [
+    {
+      "id": "MLA1234567890",
+      "title": "Llanta Michelin 205/60R16",
+      "thumbnail": "https://http2.mlstatic.com/D_1234567890-MLA1234567890.jpg",
+      "price": 2850.50,
+      "available_quantity": 15,
+      "status": "active",
+      "permalink": "https://articulo.mercadolibre.com.mx/MLM-1234567890",
+      "condition": "new"
+    },
+    {
+      "id": "MLA0987654321",
+      "title": "Filtro de aire Genesis GX570",
+      "thumbnail": "https://http2.mlstatic.com/D_0987654321-MLA0987654321.jpg",
+      "price": 450.00,
+      "available_quantity": 42,
+      "status": "active",
+      "permalink": "https://articulo.mercadolibre.com.mx/MLM-0987654321",
+      "condition": "new"
+    },
+    {
+      "id": "MLA5555555555",
+      "title": "Pastillas de freno Toyota Corolla",
+      "thumbnail": "https://http2.mlstatic.com/D_5555555555-MLA5555555555.jpg",
+      "price": 650.75,
+      "available_quantity": 8,
+      "status": "active",
+      "permalink": "https://articulo.mercadolibre.com.mx/MLM-5555555555",
+      "condition": "new"
+    }
+  ]
+}
