@@ -1356,8 +1356,12 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+window.auth = getAuth(app);
+window.db = getFirestore(app);
+
+// Keep references for module scope
+const auth = window.auth;
+const db = window.db;
 
 // ── STATE ──
 let currentUser = null;
