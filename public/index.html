@@ -2233,11 +2233,13 @@ window.sincronizarInventarioML = async function() {
     statusDiv.innerHTML = `✅ ${syncedCount} productos sincronizados con Mercado Libre`;
     window.toast(`✅ Sincronización exitosa: ${syncedCount} productos`, 'success');
 
-    // Reload inventory
-    loadInventario();
+    // Reload inventory (function not found, commented out)
+    // loadInventario();
 
     // Show alert in dashboard
-    mostrarAlertaML(`Se sincronizaron ${syncedCount} productos de Mercado Libre`);
+    if (window.mostrarAlertaML) {
+      mostrarAlertaML(`Se sincronizaron ${syncedCount} productos de Mercado Libre`);
+    }
 
     setTimeout(() => {
       statusDiv.style.display = 'none';
