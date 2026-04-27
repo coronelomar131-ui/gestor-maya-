@@ -277,6 +277,8 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
     console.log('Fetching inventory for mlUserId:', mlUserId);
     const accessToken = await getValidMLToken(mlUserId);
 
+    console.log('About to call ML API with Authorization:', `Bearer ${accessToken.substring(0, 30)}...`);
+
     const response = await axios.get(
       'https://api.mercadolibre.com/users/me/items/search',
       {
@@ -289,6 +291,10 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
       }
     );
 
+    console.log('=== ML API Response ===');
+    console.log('Status Code:', response.status);
+    console.log('Response Body:', JSON.stringify(response.data, null, 2));
+    console.log('Authorization Header Sent:', `Bearer ${accessToken.substring(0, 30)}...`);
     console.log('Items encontrados:', response.data.results?.length);
 
     const itemIds = response.data.results || [];
@@ -313,10 +319,23 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
       items: inventory.filter(p => p)
     });
   } catch (error) {
+    console.error('=== ERROR in /ml/inventory ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Response status:', error.response?.status);
+    console.error('Response data:', error.response?.data);
+    console.error('Error config URL:', error.config?.url);
+    console.error('Error config headers:', error.config?.headers);
+
     if (error.response?.status === 400 || error.response?.status === 401) {
+      console.error('❌ Token validation failed - returning 401');
       return res.status(401).json({
         error: 'token_expired',
-        message: 'Token de ML expiró o es inválido, reconecta ML'
+        message: 'Token de ML expiró o es inválido, reconecta ML',
+        details: {
+          status: error.response?.status,
+          mlError: error.response?.data
+        }
       });
     }
     console.error('Error en inventory ML:', error.response?.data || error.message);
