@@ -280,7 +280,7 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
     console.log('About to call ML API with Authorization:', `Bearer ${accessToken.substring(0, 30)}...`);
 
     const response = await axios.get(
-      'https://api.mercadolibre.com/users/me/items/search',
+      `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`
@@ -357,7 +357,7 @@ app.get('/ml/productos/:mlUserId', async (req, res) => {
     const accessToken = await getValidMLToken(mlUserId);
 
     const response = await axios.get(
-      'https://api.mercadolibre.com/users/me/items/search',
+      `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`
