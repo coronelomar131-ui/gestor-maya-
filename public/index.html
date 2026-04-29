@@ -2531,7 +2531,7 @@ window.showImportExcelModal = function() {
 
       // Start from row 2 (skip header in row 1)
       const clientesToImport = [];
-      for (let i = 1; i < rows.length && i < 10; i++) {
+      for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row.A) break; // Stop if empty row
 
