@@ -760,6 +760,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 </style>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <script>
@@ -988,6 +989,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <div style="display:flex;gap:10px;flex-wrap:wrap">
               <input class="search-box" placeholder="🔍 Buscar cliente..." oninput="filterTable('cli-table',this.value)">
               <button class="btn btn-secondary btn-sm" onclick="openModal('modal-cliente')">+ Agregar Cliente</button>
+              <button class="btn btn-primary btn-sm" onclick="showImportExcelModal()" id="btn-import-excel" style="display:none">📥 Importar Excel</button>
+              <button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:0.9em" onclick="exportClientesExcel()">📤 Exportar Excel</button>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -1358,6 +1361,20 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 window.auth = getAuth(app);
 window.db = getFirestore(app);
+
+// Export Firestore functions to window for use in non-module scripts
+window.addDoc = addDoc;
+window.getDocs = getDocs;
+window.getDoc = getDoc;
+window.setDoc = setDoc;
+window.updateDoc = updateDoc;
+window.deleteDoc = deleteDoc;
+window.collection = collection;
+window.doc = doc;
+window.query = query;
+window.where = where;
+window.orderBy = orderBy;
+window.serverTimestamp = serverTimestamp;
 
 // Keep references for module scope
 const auth = window.auth;
@@ -2342,6 +2359,188 @@ window.showModule = function(name) {
   if (name === 'mercadolibre') {
     cargarProductosML();
     cargarOrdenesML();
+  }
+};
+
+// ═══════════════════════════════════════
+// EXCEL IMPORT/EXPORT FOR CLIENTS
+// ═══════════════════════════════════════
+
+window.showImportExcelModal = function() {
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.xlsx,.xls,.csv';
+  fileInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 'A', defval: '' });
+
+      // Start from row 2 (skip header in row 1)
+      const clientesToImport = [];
+      for (let i = 1; i < rows.length && i < 10; i++) {
+        const row = rows[i];
+        if (!row.A) break; // Stop if empty row
+
+        clientesToImport.push({
+          codigoCliente: String(row.A || '').trim(),
+          razonSocial: String(row.B || '').trim(),
+          rfc: String(row.C || '').trim(),
+          calle: String(row.D || '').trim(),
+          numeroExterior: String(row.E || '').trim(),
+          numeroInterior: String(row.F || '').trim(),
+          colonia: String(row.G || '').trim(),
+          municipio: String(row.H || '').trim(),
+          ciudad: String(row.I || '').trim(),
+          estado: String(row.J || '').trim(),
+          pais: String(row.K || 'México').trim(),
+          codigoPostal: String(row.L || '').trim(),
+          email: String(row.M || '').trim(),
+          telefono: String(row.N || '').trim()
+        });
+      }
+
+      // Show preview modal
+      showImportPreview(clientesToImport, rows.length - 1);
+    } catch (error) {
+      window.toast('Error al leer archivo: ' + error.message, 'error');
+    }
+  };
+  fileInput.click();
+};
+
+window.showImportPreview = async function(clientes, totalInFile) {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
+
+  let previewHTML = `
+    <div style="background:white;padding:30px;border-radius:12px;max-width:600px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+      <h2 style="margin-top:0;color:#1E4F7A">📥 Importar Clientes desde Excel</h2>
+      <p style="color:var(--gray)">Se importarán <strong>${clientes.length}</strong> cliente(s) del archivo (Total en archivo: ${totalInFile})</p>
+
+      <div style="background:#f3f4f6;border-radius:8px;padding:15px;margin:20px 0;max-height:300px;overflow-y:auto">
+        <table style="width:100%;font-size:0.9em;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:2px solid #ddd">
+              <th style="text-align:left;padding:8px">Código</th>
+              <th style="text-align:left;padding:8px">Razón Social</th>
+              <th style="text-align:left;padding:8px">Email</th>
+            </tr>
+          </thead>
+          <tbody>
+  `;
+
+  clientes.slice(0, 5).forEach(c => {
+    previewHTML += `
+      <tr style="border-bottom:1px solid #ddd">
+        <td style="padding:8px">${c.codigoCliente}</td>
+        <td style="padding:8px">${c.razonSocial}</td>
+        <td style="padding:8px;font-size:0.85em">${c.email}</td>
+      </tr>
+    `;
+  });
+
+  previewHTML += `
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button class="btn btn-secondary btn-sm" onclick="this.closest('div').parentElement.parentElement.remove()">❌ Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmImportClientes(${JSON.stringify(clientes).replace(/"/g, '&quot;')}, this.closest('div').parentElement.parentElement)">✅ Confirmar</button>
+      </div>
+    </div>
+  `;
+
+  modal.innerHTML = previewHTML;
+  document.body.appendChild(modal);
+};
+
+window.confirmImportClientes = async function(clientesJSON, modal) {
+  const clientes = typeof clientesJSON === 'string' ? JSON.parse(clientesJSON.replace(/&quot;/g, '"')) : clientesJSON;
+
+  try {
+    const statusDiv = document.createElement('div');
+    statusDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:30px;border-radius:12px;z-index:10001;box-shadow:0 20px 60px rgba(0,0,0,0.3)';
+    statusDiv.innerHTML = `<p style="margin:0">Importando 0 de ${clientes.length}...</p>`;
+    document.body.appendChild(statusDiv);
+
+    let imported = 0, skipped = 0;
+
+    for (let i = 0; i < clientes.length; i++) {
+      const c = clientes[i];
+      if (!c.codigoCliente) {
+        skipped++;
+        continue;
+      }
+
+      // Check if already exists
+      const q = query(collection(window.db, 'clientes'), where('codigoCliente', '==', c.codigoCliente));
+      const existing = await getDocs(q);
+
+      if (existing.empty) {
+        await addDoc(collection(window.db, 'clientes'), {
+          ...c,
+          createdAt: serverTimestamp(),
+          estado: 'activo'
+        });
+        imported++;
+      } else {
+        skipped++;
+      }
+
+      statusDiv.innerHTML = `<p style="margin:0">Importando ${imported} de ${clientes.length}...</p>`;
+    }
+
+    statusDiv.remove();
+    modal.remove();
+    window.toast(`✅ ${imported} importados, ${skipped} omitidos`, 'success');
+    renderClientes();
+  } catch (error) {
+    window.toast('Error: ' + error.message, 'error');
+  }
+};
+
+window.exportClientesExcel = async function() {
+  try {
+    const clientesSnap = await getDocs(collection(window.db, 'clientes'));
+    const clientes = clientesSnap.docs.map(doc => ({
+      'Código Cliente': doc.data().codigoCliente || '',
+      'Razón Social': doc.data().razonSocial || '',
+      'RFC': doc.data().rfc || '',
+      'Calle': doc.data().calle || '',
+      'Nº Exterior': doc.data().numeroExterior || '',
+      'Nº Interior': doc.data().numeroInterior || '',
+      'Colonia': doc.data().colonia || '',
+      'Municipio': doc.data().municipio || '',
+      'Ciudad': doc.data().ciudad || '',
+      'Estado': doc.data().estado || '',
+      'País': doc.data().pais || 'México',
+      'Código Postal': doc.data().codigoPostal || '',
+      'Email': doc.data().email || '',
+      'Teléfono': doc.data().telefono || ''
+    }));
+
+    if (clientes.length === 0) {
+      window.toast('No hay clientes para exportar', 'info');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(clientes);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
+
+    const now = new Date();
+    const fecha = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    XLSX.writeFile(wb, `Clientes_Maya_${fecha}.xlsx`);
+
+    window.toast('✅ Excel descargado', 'success');
+  } catch (error) {
+    window.toast('Error: ' + error.message, 'error');
   }
 };
 
