@@ -996,7 +996,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="cli-table">
               <thead><tr>
-                <th>Nombre</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>Tipo</th><th>Acciones</th>
+                <th>Código</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>Acciones</th>
               </tr></thead>
               <tbody id="cli-body">
                 <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>
@@ -1216,23 +1216,60 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
 <!-- Modal Cliente -->
 <div class="modal-overlay" id="modal-cliente">
-  <div class="modal">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
     <div class="modal-head"><h3>👥 Nuevo Cliente</h3><button class="modal-close" onclick="closeModal('modal-cliente')">×</button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Nombre completo / Empresa</label><input type="text" id="c-nombre" placeholder="Nombre o razón social"></div>
       <div class="grid-2">
-        <div class="form-group"><label>Teléfono</label><input type="tel" id="c-tel" placeholder="(55) 1234-5678"></div>
+        <div class="form-group"><label>Código Cliente</label><input type="text" id="c-codigo" placeholder="Auto-generado" readonly></div>
+        <div class="form-group"><label>Razón Social *</label><input type="text" id="c-razonSocial" placeholder="Nombre de la empresa" required></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group"><label>RFC</label><input type="text" id="c-rfc" placeholder="RFC"></div>
         <div class="form-group"><label>Email</label><input type="email" id="c-email" placeholder="cliente@email.com"></div>
       </div>
+
       <div class="grid-2">
-        <div class="form-group"><label>RFC</label><input type="text" id="c-rfc" placeholder="RFC (opcional)"></div>
-        <div class="form-group"><label>Tipo</label>
-          <select id="c-tipo">
-            <option>Taller mecánico</option><option>Distribuidor</option><option>Particular</option><option>Agencia</option>
-          </select>
-        </div>
+        <div class="form-group"><label>Teléfono</label><input type="tel" id="c-telefono" placeholder="(55) 1234-5678"></div>
       </div>
-      <div class="form-group"><label>Dirección</label><textarea id="c-dir" placeholder="Dirección completa"></textarea></div>
+
+      <div style="border-top:2px solid #e5e7eb;margin:15px 0;padding:15px 0">
+        <h4 style="margin:0 0 15px 0;color:#1E4F7A">Domicilio</h4>
+
+        <div class="grid-2">
+          <div class="form-group"><label>Calle</label><input type="text" id="c-calle" placeholder="Nombre de la calle"></div>
+          <div class="form-group"><label>Número Exterior</label><input type="text" id="c-numeroExterior" placeholder="Número exterior"></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group"><label>Número Interior</label><input type="text" id="c-numeroInterior" placeholder="Número interior (opcional)"></div>
+          <div class="form-group"><label>Colonia</label><input type="text" id="c-colonia" placeholder="Colonia"></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group"><label>Municipio</label><input type="text" id="c-municipio" placeholder="Municipio"></div>
+          <div class="form-group"><label>Ciudad</label><input type="text" id="c-ciudad" placeholder="Ciudad"></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group"><label>Estado</label>
+            <select id="c-estado">
+              <option value="">Seleccionar estado</option>
+              <option>Aguascalientes</option><option>Baja California</option><option>Baja California Sur</option>
+              <option>Campeche</option><option>CDMX</option><option>Coahuila</option><option>Colima</option>
+              <option>Chiapas</option><option>Chihuahua</option><option>Durango</option><option>Estado de México</option>
+              <option>Guanajuato</option><option>Guerrero</option><option>Hidalgo</option><option>Jalisco</option>
+              <option>Michoacán</option><option>Morelos</option><option>Nayarit</option><option>Nuevo León</option>
+              <option>Oaxaca</option><option>Puebla</option><option>Querétaro</option><option>Quintana Roo</option>
+              <option>San Luis Potosí</option><option>Sinaloa</option><option>Sonora</option><option>Tabasco</option>
+              <option>Tamaulipas</option><option>Tlaxcala</option><option>Veracruz</option><option>Yucatán</option><option>Zacatecas</option>
+            </select>
+          </div>
+          <div class="form-group"><label>País</label><input type="text" id="c-pais" placeholder="País" value="México"></div>
+        </div>
+
+        <div class="form-group"><label>Código Postal</label><input type="text" id="c-codigoPostal" placeholder="CP"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-cliente')">Cancelar</button>
@@ -1572,11 +1609,11 @@ function renderClientes() {
   }
   body.innerHTML = data.clientes.map(c => `
     <tr>
-      <td style="font-weight:600;color:#f0f4f8">${c.nombre || '—'}</td>
-      <td>${c.telefono || '—'}</td>
+      <td style="font-weight:600;color:#3BBCD4">${c.codigoCliente || c.codigo || '—'}</td>
+      <td style="font-weight:600">${c.razonSocial || c.nombre || '—'}</td>
+      <td>${c.telefono || c.tel || '—'}</td>
       <td>${c.email || '—'}</td>
       <td>${c.rfc || '—'}</td>
-      <td><span class="badge badge-b">${c.tipo || '—'}</span></td>
       <td><button class="btn btn-danger btn-sm" onclick="deleteItem('clientes','${c.id}')">🗑</button></td>
     </tr>
   `).join('');
@@ -1757,21 +1794,57 @@ window.saveProducto = async function() {
 };
 
 window.saveCliente = async function() {
-  const obj = {
-    nombre: document.getElementById('c-nombre').value,
-    telefono: document.getElementById('c-tel').value,
-    email: document.getElementById('c-email').value,
-    rfc: document.getElementById('c-rfc').value,
-    tipo: document.getElementById('c-tipo').value,
-    direccion: document.getElementById('c-dir').value,
-    createdAt: serverTimestamp()
-  };
-  if (!obj.nombre) return toast('Ingresa el nombre del cliente', 'error');
+  const razonSocial = document.getElementById('c-razonSocial').value.trim();
+  if (!razonSocial) return toast('Razón Social es requerida', 'error');
+
   try {
+    // Auto-generate client code
+    let codigoCliente = document.getElementById('c-codigo').value;
+    if (!codigoCliente) {
+      const existentes = await getDocs(collection(db, 'clientes'));
+      let maxNum = 0;
+      existentes.forEach(doc => {
+        const codigo = doc.data().codigoCliente || '';
+        if (codigo.startsWith('CL')) {
+          const num = parseInt(codigo.substring(2));
+          if (!isNaN(num)) maxNum = Math.max(maxNum, num);
+        }
+      });
+      codigoCliente = `CL${maxNum + 1}`;
+      document.getElementById('c-codigo').value = codigoCliente;
+    }
+
+    const obj = {
+      codigoCliente: codigoCliente,
+      razonSocial: razonSocial,
+      rfc: document.getElementById('c-rfc').value.trim() || '',
+      email: document.getElementById('c-email').value.trim() || '',
+      telefono: document.getElementById('c-telefono').value.trim() || '',
+      calle: document.getElementById('c-calle').value.trim() || '',
+      numeroExterior: document.getElementById('c-numeroExterior').value.trim() || '',
+      numeroInterior: document.getElementById('c-numeroInterior').value.trim() || '',
+      colonia: document.getElementById('c-colonia').value.trim() || '',
+      municipio: document.getElementById('c-municipio').value.trim() || '',
+      ciudad: document.getElementById('c-ciudad').value.trim() || '',
+      estado: document.getElementById('c-estado').value || '',
+      pais: document.getElementById('c-pais').value.trim() || 'México',
+      codigoPostal: document.getElementById('c-codigoPostal').value.trim() || '',
+      createdAt: serverTimestamp()
+    };
+
     await addDoc(collection(db, 'clientes'), obj);
     closeModal('modal-cliente');
-    toast('Cliente agregado ✅', 'success');
-    ['c-nombre','c-tel','c-email','c-rfc','c-dir'].forEach(id => document.getElementById(id).value = '');
+    toast(`✅ Cliente ${codigoCliente} agregado`, 'success');
+
+    // Clear form
+    ['c-codigo','c-razonSocial','c-rfc','c-email','c-telefono','c-calle','c-numeroExterior',
+     'c-numeroInterior','c-colonia','c-municipio','c-ciudad','c-estado','c-pais','c-codigoPostal']
+      .forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.id !== 'c-codigo') el.value = '';
+      });
+    document.getElementById('c-estado').value = '';
+    document.getElementById('c-pais').value = 'México';
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
