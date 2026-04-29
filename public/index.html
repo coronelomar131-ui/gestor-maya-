@@ -1159,6 +1159,44 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="form-group"><label>Descripción / Productos</label>
         <textarea id="v-desc" placeholder="Ej: 2x Filtro de aceite Bosch, 1x Pastilla de freno..."></textarea>
       </div>
+
+      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #3BBCD4">
+        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📋 Información del Vehículo</h4>
+
+        <div class="grid-2">
+          <div class="form-group"><label>Marca</label>
+            <select id="v-marca" onchange="actualizarSubmarkas()">
+              <option value="">— Selecciona marca —</option>
+              <option>Nissan</option><option>VW</option><option>Ford</option><option>Chevrolet</option><option>Mazda</option>
+              <option>Honda</option><option>Suzuki</option><option>Jeep</option><option>Hyundai</option><option>Toyota</option>
+              <option>Kia</option><option>Renault</option><option>Peugeot</option><option>Fiat</option><option>BMW</option>
+              <option>Audi</option><option>Mercedes-Benz</option><option>Otro</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Submarca / Modelo</label><input type="text" id="v-submarca" placeholder="Ej: Versa, March..."></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group"><label>Responsable</label>
+            <select id="v-responsable">
+              <option value="">— Sin asignar —</option>
+              <option>Israel</option><option>Elisa</option><option>Omar</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Número de Reporte</label><input type="text" id="v-reporte" placeholder="REP-2345"></div>
+        </div>
+
+        <div class="form-group"><label>Estatus Interno</label>
+          <select id="v-estatus-interno">
+            <option value="">🟡 Para conseguir</option>
+            <option>🟢 Lista para enviar</option>
+            <option>🟡 Para conseguir</option>
+            <option>🔴 Para reparar</option>
+            <option>🔵 En proceso</option>
+          </select>
+        </div>
+      </div>
+
       <div class="grid-2">
         <div class="form-group"><label>Total ($)</label><input type="number" id="v-total" placeholder="0.00"></div>
         <div class="form-group"><label>Método de pago</label>
@@ -1750,25 +1788,63 @@ function updateClienteSelects() {
 }
 
 // ── SAVE FUNCTIONS ──
+window.actualizarSubmarkas = function() {
+  const marcaSelect = document.getElementById('v-submarca');
+  const marca = document.getElementById('v-marca').value;
+
+  const subarcas = {
+    'Nissan': ['Versa', 'March', 'Altima', 'Sentra', 'Tiida', 'Frontier', 'NP300', 'Tsuru', 'Otro'],
+    'VW': ['Jetta', 'Pointer', 'Gol', 'Passat', 'Tiguan', 'Vento', 'Polo', 'Otro'],
+    'Ford': ['Fiesta', 'Fusion', 'Escape', 'EcoSport', 'F-150', 'Lobo', 'Focus', 'Otro'],
+    'Chevrolet': ['Aveo', 'Beat', 'Spark', 'Cavalier', 'Tracker', 'Cruze', 'Sonic', 'Otro'],
+    'Mazda': ['Mazda 3', 'Mazda 6', 'CX-3', 'CX-5', 'CX-30', 'Otro'],
+    'Honda': ['Civic', 'Accord', 'CR-V', 'City', 'Fit', 'Otro'],
+    'Suzuki': ['Swift', 'Vitara', 'Ignis', 'Otro']
+  };
+
+  if (marca && subarcas[marca]) {
+    marcaSelect.type = 'text';
+    const datalist = document.getElementById('subarcas-list') || document.createElement('datalist');
+    datalist.id = 'subarcas-list';
+    datalist.innerHTML = subarcas[marca].map(s => `<option value="${s}">`).join('');
+    if (!document.getElementById('subarcas-list')) {
+      marcaSelect.setAttribute('list', 'subarcas-list');
+      document.body.appendChild(datalist);
+    }
+    marcaSelect.placeholder = 'Selecciona o escribe modelo...';
+  } else {
+    marcaSelect.type = 'text';
+    marcaSelect.removeAttribute('list');
+    marcaSelect.placeholder = 'Escribe el modelo...';
+  }
+};
+
 window.saveVenta = async function() {
   const obj = {
     cliente: document.getElementById('v-cliente').value,
     descripcion: document.getElementById('v-desc').value,
+    marca: document.getElementById('v-marca').value,
+    submarca: document.getElementById('v-submarca').value,
+    responsable: document.getElementById('v-responsable').value || '',
+    numeroReporte: document.getElementById('v-reporte').value,
+    estatusInterno: document.getElementById('v-estatus-interno').value,
     total: parseFloat(document.getElementById('v-total').value) || 0,
     metodoPago: document.getElementById('v-metodo').value,
     estatus: document.getElementById('v-estatus').value,
     notas: document.getElementById('v-notas').value,
-    creadoPor: currentUser.uid,
+    creadoPor: auth.currentUser?.uid || '',
     createdAt: serverTimestamp()
   };
   if (!obj.total) return toast('Ingresa el total de la venta', 'error');
   try {
     await addDoc(collection(db, 'ventas'), obj);
     closeModal('modal-venta');
-    toast('Venta registrada ✅', 'success');
-    document.getElementById('v-desc').value = '';
-    document.getElementById('v-total').value = '';
-    document.getElementById('v-notas').value = '';
+    toast('✅ Venta registrada', 'success');
+    // Clear form
+    ['v-desc', 'v-total', 'v-notas', 'v-marca', 'v-submarca', 'v-reporte', 'v-responsable'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('v-estatus-interno').value = '';
   } catch(e) { toast('Error al guardar: ' + e.message, 'error'); }
 };
 
