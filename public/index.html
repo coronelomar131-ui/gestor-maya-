@@ -765,20 +765,54 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <body>
 <script>
 (function() {
-  const params = new URLSearchParams(window.location.search);
-  const mlConnected = params.get('ml_connected');
-  const mlUserId = params.get('mlUserId');
+  // Extract URL parameters safely (avoid readonly issues by extracting values immediately)
+  const urlParams = new URLSearchParams(window.location.search);
+  const mlConnectedParam = urlParams.get('ml_connected');
+  const mlUserIdParam = urlParams.get('mlUserId');
 
-  console.log('ML params detected:', { mlConnected, mlUserId });
+  console.log('ML params detected:', { mlConnected: mlConnectedParam, mlUserId: mlUserIdParam });
 
-  if (mlConnected === 'true' && mlUserId) {
-    console.log('Guardando mlUserId en localStorage:', mlUserId);
-    localStorage.setItem('ml_user_id', mlUserId);
-    console.log('Verificando localStorage después de guardar:', localStorage.getItem('ml_user_id'));
+  if (mlConnectedParam === 'true' && mlUserIdParam) {
+    // Store in sessionStorage for immediate access
+    sessionStorage.setItem('ml_user_id_cache', mlUserIdParam);
+
+    // Clean URL immediately
     window.history.replaceState({}, '', '/');
     window.mlConnected = true;
-    if (window.toast) window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
 
+    // Show success message if toast is available
+    if (window.toast) {
+      window.toast('✅ Mercado Libre conectado exitosamente!', 'success');
+    }
+
+    // Wait for Firebase to be ready, then save to Firestore config
+    const saveToFirebase = async () => {
+      if (!window.db || !window.setDoc || !window.doc) {
+        // Firebase not ready, retry in 100ms
+        setTimeout(saveToFirebase, 100);
+        return;
+      }
+
+      try {
+        // Extract value to variable (avoid readonly issues)
+        const mlUserIdValue = mlUserIdParam;
+
+        // Save to global config so ALL users can see the mlUserId
+        await window.setDoc(window.doc(window.db, 'config', 'ml_global'), {
+          mlUserId: mlUserIdValue,
+          activo: true,
+          conectadoEn: new Date()
+        }, { merge: true });
+
+        console.log('✅ config/ml_global actualizado con mlUserId:', mlUserIdValue);
+      } catch (error) {
+        console.error('Error saving to config/ml_global:', error);
+      }
+    };
+
+    saveToFirebase();
+
+    // Load ML products after a brief delay
     setTimeout(() => {
       if (window.cargarProductosML) window.cargarProductosML();
     }, 1000);
@@ -2169,53 +2203,62 @@ window.loginMercadoLibre = async function() {
 
 // Check if returning from ML OAuth
 window.handleMLCallback = async function() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  const userId = localStorage.getItem('ml_auth_user_id');
+  // Extract parameters safely to avoid readonly issues
+  const urlParams = new URLSearchParams(window.location.search);
+  const codeParam = urlParams.get('code');
+  const userIdFromStorage = localStorage.getItem('ml_auth_user_id');
 
-  if (code && userId) {
+  if (codeParam && userIdFromStorage) {
     try {
       window.toast('⏳ Procesando autorización...', 'info');
 
       // Exchange code for access token via your backend
-      const response = await fetch(`/api/ml?action=exchange&code=${code}&userId=${userId}`);
+      const response = await fetch(`/api/ml?action=exchange&code=${codeParam}&userId=${userIdFromStorage}`);
       const data = await response.json();
 
-      if (data.accessToken) {
-        // Save to Firebase for this user
-        await setDoc(doc(db, 'usuarios', userId), {
-          ml_access_token: data.accessToken,
-          ml_user_id: data.userId,
+      // Extract values to variables (avoid readonly issues)
+      const accessToken = data.accessToken;
+      const mlUserId = data.userId;
+
+      if (accessToken && mlUserId) {
+        // 1. Save to Firebase for this user
+        await setDoc(doc(db, 'usuarios', userIdFromStorage), {
+          ml_access_token: accessToken,
+          ml_user_id: mlUserId,
           ml_authorized: true,
           ml_auth_date: new Date()
         }, { merge: true });
 
-        // ⭐ NUEVO: Guardar ML User ID de forma GLOBAL para todos los usuarios
+        // 2. Save to GLOBAL config so ALL users can see the mlUserId
         await setDoc(doc(db, 'config', 'ml_global'), {
-          mlUserId: data.userId,
-          conectadoPor: userId,
+          mlUserId: mlUserId,
+          conectadoPor: userIdFromStorage,
           conectadoEn: new Date(),
           activo: true
         }, { merge: true });
 
-        // Actualizar caché
-        sessionStorage.setItem('ml_user_id_cache', data.userId);
+        // 3. Update cache for instant access
+        sessionStorage.setItem('ml_user_id_cache', mlUserId);
 
-        // Clear localStorage
+        // 4. Clear authentication state
         localStorage.removeItem('ml_auth_user_id');
 
         window.toast('✅ Mercado Libre conectado exitosamente', 'success');
 
-        // Clean URL
+        // 5. Clean URL
         window.history.replaceState({}, document.title, window.location.pathname);
 
-        // Auto-sync
+        // 6. Auto-sync after a brief delay
         setTimeout(() => {
           sincronizarInventarioML();
         }, 1000);
+      } else {
+        window.toast('❌ Error: Respuesta inválida del servidor de Mercado Libre', 'error');
+        console.error('Invalid response from ML exchange:', { accessToken: !!accessToken, mlUserId: !!mlUserId });
       }
     } catch (error) {
-      window.toast('Error en autorización: ' + error.message, 'error');
+      window.toast('❌ Error en autorización: ' + error.message, 'error');
+      console.error('OAuth callback error:', error);
     }
   }
 };
