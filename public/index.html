@@ -2461,6 +2461,38 @@ window.cargarOrdenesML = async function() {
 };
 
 // ═════════════════════════════════════════════════════════════
+// NOTIFICACIONES PUSH (BONUS)
+// ═════════════════════════════════════════════════════════════
+
+window.pedirPermisosNotificacion = async function() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    const permiso = await Notification.requestPermission();
+    if (permiso === 'granted') {
+      window.toast('🔔 Notificaciones activadas', 'success');
+    }
+  }
+};
+
+window.enviarNotificacion = function(titulo, mensaje, icono = '🚗') {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(`${icono} ${titulo}`, {
+      body: mensaje,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico'
+    });
+  }
+};
+
+// Pedir permisos al cargar la app
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', pedirPermisosNotificacion);
+} else {
+  pedirPermisosNotificacion();
+}
+
+// ═════════════════════════════════════════════════════════════
 // MERCADO LIBRE INVENTORY SYNC
 // ═════════════════════════════════════════════════════════════
 
@@ -2492,38 +2524,44 @@ window.sincronizarInventarioML = async function() {
     const batch = writeBatch(db);
     let syncedCount = 0, stockBajo = 0, sinStock = 0, pausados = 0;
 
-    for (const producto of data.items) {
-      const syncData = {
-        codigo: `ML-${producto.id}`,
-        nombre: producto.title,
-        precio: producto.price,
-        stock: producto.available_quantity,
-        marca: 'Mercado Libre',
-        clase: 'A',
-        sincronizadoML: true,
-        mlId: producto.id,
-        enlaceML: producto.permalink,
-        status: producto.status,
-        thumbnail: producto.thumbnail?.replace('http://', 'https://'),
-        ultimaSincronizacion: new Date()
+    // Usar data.results O data.items (compatibilidad)
+    const items = data.results || data.items || [];
+
+    if (!items || items.length === 0) {
+      statusDiv.innerHTML = '⚠️ No se recibieron productos de Mercado Libre';
+      return;
+    }
+
+    for (const producto of items) {
+      // ⭐ FIX BUG 1: CREAR OBJETO NUEVO (no modificar readonly)
+      const productolimpio = {
+        id: producto.id || '',
+        title: producto.title || '',
+        price: producto.price || 0,
+        available_quantity: producto.available_quantity || 0,
+        status: producto.status || '',
+        permalink: producto.permalink || '',
+        // Thumbnail: fix http -> https en objeto nuevo
+        thumbnail: (producto.thumbnail || '').replace('http://', 'https://'),
+        ultimaSync: new Date()
       };
 
       const authUser = auth.currentUser;
       if (authUser) {
-        syncData.usuario = authUser.uid;
+        productolimpio.usuario = authUser.uid;
       }
 
       // Guardar en ml_productos (caché compartida)
-      batch.set(doc(db, 'ml_productos', producto.id.toString()), syncData);
+      batch.set(doc(db, 'ml_productos', productolimpio.id), productolimpio);
       // También guardar en inventario (legado)
-      batch.set(doc(db, 'inventario', `ml_${producto.id}`), syncData, { merge: true });
+      batch.set(doc(db, 'inventario', `ml_${productolimpio.id}`), productolimpio, { merge: true });
 
       syncedCount++;
 
       // ⭐ NUEVO: Contar alertas
-      if (producto.status === 'paused') pausados++;
-      else if (producto.available_quantity === 0) sinStock++;
-      else if (producto.available_quantity === 1) stockBajo++;
+      if (productolimpio.status === 'paused') pausados++;
+      else if (productolimpio.available_quantity === 0) sinStock++;
+      else if (productolimpio.available_quantity === 1) stockBajo++;
     }
 
     await batch.commit();
@@ -2549,6 +2587,14 @@ window.sincronizarInventarioML = async function() {
     // Show alert in dashboard
     if (window.mostrarAlertaML) {
       mostrarAlertaML(resumen);
+    }
+
+    // ⭐ BONUS: Notificaciones push si hay alertas críticas
+    if (sinStock > 0) {
+      enviarNotificacion('🔴 Stock Agotado', `${sinStock} producto(s) sin stock en ML`);
+    }
+    if (pausados > 0) {
+      enviarNotificacion('⚠️ Productos Pausados', `${pausados} producto(s) pausado(s) en ML`);
     }
 
     // Recargar productos ML en la vista
