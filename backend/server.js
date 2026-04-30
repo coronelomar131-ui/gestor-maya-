@@ -18,7 +18,9 @@ app.use(express.urlencoded({ extended: true }));
 // ML Config
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
 const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tUrXwr';
-const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI || 'http://localhost:3000/ml/callback';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
+// Build redirect URI from FRONTEND_URL if not explicitly set
+const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI || `${FRONTEND_URL}/ml/callback`;
 
 // Initialize Firebase Admin
 let db;
@@ -234,8 +236,7 @@ app.get('/ml/callback', async (req, res) => {
     console.log('Step 6: Tokens saved successfully');
 
     // Send HTML page with JavaScript redirect
-    const frontendUrl = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
-    console.log('Step 7: Sending HTML redirect page to:', `${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}`);
+    console.log('Step 7: Sending HTML redirect page to:', `${FRONTEND_URL}?ml_connected=true&mlUserId=${mlUserId}`);
 
     res.send(`
 <html>
@@ -247,7 +248,7 @@ app.get('/ml/callback', async (req, res) => {
   <script>
     console.log('JavaScript redirect executing, mlUserId: ${mlUserId}');
     localStorage.setItem('ml_user_id', '${mlUserId}');
-    window.location.href = '${frontendUrl}?ml_connected=true&mlUserId=${mlUserId}';
+    window.location.href = '${FRONTEND_URL}?ml_connected=true&mlUserId=${mlUserId}';
   </script>
 </body>
 </html>
