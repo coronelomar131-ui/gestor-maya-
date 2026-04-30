@@ -2437,26 +2437,46 @@ window.syncInventarioML = async function(itemId, cantidad, precio) {
 
 window.cargarOrdenesML = async function() {
   try {
-    const response = await fetch('https://gestor-maya-production.up.railway.app/ml/ordenes');
-    const data = await response.json();
+    const mlUserId = await obtenerMLUserId();
+    if (!mlUserId) {
+      console.log('No mlUserId para cargar órdenes');
+      return;
+    }
 
+    const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/ordenes/${mlUserId}`);
+    if (!response.ok) {
+      console.warn('Órdenes ML no disponible:', response.status);
+      const tbody = document.getElementById('ml-ordenes-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes disponibles</td></tr>';
+      }
+      return;
+    }
+
+    const data = await response.json();
     const tbody = document.getElementById('ml-ordenes-tbody');
-    if (!data.ordenes || data.ordenes.length === 0) {
+    if (!tbody) return;
+
+    if (!data.results || data.results.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes sincronizadas</td></tr>';
       return;
     }
 
-    tbody.innerHTML = data.ordenes.map(o => `
+    tbody.innerHTML = data.results.map(o => `
       <tr>
-        <td>${o.id || 'N/A'}</td>
+        <td><code style="color:#3BBCD4">${o.id || 'N/A'}</code></td>
         <td>${o.total_items || '—'}</td>
-        <td>$${o.total_amount || '—'}</td>
+        <td style="color:#4ade80;font-weight:600">$${(o.total_amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
         <td><span class="badge" style="background:var(--blue)">${o.status || 'pending'}</span></td>
-        <td>${new Date(o.fecha?.toDate?.() || o.fecha).toLocaleDateString('es-MX')}</td>
+        <td>${o.date_created ? new Date(o.date_created).toLocaleDateString('es-MX') : '—'}</td>
       </tr>
     `).join('');
   } catch (error) {
-    console.error('Error cargando órdenes:', error);
+    console.warn('Error cargando órdenes ML:', error.message);
+    const tbody = document.getElementById('ml-ordenes-tbody');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes disponibles</td></tr>';
+    }
   }
 };
 

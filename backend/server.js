@@ -346,6 +346,59 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════
+// ML ORDENES ENDPOINT
+// ═══════════════════════════════════════════════════════════
+app.get('/ml/ordenes/:mlUserId', async (req, res) => {
+  try {
+    const { mlUserId } = req.params;
+
+    if (!mlUserId) {
+      return res.status(400).json({ error: 'mlUserId is required' });
+    }
+
+    console.log('Fetching órdenes for mlUserId:', mlUserId);
+    const accessToken = await getValidMLToken(mlUserId);
+
+    const response = await axios.get(
+      `https://api.mercadolibre.com/orders/search?seller=${mlUserId}&sort=date_desc&limit=20`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      }
+    );
+
+    console.log('=== ML API Response - Órdenes ===');
+    console.log('Status Code:', response.status);
+    console.log('Órdenes encontradas:', response.data.results?.length);
+
+    res.json({
+      success: true,
+      mlUserId: mlUserId,
+      count: response.data.results?.length || 0,
+      results: response.data.results || []
+    });
+  } catch (error) {
+    console.error('=== ERROR in /ml/ordenes ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Response status:', error.response?.status);
+    console.error('Response data:', error.response?.data);
+
+    if (error.response?.status === 401 || error.response?.data?.error?.message?.includes('invalid_token')) {
+      return res.status(401).json({
+        error: 'token_expired',
+        message: 'Token de ML expiró o es inválido'
+      });
+    }
+
+    res.status(500).json({
+      error: error.response?.data?.message || error.message
+    });
+  }
+});
+
 // Legacy endpoint - keeps /ml/productos for backwards compatibility
 app.get('/ml/productos/:mlUserId', async (req, res) => {
   try {
