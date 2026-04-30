@@ -1616,7 +1616,17 @@ function startListeners() {
 function listenCollection(colName, bodyId, renderFn) {
   const q = query(collection(db, colName), orderBy('createdAt', 'desc'));
   const unsub = onSnapshot(q, (snap) => {
-    data[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // FIX: Create new objects from Firestore docs to avoid readonly property errors
+    // Don't use spread operator with Firestore readonly objects
+    data[colName] = snap.docs.map(d => {
+      const docData = d.data() || {};
+      const newObj = { id: d.id };
+      // Copy properties manually to avoid readonly issues
+      for (const key in docData) {
+        newObj[key] = docData[key];
+      }
+      return newObj;
+    });
     renderFn();
     updateDashboard();
     updateClienteSelects();
