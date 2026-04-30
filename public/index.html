@@ -764,6 +764,18 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 </head>
 <body>
 <script>
+// ERROR LISTENER - Capturar readonly errors exactos
+window.addEventListener('error', function(e) {
+  if (e.message.includes('readonly') || e.message.includes('Attempted to assign')) {
+    console.error('🚨 READONLY ERROR CAPTURADO 🚨');
+    console.error('Mensaje:', e.message);
+    console.error('Archivo:', e.filename);
+    console.error('Línea:', e.lineno);
+    console.error('Columna:', e.colno);
+    console.error('Stack:', e.error?.stack);
+  }
+});
+
 (function() {
   // Extract URL parameters safely (avoid readonly issues by extracting values immediately)
   const urlParams = new URLSearchParams(window.location.search);
