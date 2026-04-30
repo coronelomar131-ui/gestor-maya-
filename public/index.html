@@ -1422,7 +1422,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCgMRItmi_9_NjEvYmqp8_Bg2K8XqWY4IE",
@@ -2251,6 +2251,7 @@ window.cargarProductosML = async function() {
     }
 
     // Si no hay caché, hacer fetch directo
+    let data;
     if (items.length === 0) {
       const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/inventory/${mlUserId}`);
       data = await response.json();
