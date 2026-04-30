@@ -2201,66 +2201,14 @@ window.loginMercadoLibre = async function() {
   }
 };
 
-// Check if returning from ML OAuth
+// Check if returning from ML OAuth (fallback if inline script doesn't work)
+// Note: The main OAuth flow is handled by /ml/callback backend endpoint
+// which redirects to frontend with ?ml_connected=true&mlUserId=...
+// The inline script at top of page handles that flow.
+// This function is kept as a fallback but is typically not used.
 window.handleMLCallback = async function() {
-  // Extract parameters safely to avoid readonly issues
-  const urlParams = new URLSearchParams(window.location.search);
-  const codeParam = urlParams.get('code');
-  const userIdFromStorage = localStorage.getItem('ml_auth_user_id');
-
-  if (codeParam && userIdFromStorage) {
-    try {
-      window.toast('⏳ Procesando autorización...', 'info');
-
-      // Exchange code for access token via your backend
-      const response = await fetch(`/api/ml?action=exchange&code=${codeParam}&userId=${userIdFromStorage}`);
-      const data = await response.json();
-
-      // Extract values to variables (avoid readonly issues)
-      const accessToken = data.accessToken;
-      const mlUserId = data.userId;
-
-      if (accessToken && mlUserId) {
-        // 1. Save to Firebase for this user
-        await setDoc(doc(db, 'usuarios', userIdFromStorage), {
-          ml_access_token: accessToken,
-          ml_user_id: mlUserId,
-          ml_authorized: true,
-          ml_auth_date: new Date()
-        }, { merge: true });
-
-        // 2. Save to GLOBAL config so ALL users can see the mlUserId
-        await setDoc(doc(db, 'config', 'ml_global'), {
-          mlUserId: mlUserId,
-          conectadoPor: userIdFromStorage,
-          conectadoEn: new Date(),
-          activo: true
-        }, { merge: true });
-
-        // 3. Update cache for instant access
-        sessionStorage.setItem('ml_user_id_cache', mlUserId);
-
-        // 4. Clear authentication state
-        localStorage.removeItem('ml_auth_user_id');
-
-        window.toast('✅ Mercado Libre conectado exitosamente', 'success');
-
-        // 5. Clean URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-
-        // 6. Auto-sync after a brief delay
-        setTimeout(() => {
-          sincronizarInventarioML();
-        }, 1000);
-      } else {
-        window.toast('❌ Error: Respuesta inválida del servidor de Mercado Libre', 'error');
-        console.error('Invalid response from ML exchange:', { accessToken: !!accessToken, mlUserId: !!mlUserId });
-      }
-    } catch (error) {
-      window.toast('❌ Error en autorización: ' + error.message, 'error');
-      console.error('OAuth callback error:', error);
-    }
-  }
+  // No-op: The actual OAuth callback is handled by the backend and inline script
+  // If needed in the future, this can be expanded
 };
 
 // Check on page load
