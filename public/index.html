@@ -2262,7 +2262,15 @@ window.cargarProductosML = async function() {
     // ⭐ NUEVO: Cargar desde Firestore primero (caché compartida = más rápido)
     const mlProductosSnap = await getDocs(collection(db, 'ml_productos'));
     const items = [];
-    mlProductosSnap.forEach(doc => items.push(doc.data()));
+    // FIX: Create new objects from Firestore docs to avoid readonly property errors
+    mlProductosSnap.forEach(doc => {
+      const itemData = doc.data() || {};
+      const newItem = {};
+      for (const key in itemData) {
+        newItem[key] = itemData[key];
+      }
+      items.push(newItem);
+    });
 
     // Mostrar metadata de última sincronización
     const syncDoc = await getDoc(doc(db, 'config', 'ml_ultima_sync'));
