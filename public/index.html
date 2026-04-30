@@ -950,7 +950,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div class="table-card" style="margin-bottom:20px">
           <div class="table-header"><div class="table-title">🛒 Alertas de Mercado Libre</div></div>
           <div id="ml-alerts-container" style="padding:20px;color:var(--gray);text-align:center">
-            <p>📡 Sincronización automática en tiempo real</p>
+            <div id="ml-alerts-dashboard" style="display:flex;gap:15px;justify-content:center;flex-wrap:wrap;min-height:30px;align-items:center">
+              <p>📡 Cargando estado...</p>
+            </div>
           </div>
         </div>
         <div class="grid-2">
@@ -2383,6 +2385,77 @@ window.cargarProductosML = async function() {
   }
 };
 
+// ═════════════════════════════════════════════════════════════
+// FASE 2: TIEMPO REAL + NOTIFICACIONES
+// ═════════════════════════════════════════════════════════════
+
+// A. Escuchar cambios en tiempo real
+window.escucharProductosML = function() {
+  const mlProductosCollection = collection(db, 'ml_productos');
+  onSnapshot(mlProductosCollection, (snapshot) => {
+    const productos = [];
+    snapshot.forEach(doc => {
+      const itemData = doc.data() || {};
+      const newItem = {};
+      for (const key in itemData) {
+        newItem[key] = itemData[key];
+      }
+      productos.push(newItem);
+    });
+
+    if (productos.length > 0) {
+      verificarAlertas(productos);
+    }
+  }, (error) => {
+    console.error('Error en escucharProductosML:', error);
+  });
+};
+
+// B. Verificar alertas y mostrar notificaciones
+window.verificarAlertas = function(productos) {
+  const sinStock = productos.filter(p => p.available_quantity === 0).length;
+  const stockBajo = productos.filter(p => p.available_quantity === 1).length;
+  const pausados = productos.filter(p => p.status === 'paused').length;
+
+  // Actualizar dashboard alertas
+  const alertasDiv = document.getElementById('ml-alerts-dashboard');
+  if (alertasDiv) {
+    let html = '';
+    if (sinStock > 0) html += `<span style="color:#ef4444;margin-right:15px">🔴 ${sinStock} sin stock</span>`;
+    if (stockBajo > 0) html += `<span style="color:#f59e0b;margin-right:15px">🟡 ${stockBajo} stock bajo</span>`;
+    if (pausados > 0) html += `<span style="color:#f59e0b;margin-right:15px">⚠️ ${pausados} pausados</span>`;
+    if (sinStock === 0 && stockBajo === 0 && pausados === 0) html += '<span style="color:#22c55e">✅ Todo en orden</span>';
+    alertasDiv.innerHTML = html;
+  }
+
+  // Notificaciones push
+  if (Notification.permission === 'granted') {
+    if (sinStock > 0) {
+      new Notification('🔴 Maya Autopartes', {
+        body: `${sinStock} producto(s) sin stock en Mercado Libre`,
+        icon: '/favicon.ico'
+      });
+    }
+    if (stockBajo > 0) {
+      new Notification('🟡 Maya Autopartes', {
+        body: `${stockBajo} producto(s) con solo 1 unidad disponible`,
+        icon: '/favicon.ico'
+      });
+    }
+  }
+};
+
+// C. Iniciar tiempo real cuando se abre módulo ML
+window.iniciarMLTiempoReal = function() {
+  // Pedir permisos de notificación
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  // Activar escucha de cambios en tiempo real
+  escucharProductosML();
+};
+
 window.abrirSyncML = function(itemId, title, price, quantity) {
   const nuevoPrice = prompt(`Nuevo precio para "${title}":`, price);
   if (nuevoPrice === null) return;
@@ -2709,6 +2782,9 @@ const originalShowModule = window.showModule;
 window.showModule = function(name) {
   originalShowModule(name);
   if (name === 'mercadolibre') {
+    // Iniciar tiempo real + notificaciones
+    iniciarMLTiempoReal();
+    // Cargar datos
     cargarProductosML().catch(e => console.error('Error cargando productos ML:', e));
     cargarOrdenesML().catch(e => console.error('Error cargando órdenes ML:', e));
   }

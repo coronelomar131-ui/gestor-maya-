@@ -266,7 +266,7 @@ app.get('/ml/callback', async (req, res) => {
   }
 });
 
-// Get user's inventory from ML
+// Get user's inventory from ML with pagination
 app.get('/ml/inventory/:mlUserId', async (req, res) => {
   try {
     const { mlUserId } = req.params;
@@ -275,72 +275,79 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
       return res.status(400).json({ error: 'mlUserId is required' });
     }
 
-    console.log('Fetching inventory for mlUserId:', mlUserId);
+    console.log('Fetching ALL inventory for mlUserId:', mlUserId);
     const accessToken = await getValidMLToken(mlUserId);
 
-    console.log('About to call ML API with Authorization:', `Bearer ${accessToken.substring(0, 30)}...`);
+    // Obtener TODOS los productos con paginación
+    const LIMIT = 50;
+    let offset = 0;
+    let todos = [];
+    let total = 999;
 
-    const response = await axios.get(
-      `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
-        params: {
-          status: 'active'
+    while (todos.length < total) {
+      try {
+        const response = await axios.get(
+          `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            params: { limit: LIMIT, offset: offset }
+          }
+        );
+
+        const itemIds = response.data.results || [];
+        total = response.data.paging?.total || 0;
+
+        console.log(`Fetching items ${offset} to ${offset + itemIds.length} of ${total}`);
+
+        if (itemIds.length === 0) break;
+
+        // Buscar detalles en chunks de 20
+        for (let i = 0; i < itemIds.length; i += 20) {
+          const chunk = itemIds.slice(i, i + 20).join(',');
+          try {
+            const detResponse = await axios.get(
+              `https://api.mercadolibre.com/items?ids=${chunk}`,
+              { headers: { 'Authorization': `Bearer ${accessToken}` } }
+            );
+
+            const items = detResponse.data
+              .filter(r => r.code === 200)
+              .map(r => r.body);
+
+            todos = [...todos, ...items];
+          } catch (e) {
+            console.error('Error fetching chunk details:', e.message);
+          }
         }
+
+        offset += LIMIT;
+      } catch (e) {
+        console.error('Error fetching items page:', e.message);
+        break;
       }
-    );
+    }
 
-    console.log('=== ML API Response ===');
-    console.log('Status Code:', response.status);
-    console.log('Response Body:', JSON.stringify(response.data, null, 2));
-    console.log('Authorization Header Sent:', `Bearer ${accessToken.substring(0, 30)}...`);
-    console.log('Items encontrados:', response.data.results?.length);
-
-    const itemIds = response.data.results || [];
-    console.log('Total items from ML API:', itemIds.length);
-    const inventory = await Promise.all(
-      itemIds.map(async (id) => {
-        try {
-          const item = await axios.get(`https://api.mercadolibre.com/items/${id}`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-          });
-          return item.data;
-        } catch (e) {
-          console.error('Error fetching item:', id, e.message);
-          return null;
-        }
-      })
-    );
+    console.log(`✅ Total productos obtenidos: ${todos.length}`);
 
     res.json({
       success: true,
       mlUserId: mlUserId,
-      count: inventory.filter(p => p).length,
-      items: inventory.filter(p => p)
+      count: todos.length,
+      items: todos
     });
   } catch (error) {
     console.error('=== ERROR in /ml/inventory ===');
     console.error('Error type:', error.constructor.name);
     console.error('Error message:', error.message);
     console.error('Response status:', error.response?.status);
-    console.error('Response data:', error.response?.data);
-    console.error('Error config URL:', error.config?.url);
-    console.error('Error config headers:', error.config?.headers);
 
     if (error.response?.status === 400 || error.response?.status === 401) {
       console.error('❌ Token validation failed - returning 401');
       return res.status(401).json({
         error: 'token_expired',
-        message: 'Token de ML expiró o es inválido, reconecta ML',
-        details: {
-          status: error.response?.status,
-          mlError: error.response?.data
-        }
+        message: 'Token de ML expiró o es inválido, reconecta ML'
       });
     }
-    console.error('Error en inventory ML:', error.response?.data || error.message);
     res.status(500).json({
       error: error.response?.data?.message || error.message
     });
