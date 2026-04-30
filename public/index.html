@@ -1165,7 +1165,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
         <div class="grid-2">
           <div class="form-group"><label>Marca</label>
-            <select id="v-marca" onchange="actualizarSubmarkas()">
+            <select id="v-marca" onchange="actualizarSubmarkas()" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
               <option value="">— Selecciona marca —</option>
               <option>Nissan</option><option>VW</option><option>Ford</option><option>Chevrolet</option><option>Mazda</option>
               <option>Honda</option><option>Suzuki</option><option>Jeep</option><option>Hyundai</option><option>Toyota</option>
@@ -1173,21 +1173,21 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               <option>Audi</option><option>Mercedes-Benz</option><option>Otro</option>
             </select>
           </div>
-          <div class="form-group"><label>Submarca / Modelo</label><input type="text" id="v-submarca" placeholder="Ej: Versa, March..."></div>
+          <div class="form-group"><label>Submarca / Modelo</label><input type="text" id="v-submarca" placeholder="Ej: Versa, March..." style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4"></div>
         </div>
 
         <div class="grid-2">
           <div class="form-group"><label>Responsable</label>
-            <select id="v-responsable">
+            <select id="v-responsable" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
               <option value="">— Sin asignar —</option>
               <option>Israel</option><option>Elisa</option><option>Omar</option>
             </select>
           </div>
-          <div class="form-group"><label>Número de Reporte</label><input type="text" id="v-reporte" placeholder="REP-2345"></div>
+          <div class="form-group"><label>Número de Reporte</label><input type="text" id="v-reporte" placeholder="REP-2345" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4"></div>
         </div>
 
         <div class="form-group"><label>Estatus Interno</label>
-          <select id="v-estatus-interno">
+          <select id="v-estatus-interno" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
             <option value="">🟡 Para conseguir</option>
             <option>🟢 Lista para enviar</option>
             <option>🟡 Para conseguir</option>
@@ -2123,13 +2123,29 @@ window.obtenerMLUserId = async function() {
     const cached = sessionStorage.getItem('ml_user_id_cache');
     if (cached) return cached;
 
-    // Leer de Firestore (configuración global compartida)
-    const configDoc = await getDoc(doc(db, 'config', 'ml_global'));
-    if (configDoc.exists() && configDoc.data().activo) {
-      const mlUserId = configDoc.data().mlUserId;
+    // FALLBACK: Si no existe config global, intentar buscar en tokens de ML
+    try {
+      const configDoc = await getDoc(doc(db, 'config', 'ml_global'));
+      if (configDoc.exists() && configDoc.data().activo) {
+        const mlUserId = configDoc.data().mlUserId;
+        sessionStorage.setItem('ml_user_id_cache', mlUserId);
+        return mlUserId;
+      }
+    } catch (e) {
+      console.warn('config/ml_global no existe, buscando en ml_tokens...');
+    }
+
+    // FALLBACK: Buscar el primer token en ml_tokens
+    const tokensSnap = await getDocs(collection(db, 'ml_tokens'));
+    if (!tokensSnap.empty) {
+      const firstToken = tokensSnap.docs[0];
+      const mlUserId = firstToken.id;
       sessionStorage.setItem('ml_user_id_cache', mlUserId);
+      console.log('ML User ID encontrado en ml_tokens:', mlUserId);
       return mlUserId;
     }
+
+    console.log('No se encontró ML User ID en Firestore');
     return null;
   } catch (error) {
     console.error('Error obtener ML User ID:', error);
@@ -2618,8 +2634,8 @@ const originalShowModule = window.showModule;
 window.showModule = function(name) {
   originalShowModule(name);
   if (name === 'mercadolibre') {
-    cargarProductosML();
-    cargarOrdenesML();
+    cargarProductosML().catch(e => console.error('Error cargando productos ML:', e));
+    cargarOrdenesML().catch(e => console.error('Error cargando órdenes ML:', e));
   }
 };
 
