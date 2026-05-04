@@ -278,8 +278,8 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
     console.log('Fetching ALL inventory for mlUserId:', mlUserId);
     const accessToken = await getValidMLToken(mlUserId);
 
-    // Obtener TODOS los productos con paginación
-    const LIMIT = 50;
+    // Obtener TODOS los productos con paginación (status=active hace que solo cuente activos)
+    const LIMIT = 500;
     let offset = 0;
     let todos = [];
     let total = 999;
