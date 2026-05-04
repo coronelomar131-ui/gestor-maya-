@@ -290,7 +290,7 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
           `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
           {
             headers: { 'Authorization': `Bearer ${accessToken}` },
-            params: { limit: LIMIT, offset: offset }
+            params: { limit: LIMIT, offset: offset, status: 'active' }
           }
         );
 
