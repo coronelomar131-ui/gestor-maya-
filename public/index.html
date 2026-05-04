@@ -2311,11 +2311,17 @@ window.cargarProductosML = async function() {
       items = data.items;
     }
 
+    // Filtrar solo productos activos
+    const productosActivos = (items || []).filter(
+      p => p.status === "active" || p.status === "activo"
+    );
+    const listaFinal = productosActivos.length > 0 ? productosActivos : items;
+
     let html = syncInfo + `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:20px">
     `;
 
-    items.forEach(p => {
+    listaFinal.forEach(p => {
       const statusColor = p.status === 'active' ? '#3BBCD4' : '#f87171';
       const statusText = p.status === 'active' ? 'Activo' : p.status || 'Inactivo';
 
@@ -2381,7 +2387,7 @@ window.cargarProductosML = async function() {
     html += `</div>`;
     container.innerHTML = html;
 
-    window.toast(`✅ ${data.items.length} productos cargados desde Mercado Libre`, 'success');
+    window.toast(`✅ ${listaFinal.length} productos activos en Mercado Libre`, 'success');
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
   }
