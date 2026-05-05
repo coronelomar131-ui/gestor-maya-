@@ -3257,28 +3257,35 @@ window.savePago = async function() {
 
 // Listeners para Finanzas (solo admin)
 function startFinanzasListeners() {
-  if (currentRole !== 'admin') return;
+  try {
+    if (currentRole !== 'admin') return;
 
-  // Préstamos
-  const qPrestamos = query(collection(db, 'finanzas_prestamos'), orderBy('createdAt', 'desc'));
-  const unsubPrestamos = onSnapshot(qPrestamos, (snap) => {
-    const prestamos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderPrestamos(prestamos);
-  }, (err) => {
-    console.log('Listener error (prestamos):', err.message);
-  });
+    // Préstamos
+    const qPrestamos = query(collection(db, 'finanzas_prestamos'), orderBy('createdAt', 'desc'));
+    const unsubPrestamos = onSnapshot(qPrestamos, (snap) => {
+      const prestamos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderPrestamos(prestamos);
+    }, (err) => {
+      console.log('Listener error (prestamos):', err.message);
+    });
 
-  // Pagos
-  const qPagos = query(collection(db, 'finanzas_pagos'), orderBy('createdAt', 'desc'));
-  const unsubPagos = onSnapshot(qPagos, (snap) => {
-    const pagos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderPagos(pagos);
-    actualizarResumenFinanzas(pagos);
-  }, (err) => {
-    console.log('Listener error (pagos):', err.message);
-  });
+    // Pagos
+    const qPagos = query(collection(db, 'finanzas_pagos'), orderBy('createdAt', 'desc'));
+    const unsubPagos = onSnapshot(qPagos, (snap) => {
+      const pagos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderPagos(pagos);
+      actualizarResumenFinanzas(pagos);
+    }, (err) => {
+      console.log('Listener error (pagos):', err.message);
+    });
 
-  unsubs.push(unsubPrestamos, unsubPagos);
+    // Agregar unsubscribers a la lista global
+    if (typeof unsubs !== 'undefined') {
+      unsubs.push(unsubPrestamos, unsubPagos);
+    }
+  } catch (error) {
+    console.error('Error en startFinanzasListeners:', error);
+  }
 }
 
 function renderPrestamos(prestamos) {
