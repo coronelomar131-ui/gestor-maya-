@@ -2311,9 +2311,9 @@ window.cargarProductosML = async function() {
       items = data.items;
     }
 
-    // Filtrar solo productos con stock
+    // Filtrar solo productos activos con stock
     const conStock = (items || []).filter(
-      p => p.available_quantity > 0
+      p => p.status === "active" && p.available_quantity > 0
     );
     const listaFinal = conStock.length > 0 ? conStock : items;
 
@@ -2387,7 +2387,7 @@ window.cargarProductosML = async function() {
     html += `</div>`;
     container.innerHTML = html;
 
-    window.toast(`✅ ${listaFinal.length} productos con stock en Mercado Libre`, 'success');
+    window.toast(`✅ ${listaFinal.length} productos activos con stock en Mercado Libre`, 'success');
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
   }
