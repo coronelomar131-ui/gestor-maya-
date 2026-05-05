@@ -761,6 +761,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 }
 </style>
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <script>
@@ -2091,7 +2092,13 @@ window.saveVenta = async function() {
   try {
     await addDoc(collection(db, 'ventas'), obj);
     closeModal('modal-venta');
-    toast('✅ Venta NV-001 registrada', 'success');
+
+    // Generar nota PDF automáticamente
+    setTimeout(() => {
+      window.generarNotaPDF(obj);
+    }, 500);
+
+    toast(`✅ Venta ${obj.notaNumero} registrada + Nota generada`, 'success');
     // Clear form
     ['v-desc', 'v-total', 'v-notas', 'v-marca', 'v-submarca', 'v-reporte', 'v-responsable'].forEach(id => {
       document.getElementById(id).value = '';
@@ -3375,8 +3382,8 @@ function renderNotasFacturas(ventas) {
       <td>${v.tipoEntrega === 'local' ? '🏠' : v.tipoEntrega === 'paqueteria' ? '📦' : '🏪'}</td>
       <td>${v.facturaNumero ? '<span class="badge badge-' + (v.estatusFactura === 'entregada' ? 'g' : 'b') + '">' + v.estatusFactura + '</span>' : '—'}</td>
       <td style="display:flex;gap:8px">
-        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadNota('${v.id}','${v.notaNumero}')">📎 Nota</button>
-        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Fact</button>` : ''}
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarNota('${v.id}','${v.notaNumero}')">⬇️ Nota</button>
+        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Factura</button>` : ''}
       </td>
       <td>${fmtDate(v.createdAt)}</td>
     </tr>
@@ -3407,16 +3414,102 @@ window.filterNotasFacturas = function(tipo) {
       <td>${v.tipoEntrega === 'local' ? '🏠' : v.tipoEntrega === 'paqueteria' ? '📦' : '🏪'}</td>
       <td>${v.facturaNumero ? '<span class="badge badge-' + (v.estatusFactura === 'entregada' ? 'g' : 'b') + '">' + v.estatusFactura + '</span>' : '—'}</td>
       <td style="display:flex;gap:8px">
-        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadNota('${v.id}','${v.notaNumero}')">📎 Nota</button>
-        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Fact</button>` : ''}
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarNota('${v.id}','${v.notaNumero}')">⬇️ Nota</button>
+        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Factura</button>` : ''}
       </td>
       <td>${fmtDate(v.createdAt)}</td>
     </tr>
   `).join('');
 };
 
-window.abrirUploadNota = function(ventaId, notaNumero) {
-  window.toast('📎 Upload nota PDF: ' + notaNumero + ' (feature en desarrollo)', 'info');
+window.generarNotaPDF = function(venta) {
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'letter'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    let y = margin;
+
+    // Encabezado
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('MAYA AUTOPARTES', pageWidth / 2, y, { align: 'center' });
+    y += 8;
+
+    doc.setFontSize(14);
+    doc.text(`NOTA DE VENTA ${venta.notaNumero || 'NV-001'}`, pageWidth / 2, y, { align: 'center' });
+    y += 10;
+
+    // Línea separadora
+    doc.setDrawColor(0);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
+
+    // Detalles
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Cliente: ${venta.cliente || '—'}`, margin, y);
+    y += 6;
+    doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, margin, y);
+    y += 6;
+    doc.text(`Responsable: ${venta.responsable || '—'}`, margin, y);
+    y += 6;
+    doc.text(`Tipo entrega: ${venta.tipoEntrega === 'local' ? 'Local' : venta.tipoEntrega === 'paqueteria' ? 'Paquetería' : 'Recolección'}`, margin, y);
+    y += 6;
+    if (venta.numeroReporte) {
+      doc.text(`No. Reporte: ${venta.numeroReporte}`, margin, y);
+      y += 6;
+    }
+
+    y += 2;
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
+
+    // Descripción de productos
+    doc.setFont(undefined, 'bold');
+    const desc = venta.descripcion || 'Sin descripción';
+    const descLines = doc.splitTextToSize(desc, pageWidth - 2 * margin);
+    doc.text(descLines, margin, y);
+    y += descLines.length * 4 + 3;
+
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
+
+    // Total
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(`TOTAL: $${(venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}`, margin, y);
+    y += 7;
+
+    // Método de pago
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Pago: ${venta.metodoPago || '—'}`, margin, y);
+    y += 5;
+
+    doc.line(margin, y, pageWidth - margin, y);
+
+    // Descargar
+    doc.save(`NOTA_${venta.notaNumero || 'NV-001'}.pdf`);
+    window.toast('✅ Nota PDF generada', 'success');
+  } catch (error) {
+    console.error('Error generando PDF:', error);
+    window.toast('Error al generar PDF: ' + error.message, 'error');
+  }
+};
+
+window.descargarNota = function(ventaId, notaNumero) {
+  const venta = data.ventas.find(v => v.id === ventaId);
+  if (venta) {
+    window.generarNotaPDF(venta);
+  } else {
+    window.toast('Venta no encontrada', 'error');
+  }
 };
 
 window.abrirUploadFactura = function(ventaId, facturaNumero) {
