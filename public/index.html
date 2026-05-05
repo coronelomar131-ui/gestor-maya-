@@ -899,6 +899,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" id="nav-usuarios" style="display:none" onclick="showModule('usuarios')">
         <span class="nav-icon">⚙️</span> Usuarios
       </div>
+      <div class="nav-item" id="nav-finanzas" style="display:none" onclick="showModule('finanzas')">
+        <span class="nav-icon">💰</span> Finanzas
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div class="user-info">
@@ -984,6 +987,29 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               </tr></thead>
               <tbody id="ventas-body">
                 <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin ventas registradas</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Notas y Facturas -->
+        <div class="table-card" style="margin-top:20px">
+          <div class="table-header">
+            <div class="table-title">📄 Notas y Facturas</div>
+            <input class="search-box" placeholder="🔍 Buscar por nota, cliente o fecha..." oninput="filterTable('notasfacturas-table',this.value)">
+          </div>
+          <div style="margin-bottom:15px;display:flex;gap:10px">
+            <button class="btn btn-sm" style="background:#8a9bb0;color:white;border:none;padding:6px 10px;border-radius:4px;cursor:pointer" onclick="filterNotasFacturas('todas')">Todas</button>
+            <button class="btn btn-sm" style="background:#8a9bb0;color:white;border:none;padding:6px 10px;border-radius:4px;cursor:pointer" onclick="filterNotasFacturas('con_factura')">Con factura</button>
+            <button class="btn btn-sm" style="background:#8a9bb0;color:white;border:none;padding:6px 10px;border-radius:4px;cursor:pointer" onclick="filterNotasFacturas('sin_factura')">Sin factura</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table id="notasfacturas-table">
+              <thead><tr>
+                <th>Nota</th><th>Factura</th><th>Cliente</th><th>Total</th><th>Entrega</th><th>Est. Factura</th><th>PDFs</th><th>Fecha</th>
+              </tr></thead>
+              <tbody id="notasfacturas-body">
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -1178,6 +1204,72 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
       </div>
 
+      <!-- FINANZAS -->
+      <div class="module-view" id="mod-finanzas">
+        <div class="firebase-notice">💰 Gestión de Finanzas (solo Admin)</div>
+
+        <!-- Tabs -->
+        <div style="display:flex;gap:10px;margin-bottom:20px;border-bottom:2px solid var(--border);padding-bottom:10px">
+          <button class="tab-btn active" onclick="showFinanzasTab('prestamos')">📊 Préstamos</button>
+          <button class="tab-btn" onclick="showFinanzasTab('pagos')">💳 Pagos</button>
+          <button class="tab-btn" onclick="showFinanzasTab('resumen')">📈 Resumen</button>
+        </div>
+
+        <!-- TAB: Préstamos -->
+        <div id="tab-prestamos" class="finanzas-tab">
+          <div class="table-card">
+            <div class="table-header">
+              <div class="table-title">Préstamos</div>
+              <button class="btn btn-secondary btn-sm" onclick="openModal('modal-prestamo')">+ Nuevo Préstamo</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table>
+                <thead><tr><th>Nombre</th><th>Monto</th><th>Fecha</th><th>Plazo</th><th>Estatus</th><th>Acciones</th></tr></thead>
+                <tbody id="prestamos-body">
+                  <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin préstamos registrados</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Pagos -->
+        <div id="tab-pagos" class="finanzas-tab" style="display:none">
+          <div class="table-card">
+            <div class="table-header">
+              <div class="table-title">Registro de Pagos</div>
+              <button class="btn btn-secondary btn-sm" onclick="openModal('modal-pago')">+ Nuevo Pago</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table>
+                <thead><tr><th>Concepto</th><th>Monto</th><th>Tipo</th><th>Fecha</th><th>Acciones</th></tr></thead>
+                <tbody id="pagos-body">
+                  <tr><td colspan="5"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin pagos registrados</div></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Resumen -->
+        <div id="tab-resumen" class="finanzas-tab" style="display:none">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px">
+            <div style="background:var(--surface2);padding:20px;border-radius:12px;border-left:4px solid #3BBCD4">
+              <div style="color:var(--gray);font-size:0.9em;margin-bottom:8px">Total Préstamos Activos</div>
+              <div style="font-size:2em;font-weight:700;color:#3BBCD4" id="fin-total-prestamos">$0</div>
+            </div>
+            <div style="background:var(--surface2);padding:20px;border-radius:12px;border-left:4px solid #4ade80">
+              <div style="color:var(--gray);font-size:0.9em;margin-bottom:8px">Total Pagos Este Mes</div>
+              <div style="font-size:2em;font-weight:700;color:#4ade80" id="fin-total-pagos">$0</div>
+            </div>
+            <div style="background:var(--surface2);padding:20px;border-radius:12px;border-left:4px solid #fbbf24">
+              <div style="color:var(--gray);font-size:0.9em;margin-bottom:8px">Balance Simple</div>
+              <div style="font-size:2em;font-weight:700;color:#fbbf24" id="fin-balance">$0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1247,6 +1339,46 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </select>
       </div>
       <div class="form-group"><label>Notas</label><textarea id="v-notas" placeholder="Notas adicionales..."></textarea></div>
+
+      <!-- NUEVA: Tipo de Entrega -->
+      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #3BBCD4">
+        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📦 Tipo de Entrega</h4>
+        <div class="grid-3">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="radio" name="v-tipoentrega" value="local" checked>
+            <span>🏠 Local</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="radio" name="v-tipoentrega" value="paqueteria">
+            <span>📦 Paquetería</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="radio" name="v-tipoentrega" value="tienda">
+            <span>🏪 Recolección</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- NUEVA: Factura -->
+      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #4ade80">
+        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📄 Factura</h4>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:15px;cursor:pointer">
+          <input type="checkbox" id="v-llevaFactura" onchange="toggleFactura()">
+          <span>¿Lleva factura?</span>
+        </label>
+        <div id="facturaFields" style="display:none">
+          <div class="grid-2">
+            <div class="form-group"><label>Número de Factura</label><input type="text" id="v-facturaNumero" placeholder="F-001" readonly></div>
+            <div class="form-group"><label>Estatus Factura</label>
+              <select id="v-estatusFactura">
+                <option value="pendiente">Pendiente</option>
+                <option value="generada">Generada</option>
+                <option value="entregada">Entregada</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-venta')">Cancelar</button>
@@ -1451,6 +1583,52 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   </div>
 </div>
 
+<!-- Modal Préstamo -->
+<div class="modal-overlay" id="modal-prestamo">
+  <div class="modal">
+    <div class="modal-head"><h3>📊 Nuevo Préstamo</h3><button class="modal-close" onclick="closeModal('modal-prestamo')">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Nombre</label><input type="text" id="prest-nombre" placeholder="Nombre del préstamo"></div>
+      <div class="form-group"><label>Monto</label><input type="number" id="prest-monto" placeholder="0.00" step="0.01"></div>
+      <div class="form-group"><label>Fecha</label><input type="date" id="prest-fecha"></div>
+      <div class="form-group"><label>Plazo (meses)</label><input type="number" id="prest-plazo" placeholder="12"></div>
+      <div class="form-group"><label>Estatus</label>
+        <select id="prest-estatus">
+          <option value="activo">Activo</option>
+          <option value="pagado">Pagado</option>
+          <option value="vencido">Vencido</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-prestamo')">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePrestamo()">Guardar Préstamo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Pago -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal">
+    <div class="modal-head"><h3>💳 Nuevo Pago</h3><button class="modal-close" onclick="closeModal('modal-pago')">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Concepto</label><input type="text" id="pago-concepto" placeholder="Descripción del pago"></div>
+      <div class="form-group"><label>Monto</label><input type="number" id="pago-monto" placeholder="0.00" step="0.01"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="pago-tipo">
+          <option value="entrada">Entrada</option>
+          <option value="salida">Salida</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Fecha</label><input type="date" id="pago-fecha"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-pago')">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePago()">Guardar Pago</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST CONTAINER -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -1556,6 +1734,7 @@ async function loadUserProfile(uid) {
     if (currentRole === 'admin') {
       document.getElementById('nav-admin-section').style.display = 'block';
       document.getElementById('nav-usuarios').style.display = 'flex';
+      document.getElementById('nav-finanzas').style.display = 'flex';
     }
   } catch(e) {
     currentRole = 'admin';
@@ -1564,6 +1743,7 @@ async function loadUserProfile(uid) {
     document.getElementById('user-avatar').textContent = currentUser.email[0].toUpperCase();
     document.getElementById('nav-admin-section').style.display = 'block';
     document.getElementById('nav-usuarios').style.display = 'flex';
+    document.getElementById('nav-finanzas').style.display = 'flex';
   }
 }
 
@@ -1603,6 +1783,7 @@ function startListeners() {
   listenCollection('proveedores', 'prov-body', renderProveedores);
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('usuarios', 'users-body', renderUsuarios);
+  startFinanzasListeners();
 }
 
 function listenCollection(colName, bodyId, renderFn) {
@@ -1663,6 +1844,8 @@ function renderVentas() {
       <td><button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button></td>
     </tr>
   `).join('');
+  // Actualizar tabla de notas y facturas
+  renderNotasFacturas(data.ventas);
 }
 
 function renderProductos() {
@@ -1873,6 +2056,17 @@ window.actualizarSubmarkas = function() {
 };
 
 window.saveVenta = async function() {
+  // Generar número de nota automáticamente
+  const notasSnap = await getDocs(query(collection(db, 'ventas'), where('notaNumero', '!=', null)));
+  const lastNote = notasSnap.docs.reduce((max, d) => {
+    const num = parseInt(d.data().notaNumero?.replace('NV-', '') || '0');
+    return num > max ? num : max;
+  }, 0);
+  const notaNumero = 'NV-' + String(lastNote + 1).padStart(3, '0');
+
+  const llevaFactura = document.getElementById('v-llevaFactura').checked;
+  const facturaNumero = llevaFactura ? 'F-' + String(lastNote + 1).padStart(3, '0') : null;
+
   const obj = {
     cliente: document.getElementById('v-cliente').value,
     descripcion: document.getElementById('v-desc').value,
@@ -1885,6 +2079,11 @@ window.saveVenta = async function() {
     metodoPago: document.getElementById('v-metodo').value,
     estatus: document.getElementById('v-estatus').value,
     notas: document.getElementById('v-notas').value,
+    notaNumero: notaNumero,
+    tipoEntrega: document.querySelector('input[name="v-tipoentrega"]:checked')?.value || 'local',
+    llevaFactura: llevaFactura,
+    facturaNumero: facturaNumero,
+    estatusFactura: llevaFactura ? document.getElementById('v-estatusFactura').value : null,
     creadoPor: auth.currentUser?.uid || '',
     createdAt: serverTimestamp()
   };
@@ -1892,13 +2091,21 @@ window.saveVenta = async function() {
   try {
     await addDoc(collection(db, 'ventas'), obj);
     closeModal('modal-venta');
-    toast('✅ Venta registrada', 'success');
+    toast('✅ Venta NV-001 registrada', 'success');
     // Clear form
     ['v-desc', 'v-total', 'v-notas', 'v-marca', 'v-submarca', 'v-reporte', 'v-responsable'].forEach(id => {
       document.getElementById(id).value = '';
     });
     document.getElementById('v-estatus-interno').value = '';
+    document.getElementById('v-llevaFactura').checked = false;
+    document.getElementById('facturaFields').style.display = 'none';
+    document.querySelector('input[name="v-tipoentrega"][value="local"]').checked = true;
   } catch(e) { toast('Error al guardar: ' + e.message, 'error'); }
+};
+
+window.toggleFactura = function() {
+  const checked = document.getElementById('v-llevaFactura').checked;
+  document.getElementById('facturaFields').style.display = checked ? 'block' : 'none';
 };
 
 window.saveProducto = async function() {
@@ -2098,7 +2305,8 @@ window.showModule = function(name) {
     entregas: ['Entregas', 'Logística y control de entregas'],
     reportes: ['Reportes', 'Análisis y métricas del negocio'],
     mercadolibre: ['Mercado Libre', 'Sincronización con Mercado Libre'],
-    usuarios: ['Usuarios', 'Gestión de accesos']
+    usuarios: ['Usuarios', 'Gestión de accesos'],
+    finanzas: ['Finanzas', 'Gestión de préstamos y pagos']
   };
   const t = titles[name] || [name, ''];
   document.getElementById('topbar-title').textContent = t[0];
@@ -2978,6 +3186,234 @@ window.exportClientesExcel = async function() {
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
   }
+};
+
+// ═══════════════════════════════════════════════════════════
+// FINANZAS
+// ═══════════════════════════════════════════════════════════
+
+window.showFinanzasTab = function(tab) {
+  document.querySelectorAll('.finanzas-tab').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('tab-' + tab).style.display = 'block';
+  event.target.classList.add('active');
+};
+
+window.savePrestamo = async function() {
+  const nombre = document.getElementById('prest-nombre').value.trim();
+  const monto = parseFloat(document.getElementById('prest-monto').value) || 0;
+  const fecha = document.getElementById('prest-fecha').value;
+  const plazo = document.getElementById('prest-plazo').value;
+  const estatus = document.getElementById('prest-estatus').value;
+
+  if (!nombre || monto <= 0 || !fecha) {
+    window.toast('Completa los campos requeridos', 'error');
+    return;
+  }
+
+  try {
+    await addDoc(collection(db, 'finanzas_prestamos'), {
+      nombre, monto, fecha, plazo, estatus,
+      createdAt: serverTimestamp(),
+      usuario: currentUser?.uid || 'admin'
+    });
+    window.toast('✅ Préstamo guardado', 'success');
+    closeModal('modal-prestamo');
+    document.getElementById('prest-nombre').value = '';
+    document.getElementById('prest-monto').value = '';
+    document.getElementById('prest-fecha').value = '';
+    document.getElementById('prest-plazo').value = '';
+  } catch (e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+};
+
+window.savePago = async function() {
+  const concepto = document.getElementById('pago-concepto').value.trim();
+  const monto = parseFloat(document.getElementById('pago-monto').value) || 0;
+  const tipo = document.getElementById('pago-tipo').value;
+  const fecha = document.getElementById('pago-fecha').value;
+
+  if (!concepto || monto <= 0 || !fecha) {
+    window.toast('Completa los campos requeridos', 'error');
+    return;
+  }
+
+  try {
+    await addDoc(collection(db, 'finanzas_pagos'), {
+      concepto, monto, tipo, fecha,
+      createdAt: serverTimestamp(),
+      usuario: currentUser?.uid || 'admin'
+    });
+    window.toast('✅ Pago guardado', 'success');
+    closeModal('modal-pago');
+    document.getElementById('pago-concepto').value = '';
+    document.getElementById('pago-monto').value = '';
+    document.getElementById('pago-fecha').value = '';
+  } catch (e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+};
+
+// Listeners para Finanzas (solo admin)
+function startFinanzasListeners() {
+  if (currentRole !== 'admin') return;
+
+  // Préstamos
+  const qPrestamos = query(collection(db, 'finanzas_prestamos'), orderBy('createdAt', 'desc'));
+  const unsubPrestamos = onSnapshot(qPrestamos, (snap) => {
+    const prestamos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderPrestamos(prestamos);
+  }, (err) => {
+    console.log('Listener error (prestamos):', err.message);
+  });
+
+  // Pagos
+  const qPagos = query(collection(db, 'finanzas_pagos'), orderBy('createdAt', 'desc'));
+  const unsubPagos = onSnapshot(qPagos, (snap) => {
+    const pagos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderPagos(pagos);
+    actualizarResumenFinanzas(pagos);
+  }, (err) => {
+    console.log('Listener error (pagos):', err.message);
+  });
+
+  unsubs.push(unsubPrestamos, unsubPagos);
+}
+
+function renderPrestamos(prestamos) {
+  const body = document.getElementById('prestamos-body');
+  if (!prestamos || prestamos.length === 0) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin préstamos registrados</div></div></td></tr>';
+    return;
+  }
+  body.innerHTML = prestamos.map(p => `
+    <tr>
+      <td>${p.nombre || '—'}</td>
+      <td>$${(p.monto || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+      <td>${p.fecha || '—'}</td>
+      <td>${p.plazo || '—'} meses</td>
+      <td><span class="badge badge-${p.estatus === 'activo' ? 'b' : p.estatus === 'pagado' ? 'g' : 'r'}">${p.estatus || '—'}</span></td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('finanzas_prestamos','${p.id}')">🗑</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderPagos(pagos) {
+  const body = document.getElementById('pagos-body');
+  if (!pagos || pagos.length === 0) {
+    body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin pagos registrados</div></div></td></tr>';
+    return;
+  }
+  body.innerHTML = pagos.map(p => `
+    <tr>
+      <td>${p.concepto || '—'}</td>
+      <td>$${(p.monto || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+      <td><span class="badge badge-${p.tipo === 'entrada' ? 'g' : 'r'}">${p.tipo || '—'}</span></td>
+      <td>${p.fecha || '—'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('finanzas_pagos','${p.id}')">🗑</button></td>
+    </tr>
+  `).join('');
+}
+
+function actualizarResumenFinanzas(pagos) {
+  const ahora = new Date();
+  const mesActual = ahora.getMonth();
+  const anoActual = ahora.getFullYear();
+
+  // Total pagos este mes (entradas)
+  const pagosEsteMes = (pagos || []).filter(p => {
+    if (!p.fecha) return false;
+    const fParts = p.fecha.split('-');
+    const fMes = parseInt(fParts[1]) - 1;
+    const fAno = parseInt(fParts[0]);
+    return fMes === mesActual && fAno === anoActual && p.tipo === 'entrada';
+  });
+  const totalPagos = pagosEsteMes.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+  document.getElementById('fin-total-pagos').textContent = '$' + totalPagos.toLocaleString('es-MX', {minimumFractionDigits: 2});
+
+  // Balance simple: entradas - salidas
+  const totalEntradas = (pagos || [])
+    .filter(p => p.tipo === 'entrada')
+    .reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+  const totalSalidas = (pagos || [])
+    .filter(p => p.tipo === 'salida')
+    .reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+  const balance = totalEntradas - totalSalidas;
+  document.getElementById('fin-balance').textContent = '$' + balance.toLocaleString('es-MX', {minimumFractionDigits: 2});
+}
+
+// ═══════════════════════════════════════════════════════════
+// NOTAS Y FACTURAS
+// ═══════════════════════════════════════════════════════════
+
+let notasFacturasActuales = [];
+
+function renderNotasFacturas(ventas) {
+  notasFacturasActuales = ventas || [];
+  const body = document.getElementById('notasfacturas-body');
+
+  const conNotas = (ventas || []).filter(v => v.notaNumero);
+  if (!conNotas.length) {
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = conNotas.map(v => `
+    <tr>
+      <td><span style="color:#3BBCD4;font-weight:600">${v.notaNumero || '—'}</span></td>
+      <td>${v.facturaNumero ? '<span style="color:#4ade80;font-weight:600">' + v.facturaNumero + '</span>' : '—'}</td>
+      <td>${v.cliente || '—'}</td>
+      <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+      <td>${v.tipoEntrega === 'local' ? '🏠' : v.tipoEntrega === 'paqueteria' ? '📦' : '🏪'}</td>
+      <td>${v.facturaNumero ? '<span class="badge badge-' + (v.estatusFactura === 'entregada' ? 'g' : 'b') + '">' + v.estatusFactura + '</span>' : '—'}</td>
+      <td style="display:flex;gap:8px">
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadNota('${v.id}','${v.notaNumero}')">📎 Nota</button>
+        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Fact</button>` : ''}
+      </td>
+      <td>${fmtDate(v.createdAt)}</td>
+    </tr>
+  `).join('');
+}
+
+window.filterNotasFacturas = function(tipo) {
+  const body = document.getElementById('notasfacturas-body');
+  let filtradas = notasFacturasActuales.filter(v => v.notaNumero);
+
+  if (tipo === 'con_factura') {
+    filtradas = filtradas.filter(v => v.facturaNumero);
+  } else if (tipo === 'sin_factura') {
+    filtradas = filtradas.filter(v => !v.facturaNumero);
+  }
+
+  if (!filtradas.length) {
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state">Sin registros</div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = filtradas.map(v => `
+    <tr>
+      <td><span style="color:#3BBCD4;font-weight:600">${v.notaNumero || '—'}</span></td>
+      <td>${v.facturaNumero ? '<span style="color:#4ade80;font-weight:600">' + v.facturaNumero + '</span>' : '—'}</td>
+      <td>${v.cliente || '—'}</td>
+      <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+      <td>${v.tipoEntrega === 'local' ? '🏠' : v.tipoEntrega === 'paqueteria' ? '📦' : '🏪'}</td>
+      <td>${v.facturaNumero ? '<span class="badge badge-' + (v.estatusFactura === 'entregada' ? 'g' : 'b') + '">' + v.estatusFactura + '</span>' : '—'}</td>
+      <td style="display:flex;gap:8px">
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadNota('${v.id}','${v.notaNumero}')">📎 Nota</button>
+        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Fact</button>` : ''}
+      </td>
+      <td>${fmtDate(v.createdAt)}</td>
+    </tr>
+  `).join('');
+};
+
+window.abrirUploadNota = function(ventaId, notaNumero) {
+  window.toast('📎 Upload nota PDF: ' + notaNumero + ' (feature en desarrollo)', 'info');
+};
+
+window.abrirUploadFactura = function(ventaId, facturaNumero) {
+  window.toast('📎 Upload factura PDF: ' + facturaNumero + ' (feature en desarrollo)', 'info');
 };
 
 </script>
