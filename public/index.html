@@ -1638,6 +1638,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getBytes } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCgMRItmi_9_NjEvYmqp8_Bg2K8XqWY4IE",
@@ -1668,9 +1669,16 @@ window.serverTimestamp = serverTimestamp;
 window.writeBatch = writeBatch;
 window.onSnapshot = onSnapshot;
 
+// Export Storage functions
+window.getStorage = getStorage;
+window.ref = ref;
+window.uploadBytes = uploadBytes;
+window.getBytes = getBytes;
+
 // Keep references for module scope
 const auth = window.auth;
 const db = window.db;
+const storage = getStorage();
 
 // ── STATE ──
 let currentUser = null;
@@ -2085,6 +2093,7 @@ window.saveVenta = async function() {
     llevaFactura: llevaFactura,
     facturaNumero: facturaNumero,
     estatusFactura: llevaFactura ? document.getElementById('v-estatusFactura').value : null,
+    tieneFactura: false,
     creadoPor: auth.currentUser?.uid || '',
     createdAt: serverTimestamp()
   };
@@ -3381,9 +3390,9 @@ function renderNotasFacturas(ventas) {
       <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
       <td>${v.tipoEntrega === 'local' ? '🏠' : v.tipoEntrega === 'paqueteria' ? '📦' : '🏪'}</td>
       <td>${v.facturaNumero ? '<span class="badge badge-' + (v.estatusFactura === 'entregada' ? 'g' : 'b') + '">' + v.estatusFactura + '</span>' : '—'}</td>
-      <td style="display:flex;gap:8px">
-        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarNota('${v.id}','${v.notaNumero}')">⬇️ Nota</button>
-        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Factura</button>` : ''}
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarNota('${v.id}','${v.notaNumero}')">⬇️ PDF</button>
+        ${v.facturaNumero ? (v.tieneFactura ? `<button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarFactura('${v.facturaNumero}')">📄 Ver</button>` : `<button class="btn btn-sm" style="background:#f39c12;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Subir</button>`) : ''}
       </td>
       <td>${fmtDate(v.createdAt)}</td>
     </tr>
@@ -3413,9 +3422,9 @@ window.filterNotasFacturas = function(tipo) {
       <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
       <td>${v.tipoEntrega === 'local' ? '🏠' : v.tipoEntrega === 'paqueteria' ? '📦' : '🏪'}</td>
       <td>${v.facturaNumero ? '<span class="badge badge-' + (v.estatusFactura === 'entregada' ? 'g' : 'b') + '">' + v.estatusFactura + '</span>' : '—'}</td>
-      <td style="display:flex;gap:8px">
-        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarNota('${v.id}','${v.notaNumero}')">⬇️ Nota</button>
-        ${v.facturaNumero ? `<button class="btn btn-sm" style="background:#4ade80;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Factura</button>` : ''}
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarNota('${v.id}','${v.notaNumero}')">⬇️ PDF</button>
+        ${v.facturaNumero ? (v.tieneFactura ? `<button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="descargarFactura('${v.facturaNumero}')">📄 Ver</button>` : `<button class="btn btn-sm" style="background:#f39c12;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.8em" onclick="abrirUploadFactura('${v.id}','${v.facturaNumero}')">📎 Subir</button>`) : ''}
       </td>
       <td>${fmtDate(v.createdAt)}</td>
     </tr>
@@ -3435,68 +3444,75 @@ window.generarNotaPDF = function(venta) {
     const margin = 15;
     let y = margin;
 
-    // Encabezado
-    doc.setFontSize(16);
+    // Encabezado - Logo/Nombre
+    doc.setFontSize(18);
     doc.setFont(undefined, 'bold');
     doc.text('MAYA AUTOPARTES', pageWidth / 2, y, { align: 'center' });
+    y += 7;
+
+    // Número de nota
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text(`NOTA DE VENTA ${venta.notaNumero || 'NV-001'}`, pageWidth / 2, y, { align: 'center' });
+    y += 2;
+
+    // Línea separadora 1
+    doc.setDrawColor(100);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageWidth - margin, y);
     y += 8;
 
-    doc.setFontSize(14);
-    doc.text(`NOTA DE VENTA ${venta.notaNumero || 'NV-001'}`, pageWidth / 2, y, { align: 'center' });
-    y += 10;
-
-    // Línea separadora
-    doc.setDrawColor(0);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
-
-    // Detalles
+    // Detalles del cliente
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-    doc.text(`Cliente: ${venta.cliente || '—'}`, margin, y);
-    y += 6;
-    doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, margin, y);
-    y += 6;
-    doc.text(`Responsable: ${venta.responsable || '—'}`, margin, y);
-    y += 6;
-    doc.text(`Tipo entrega: ${venta.tipoEntrega === 'local' ? 'Local' : venta.tipoEntrega === 'paqueteria' ? 'Paquetería' : 'Recolección'}`, margin, y);
-    y += 6;
-    if (venta.numeroReporte) {
-      doc.text(`No. Reporte: ${venta.numeroReporte}`, margin, y);
-      y += 6;
-    }
 
-    y += 2;
+    const details = [
+      `Cliente: ${venta.cliente || '—'}`,
+      `Fecha: ${new Date().toLocaleDateString('es-MX')}`,
+      `Responsable: ${venta.responsable || '—'}`,
+      `Tipo de Entrega: ${venta.tipoEntrega === 'local' ? '🏠 Local' : venta.tipoEntrega === 'paqueteria' ? '📦 Paquetería' : '🏪 Recolección'}`,
+      ...(venta.numeroReporte ? [`No. Reporte: ${venta.numeroReporte}`] : [])
+    ];
+
+    details.forEach(detail => {
+      doc.text(detail, margin, y);
+      y += 5;
+    });
+
+    y += 3;
     doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
+    y += 6;
 
     // Descripción de productos
     doc.setFont(undefined, 'bold');
+    doc.text('PRODUCTOS:', margin, y);
+    y += 5;
+
+    doc.setFont(undefined, 'normal');
     const desc = venta.descripcion || 'Sin descripción';
     const descLines = doc.splitTextToSize(desc, pageWidth - 2 * margin);
     doc.text(descLines, margin, y);
     y += descLines.length * 4 + 3;
 
     doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
+    y += 6;
 
-    // Total
+    // Total y método de pago
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
     doc.text(`TOTAL: $${(venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}`, margin, y);
     y += 7;
 
-    // Método de pago
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-    doc.text(`Pago: ${venta.metodoPago || '—'}`, margin, y);
+    doc.text(`Método de Pago: ${venta.metodoPago || '—'}`, margin, y);
     y += 5;
 
     doc.line(margin, y, pageWidth - margin, y);
 
-    // Descargar
+    // Descargar PDF
     doc.save(`NOTA_${venta.notaNumero || 'NV-001'}.pdf`);
-    window.toast('✅ Nota PDF generada', 'success');
+    window.toast('✅ Nota PDF descargada', 'success');
   } catch (error) {
     console.error('Error generando PDF:', error);
     window.toast('Error al generar PDF: ' + error.message, 'error');
@@ -3513,7 +3529,56 @@ window.descargarNota = function(ventaId, notaNumero) {
 };
 
 window.abrirUploadFactura = function(ventaId, facturaNumero) {
-  window.toast('📎 Upload factura PDF: ' + facturaNumero + ' (feature en desarrollo)', 'info');
+  // Crear input file temporal
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.pdf';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      window.toast('Solo se aceptan archivos PDF', 'error');
+      return;
+    }
+
+    try {
+      window.toast('📎 Subiendo factura...', 'info');
+      const storageRef = ref(storage, `facturas/${facturaNumero}.pdf`);
+      await uploadBytes(storageRef, file);
+
+      // Actualizar documento de venta para indicar que tiene factura
+      await updateDoc(doc(db, 'ventas', ventaId), {
+        tieneFactura: true,
+        fechaUploadFactura: serverTimestamp()
+      });
+
+      window.toast('✅ Factura subida correctamente', 'success');
+    } catch (error) {
+      console.error('Error subiendo factura:', error);
+      window.toast('Error al subir factura: ' + error.message, 'error');
+    }
+  };
+  input.click();
+};
+
+window.descargarFactura = async function(facturaNumero) {
+  try {
+    window.toast('📄 Descargando factura...', 'info');
+    const storageRef = ref(storage, `facturas/${facturaNumero}.pdf`);
+    const bytes = await getBytes(storageRef);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `FACTURA_${facturaNumero}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    window.toast('✅ Factura descargada', 'success');
+  } catch (error) {
+    console.error('Error descargando factura:', error);
+    window.toast('Factura no disponible: ' + error.message, 'error');
+  }
 };
 
 </script>
