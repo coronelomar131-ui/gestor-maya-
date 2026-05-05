@@ -2311,11 +2311,11 @@ window.cargarProductosML = async function() {
       items = data.items;
     }
 
-    // Filtrar solo productos activos
-    const productosActivos = (items || []).filter(
-      p => p.status === "active" || p.status === "activo"
+    // Filtrar solo productos con stock
+    const conStock = (items || []).filter(
+      p => p.available_quantity > 0
     );
-    const listaFinal = productosActivos.length > 0 ? productosActivos : items;
+    const listaFinal = conStock.length > 0 ? conStock : items;
 
     let html = syncInfo + `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:20px">
@@ -2387,7 +2387,7 @@ window.cargarProductosML = async function() {
     html += `</div>`;
     container.innerHTML = html;
 
-    window.toast(`✅ ${listaFinal.length} productos activos en Mercado Libre`, 'success');
+    window.toast(`✅ ${listaFinal.length} productos con stock en Mercado Libre`, 'success');
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
   }
