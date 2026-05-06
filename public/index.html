@@ -3367,24 +3367,46 @@ function actualizarResumenFinanzas(pagos) {
 
 let notasFacturasActuales = [];
 
-async function renderNotasFacturas(ventas) {
-  notasFacturasActuales = ventas || [];
+async function renderNotasFacturas(ventasParam) {
   const body = document.getElementById('notasfacturas-body');
+
+  // Cargar TODAS las ventas de Firestore directamente
+  let ventas = ventasParam || [];
+  if (!ventasParam) {
+    try {
+      const q = query(collection(db, 'ventas'), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      ventas = snap.docs.map(d => {
+        const docData = d.data() || {};
+        const newObj = { id: d.id };
+        for (const key in docData) {
+          newObj[key] = docData[key];
+        }
+        return newObj;
+      });
+    } catch (e) {
+      console.error('Error cargando ventas:', e);
+      ventas = [];
+    }
+  }
+
+  notasFacturasActuales = ventas;
 
   // Asignar números automáticos a ventas sin notaNumero
   const ventasConNotas = [];
   let contador = 1;
 
-  for (const v of (ventas || [])) {
-    const ventaActual = { ...v };
+  for (const v of ventas) {
+    const ventaActual = Object.assign({}, v);
     if (!ventaActual.notaNumero) {
       ventaActual.notaNumero = 'NV-' + String(contador).padStart(3, '0');
+      ventaActual.facturaNumero = 'F-' + String(contador).padStart(3, '0');
       contador++;
       // Guardar en Firestore
       try {
         await updateDoc(doc(db, 'ventas', v.id), {
           notaNumero: ventaActual.notaNumero,
-          facturaNumero: 'F-' + ventaActual.notaNumero.replace('NV-', ''),
+          facturaNumero: ventaActual.facturaNumero,
           tieneFactura: false
         });
       } catch (e) {
@@ -3394,16 +3416,15 @@ async function renderNotasFacturas(ventas) {
     ventasConNotas.push(ventaActual);
   }
 
-  const conNotas = ventasConNotas.filter(v => v.notaNumero);
-  if (!conNotas.length) {
+  if (!ventasConNotas.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>';
     return;
   }
 
-  body.innerHTML = conNotas.map(v => `
+  body.innerHTML = ventasConNotas.map(v => `
     <tr>
       <td style="font-weight:600;color:#3BBCD4">
-        ${v.notaNumero}
+        ${v.notaNumero || 'N/A'}
         <button style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;padding:0;margin-left:6px" onclick="descargarNota('${v.id}','${v.notaNumero}')" title="Descargar nota">⬇️</button>
       </td>
       <td style="text-align:center">
@@ -3421,7 +3442,6 @@ async function renderNotasFacturas(ventas) {
 }
 
 window.filterNotasFacturas = function(tipo) {
-  // Los filtros se actualizarán con renderNotasFacturas
   renderNotasFacturas(notasFacturasActuales);
 };
 
