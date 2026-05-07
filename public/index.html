@@ -2918,19 +2918,39 @@ window.descargarNota = async function(ventaId) {
 };
 
 window.subirFactura = async function(ventaId, notaNumero, input) {
-  const file = input.files[0];
-  if (!file) return;
+  const archivo = input.files[0];
+  if (!archivo) return;
+
   try {
     window.toast('Subiendo factura...', 'info');
-    const storageRef = ref(window.storage, `documentos/${notaNumero}/factura.pdf`);
-    const snap = await uploadBytes(storageRef, file);
-    const facturaURL = await getDownloadURL(snap.ref);
-    await updateDoc(doc(window.db, 'ventas', ventaId), {facturaURL: facturaURL});
-    window.toast('Factura subida exitosamente', 'success');
+
+    // Importar Firebase Storage
+    const { getStorage, ref, uploadBytes, getDownloadURL } =
+      await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+
+    const storage = getStorage();
+    const ruta = ref(storage, `documentos/${notaNumero}/factura.pdf`);
+
+    // Subir archivo
+    await uploadBytes(ruta, archivo);
+
+    // Obtener URL
+    const url = await getDownloadURL(ruta);
+
+    // Guardar URL en Firestore
+    const { updateDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+    await updateDoc(doc(window.db, 'ventas', ventaId), {
+      facturaURL: url
+    });
+
+    window.toast('✅ Factura subida correctamente', 'success');
+
+    // Recargar el módulo
     cargarDocumentos();
-  } catch (e) {
-    console.error('Error:', e);
-    window.toast('Error al subir factura', 'error');
+
+  } catch(error) {
+    console.error('Error subiendo factura:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
   }
 };
 
