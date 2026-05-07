@@ -1271,26 +1271,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
       <!-- DOCUMENTOS MODULE -->
       <div class="module-view" id="mod-documentos">
-        <div class="table-card">
-          <div class="table-header">
-            <div class="table-title">📁 Documentos</div>
-            <input type="text" id="doc-search" placeholder="Buscar cliente..." style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;width:300px" oninput="filterDocumentos()">
-          </div>
-          <div style="overflow-x:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>NOTA</th>
-                  <th>FACTURA</th>
-                  <th>CLIENTE</th>
-                  <th>TOTAL</th>
-                  <th>FECHA</th>
-                </tr>
-              </thead>
-              <tbody id="doc-tbody">
-              </tbody>
-            </table>
-          </div>
+        <div style="margin-bottom:20px">
+          <input type="text" id="doc-search" placeholder="Buscar cliente..." style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;width:400px" oninput="filterDocumentos()">
+        </div>
+        <div id="doc-folders" style="display:flex;flex-direction:column;gap:10px">
         </div>
         <div id="doc-empty" style="text-align:center;padding:40px;color:var(--gray);display:none">
           <div style="font-size:3em;margin-bottom:10px">📁</div>
@@ -1665,7 +1649,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getBytes } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getStorage, ref, uploadBytes, getBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCgMRItmi_9_NjEvYmqp8_Bg2K8XqWY4IE",
@@ -1701,11 +1685,13 @@ window.getStorage = getStorage;
 window.ref = ref;
 window.uploadBytes = uploadBytes;
 window.getBytes = getBytes;
+window.getDownloadURL = getDownloadURL;
 
 // Keep references for module scope
 const auth = window.auth;
 const db = window.db;
 const storage = getStorage();
+window.storage = storage;
 
 // ── STATE ──
 let currentUser = null;
@@ -2828,112 +2814,150 @@ window.cargarOrdenesML = async function() {
 
 window.cargarDocumentos = async function() {
   try {
-    const ventasRef = collection(window.db, 'ventas');
-    const snapshot = await getDocs(ventasRef);
+    const q = query(collection(window.db, 'ventas'), orderBy('fecha', 'desc'));
+    const snapshot = await getDocs(q);
     const ventas = [];
     snapshot.forEach(doc => {
       ventas.push({id: doc.id, ...doc.data()});
     });
 
-    const tbody = document.getElementById('doc-tbody');
-    const empty = document.getElementById('doc-empty');
-
     if (!ventas.length) {
-      tbody.innerHTML = '';
-      empty.style.display = 'block';
+      document.getElementById('doc-folders').innerHTML = '';
+      document.getElementById('doc-empty').style.display = 'block';
       return;
     }
 
-    empty.style.display = 'none';
-    tbody.innerHTML = ventas.map((v, idx) => {
-      const notaNum = 'NV-' + String(idx + 1).padStart(3, '0');
-      const factBtn = v.tieneFactura
-        ? `<button class="btn btn-sm" style="background:#4ade80;color:#1F2937" onclick="descargarFactura('${v.id}')">📄 Ver PDF</button>`
-        : `<button class="btn btn-sm" style="background:#fb923c;color:white" onclick="abrirSubirFactura('${v.id}')">📎 Subir PDF</button>`;
-      const notaBtn = `<button class="btn btn-sm" style="background:#3BBCD4;color:white" onclick="descargarNotaPDF('${v.id}')">⬇️ PDF</button>`;
-      return `<tr><td style="font-weight:600">${notaNum}</td><td>${factBtn}</td><td>${v.cliente || '-'}</td><td style="text-align:right">$${(v.total || 0).toLocaleString()}</td><td>${v.fecha || '-'}</td></tr>`;
+    document.getElementById('doc-empty').style.display = 'none';
+
+    const porCliente = {};
+    ventas.forEach((v, idx) => {
+      const cli = v.cliente || 'Sin cliente';
+      if (!porCliente[cli]) porCliente[cli] = [];
+      const notaNum = v.notaNumero || 'NV-' + String(idx + 1).padStart(3, '0');
+      porCliente[cli].push({...v, notaNumero: notaNum});
+    });
+
+    const html = Object.entries(porCliente).map(([cliente, docs]) => {
+      const doc = docs[0];
+      const carpId = 'carp-' + cliente.replace(/\s+/g, '-');
+      const docsList = docs.map(d => `
+        <div style="padding:12px;border-left:3px solid #3BBCD4;margin-left:30px;margin-bottom:10px;background:rgba(59,188,212,0.05);border-radius:4px">
+          <div style="margin-bottom:8px">📋 Nota de Venta ${d.notaNumero}</div>
+          <button class="btn btn-sm" style="background:#3BBCD4;color:white" onclick="descargarNotaPDF('${d.id}')">⬇️ Descargar PDF</button>
+        </div>
+        <div style="padding:12px;border-left:3px solid #f59e0b;margin-left:30px;margin-bottom:10px;background:rgba(245,158,11,0.05);border-radius:4px">
+          <div style="margin-bottom:8px">🧾 Factura</div>
+          ${d.facturaURL
+            ? `<div style="display:flex;gap:8px"><button class="btn btn-sm" style="background:#4ade80;color:white" onclick="descargarFactura('${d.id}')">📄 Ver PDF</button><button class="btn btn-sm" style="background:#3BBCD4;color:white" onclick="descargarFactura('${d.id}')">⬇️ Descargar</button></div>`
+            : `<input type="file" accept=".pdf" id="factura-${d.id}" style="display:none" onchange="subirFactura('${d.id}', '${d.notaNumero}', this)"><button class="btn btn-sm" style="background:#fb923c;color:white" onclick="document.getElementById('factura-${d.id}').click()">📎 Subir PDF</button>`
+          }
+        </div>
+      `).join('');
+
+      return `
+        <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px" id="${carpId}">
+          <div style="background:var(--surface2);padding:12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleFolder('${carpId}')">
+            <div style="display:flex;gap:12px;flex:1">
+              <span style="font-size:1.2em">📁</span>
+              <div>
+                <div style="font-weight:600">${cliente}</div>
+                <div style="font-size:0.85em;color:var(--gray)">${docs.length} documento${docs.length > 1 ? 's' : ''}</div>
+              </div>
+              <div style="margin-left:auto;display:flex;gap:20px;text-align:right;font-size:0.9em;color:var(--gray)">
+                <div>${docs[0].notaNumero}</div>
+                <div>$${(docs[0].total || 0).toLocaleString()}</div>
+                <div>${docs[0].fecha || '-'}</div>
+              </div>
+            </div>
+            <span style="margin-left:10px;transition:transform 0.2s" id="arr-${carpId}">▼</span>
+          </div>
+          <div style="display:none;background:#fafafa" id="cont-${carpId}">
+            ${docsList}
+          </div>
+        </div>
+      `;
     }).join('');
+
+    document.getElementById('doc-folders').innerHTML = html;
   } catch (e) {
-    console.error('Error cargando documentos:', e);
+    console.error('Error:', e);
     window.toast('Error al cargar documentos', 'error');
   }
 };
 
+window.toggleFolder = function(carpId) {
+  const cont = document.getElementById('cont-' + carpId.substring(5));
+  const arr = document.getElementById('arr-' + carpId.substring(5));
+  const isOpen = cont.style.display !== 'none';
+  cont.style.display = isOpen ? 'none' : 'block';
+  arr.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+};
+
 window.filterDocumentos = function() {
   const search = document.getElementById('doc-search').value.toLowerCase();
-  const rows = document.querySelectorAll('#doc-tbody tr');
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = text.includes(search) ? '' : 'none';
+  const carpetas = document.querySelectorAll('#doc-folders > div');
+  carpetas.forEach(carp => {
+    const nombre = carp.textContent.toLowerCase();
+    carp.style.display = nombre.includes(search) ? '' : 'none';
   });
 };
 
 window.descargarNotaPDF = async function(ventaId) {
   try {
     const ventaRef = doc(window.db, 'ventas', ventaId);
-    const snapshot = await getDoc(ventaRef);
-    if (!snapshot.exists()) {
+    const snap = await getDoc(ventaRef);
+    if (!snap.exists()) {
       window.toast('Venta no encontrada', 'error');
       return;
     }
-    const venta = snapshot.data();
+    const v = snap.data();
     const pdf = new jsPDF();
     pdf.setFont('Helvetica');
     pdf.setFontSize(14);
     pdf.text('NOTA DE VENTA', 20, 20);
     pdf.setFontSize(10);
-    pdf.text(`Cliente: ${venta.cliente || '-'}`, 20, 35);
-    pdf.text(`Fecha: ${venta.fecha || '-'}`, 20, 45);
-    pdf.text(`Total: $${(venta.total || 0).toLocaleString()}`, 20, 55);
-    pdf.text(`Descripción: ${venta.descripcion || '-'}`, 20, 70, {maxWidth: 170});
+    pdf.text(`Cliente: ${v.cliente || '-'}`, 20, 35);
+    pdf.text(`Fecha: ${v.fecha || '-'}`, 20, 45);
+    pdf.text(`Total: $${(v.total || 0).toLocaleString()}`, 20, 55);
+    if (v.descripcion) pdf.text(`Descripción: ${v.descripcion}`, 20, 70, {maxWidth: 170});
     pdf.save(`nota-${ventaId}.pdf`);
     window.toast('PDF descargado', 'success');
   } catch (e) {
-    console.error('Error descargando nota:', e);
+    console.error('Error:', e);
     window.toast('Error al descargar PDF', 'error');
   }
 };
 
-window.abrirSubirFactura = function(ventaId) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.pdf';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('ventaId', ventaId);
-      const res = await fetch('/api/upload-factura', {method: 'POST', body: formData});
-      if (res.ok) {
-        window.toast('Factura subida exitosamente', 'success');
-        cargarDocumentos();
-      } else {
-        window.toast('Error al subir factura', 'error');
-      }
-    } catch (e) {
-      console.error('Error:', e);
-      window.toast('Error al subir factura', 'error');
-    }
-  };
-  input.click();
+window.subirFactura = async function(ventaId, notaNumero, input) {
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    window.toast('Subiendo factura...', 'info');
+    const storageRef = ref(window.storage, `documentos/${notaNumero}/factura.pdf`);
+    const snap = await uploadBytes(storageRef, file);
+    const facturaURL = await getDownloadURL(snap.ref);
+    await updateDoc(doc(window.db, 'ventas', ventaId), {facturaURL: facturaURL});
+    window.toast('Factura subida exitosamente', 'success');
+    cargarDocumentos();
+  } catch (e) {
+    console.error('Error:', e);
+    window.toast('Error al subir factura', 'error');
+  }
 };
 
 window.descargarFactura = async function(ventaId) {
   try {
-    const res = await fetch(`/api/download-factura?ventaId=${ventaId}`);
-    if (!res.ok) {
+    const ventaRef = doc(window.db, 'ventas', ventaId);
+    const snap = await getDoc(ventaRef);
+    if (!snap.exists() || !snap.data().facturaURL) {
       window.toast('Factura no encontrada', 'error');
       return;
     }
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
+    const url = snap.data().facturaURL;
     const a = document.createElement('a');
     a.href = url;
     a.download = `factura-${ventaId}.pdf`;
     a.click();
-    window.URL.revokeObjectURL(url);
     window.toast('Factura descargada', 'success');
   } catch (e) {
     console.error('Error:', e);
