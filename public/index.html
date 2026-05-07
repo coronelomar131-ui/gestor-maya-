@@ -2922,32 +2922,46 @@ window.descargarNota = async function(ventaId) {
 
 window.subirFactura = async function(ventaId, notaNumero, input) {
   const archivo = input.files[0];
-  if (!archivo) return;
+  if (!archivo) {
+    console.log('No archivo seleccionado');
+    return;
+  }
 
   try {
+    console.log('Iniciando carga de factura:', {ventaId, notaNumero, nombreArchivo: archivo.name, tamaño: archivo.size});
     window.toast('Subiendo factura...', 'info');
 
     // Usar Firebase Storage ya inicializado
     const ruta = window.ref(window.storage, `documentos/${notaNumero}/factura.pdf`);
+    console.log('Ruta de Firebase Storage creada:', ruta.fullPath);
 
     // Subir archivo
-    await window.uploadBytes(ruta, archivo);
+    console.log('Iniciando uploadBytes...');
+    const uploadResult = await window.uploadBytes(ruta, archivo);
+    console.log('Archivo subido exitosamente:', uploadResult);
 
     // Obtener URL
+    console.log('Obteniendo URL de descarga...');
     const url = await window.getDownloadURL(ruta);
+    console.log('URL obtenida:', url);
 
     // Guardar URL en Firestore
+    console.log('Guardando URL en Firestore...');
     await window.updateDoc(window.doc(window.db, 'ventas', ventaId), {
       facturaURL: url
     });
+    console.log('Documento actualizado en Firestore');
 
     window.toast('✅ Factura subida correctamente', 'success');
 
     // Recargar el módulo
+    console.log('Recargando módulo Documentos...');
     cargarDocumentos();
 
   } catch(error) {
-    console.error('Error subiendo factura:', error);
+    console.error('Error subiendo factura completo:', error);
+    console.error('Tipo de error:', error.code || error.name);
+    console.error('Mensaje:', error.message);
     window.toast('❌ Error: ' + error.message, 'error');
   }
 };
