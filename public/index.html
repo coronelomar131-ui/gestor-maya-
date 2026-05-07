@@ -1841,7 +1841,6 @@ function fmtDate(ts) {
 }
 // Hacer disponible globalmente
 window.fmtDate = fmtDate;
-}
 
 function fmtMoney(n) {
   return '$' + (parseFloat(n)||0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
