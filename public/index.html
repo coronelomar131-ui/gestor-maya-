@@ -2812,59 +2812,62 @@ window.cargarOrdenesML = async function() {
 // MÓDULO DOCUMENTOS
 // ═════════════════════════════════════════════════════════════
 
-window.cargarDocumentos = async function() {
+window.cargarDocumentos = function() {
   const contenedor = document.getElementById('documentos-lista');
   if (!contenedor) return;
 
   contenedor.innerHTML = 'Cargando...';
 
-  try {
-    const snap = await getDocs(collection(window.db, 'ventas'));
+  // Listener en tiempo real
+  window.onSnapshot(
+    window.collection(window.db, 'ventas'),
+    (snap) => {
+      if (snap.empty) {
+        contenedor.innerHTML = 'Sin ventas aun';
+        return;
+      }
 
-    if (snap.empty) {
-      contenedor.innerHTML = 'Sin ventas aun';
-      return;
+      let contador = 1;
+      let html = '';
+
+      snap.forEach(docu => {
+        const v = docu.data();
+        const nota = v.notaNumero || 'NV-' + String(contador).padStart(3, '0');
+        const cliente = v.clienteNombre || v.cliente || 'Sin nombre';
+        const total = v.total || 0;
+
+        html += `
+        <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
+          <div style="color:#3BBCD4;font-weight:700;font-size:16px;margin-bottom:12px">
+            📁 ${cliente} — ${nota}
+            <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
+          </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
+              <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
+              <button onclick="descargarNota('${docu.id}')" style="background:#3BBCD4;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⬇️ Descargar Nota PDF</button>
+            </div>
+            <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
+              <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">🧾 Factura</div>
+              ${v.facturaURL
+                ? `<button onclick="window.open('${v.facturaURL}','_blank')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver Factura</button>`
+                : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}','${nota}',this)"><button onclick="document.getElementById('f-${docu.id}').click()" style="background:transparent;color:#F59E0B;border:2px dashed #F59E0B;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📎 Subir Factura PDF</button>`
+              }
+            </div>
+          </div>
+        </div>`;
+
+        contador++;
+      });
+
+      contenedor.innerHTML = html;
+
+    },
+    (err) => {
+      console.error('Error documentos:', err);
+      contenedor.innerHTML = 'Error: ' + err.message;
     }
-
-    let contador = 1;
-    let html = '';
-
-    snap.forEach(docu => {
-      const v = docu.data();
-      const nota = v.notaNumero || 'NV-' + String(contador).padStart(3, '0');
-      const cliente = v.clienteNombre || v.cliente || 'Sin nombre';
-      const total = v.total || 0;
-
-      html += `
-      <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
-        <div style="color:#3BBCD4;font-weight:700;font-size:16px;margin-bottom:12px">
-          📁 ${cliente} — ${nota}
-          <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
-        </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
-            <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
-            <button onclick="descargarNota('${docu.id}')" style="background:#3BBCD4;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⬇️ Descargar Nota PDF</button>
-          </div>
-          <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
-            <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">🧾 Factura</div>
-            ${v.facturaURL
-              ? `<button onclick="window.open('${v.facturaURL}','_blank')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver Factura</button>`
-              : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}','${nota}',this)"><button onclick="document.getElementById('f-${docu.id}').click()" style="background:transparent;color:#F59E0B;border:2px dashed #F59E0B;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📎 Subir Factura PDF</button>`
-            }
-          </div>
-        </div>
-      </div>`;
-
-      contador++;
-    });
-
-    contenedor.innerHTML = html;
-
-  } catch(err) {
-    console.error('Error documentos:', err);
-    contenedor.innerHTML = 'Error: ' + err.message;
-  }
+  );
 };
 
 window.toggleCarpeta = function(id) {
