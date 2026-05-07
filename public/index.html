@@ -2924,22 +2924,17 @@ window.subirFactura = async function(ventaId, notaNumero, input) {
   try {
     window.toast('Subiendo factura...', 'info');
 
-    // Importar Firebase Storage
-    const { getStorage, ref, uploadBytes, getDownloadURL } =
-      await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
-
-    const storage = getStorage();
-    const ruta = ref(storage, `documentos/${notaNumero}/factura.pdf`);
+    // Usar Firebase Storage ya inicializado
+    const ruta = window.ref(window.storage, `documentos/${notaNumero}/factura.pdf`);
 
     // Subir archivo
-    await uploadBytes(ruta, archivo);
+    await window.uploadBytes(ruta, archivo);
 
     // Obtener URL
-    const url = await getDownloadURL(ruta);
+    const url = await window.getDownloadURL(ruta);
 
     // Guardar URL en Firestore
-    const { updateDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-    await updateDoc(doc(window.db, 'ventas', ventaId), {
+    await window.updateDoc(window.doc(window.db, 'ventas', ventaId), {
       facturaURL: url
     });
 
