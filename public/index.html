@@ -1274,7 +1274,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div style="margin-bottom:20px">
           <input type="text" id="doc-search" placeholder="Buscar cliente..." style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;width:400px" oninput="filterDocumentos()">
         </div>
-        <div id="doc-folders" style="display:flex;flex-direction:column;gap:10px">
+        <div id="documentos-lista" style="display:flex;flex-direction:column;gap:10px">
         </div>
         <div id="doc-empty" style="text-align:center;padding:40px;color:var(--gray);display:none">
           <div style="font-size:3em;margin-bottom:10px">📁</div>
@@ -2813,84 +2813,56 @@ window.cargarOrdenesML = async function() {
 // ═════════════════════════════════════════════════════════════
 
 window.cargarDocumentos = async function() {
-  try {
-    const q = query(collection(window.db, 'ventas'), orderBy('fecha', 'desc'));
-    const snapshot = await getDocs(q);
-    const ventas = [];
-    snapshot.forEach(doc => {
-      ventas.push({id: doc.id, ...doc.data()});
-    });
+  const snap = await getDocs(query(collection(window.db, 'ventas'), orderBy('fecha', 'desc')));
+  console.log('Ventas encontradas:', snap.size);
 
-    if (!ventas.length) {
-      document.getElementById('doc-folders').innerHTML = '';
-      document.getElementById('doc-empty').style.display = 'block';
-      return;
-    }
+  if (snap.empty) {
+    document.getElementById('documentos-lista').innerHTML = '<p>Sin documentos</p>';
+    return;
+  }
 
-    document.getElementById('doc-empty').style.display = 'none';
+  let html = '';
+  let contador = 1;
 
-    const porCliente = {};
-    ventas.forEach((v, idx) => {
-      const cli = v.cliente || 'Sin cliente';
-      if (!porCliente[cli]) porCliente[cli] = [];
-      const notaNum = v.notaNumero || 'NV-' + String(idx + 1).padStart(3, '0');
-      porCliente[cli].push({...v, notaNumero: notaNum});
-    });
+  snap.forEach(docu => {
+    const v = docu.data();
+    const nota = v.notaNumero || `NV-${String(contador).padStart(3, '0')}`;
+    const cliente = v.clienteNombre || v.cliente || 'Sin cliente';
+    const total = v.total || v.monto || 0;
+    const fecha = v.fecha && v.fecha.toDate ? v.fecha.toDate().toLocaleDateString('es-MX') : v.fecha || '';
 
-    const html = Object.entries(porCliente).map(([cliente, docs]) => {
-      const doc = docs[0];
-      const carpId = 'carp-' + cliente.replace(/\s+/g, '-');
-      const docsList = docs.map(d => `
-        <div style="padding:12px;border-left:3px solid #3BBCD4;margin-left:30px;margin-bottom:10px;background:rgba(59,188,212,0.05);border-radius:4px">
-          <div style="margin-bottom:8px">📋 Nota de Venta ${d.notaNumero}</div>
-          <button class="btn btn-sm" style="background:#3BBCD4;color:white" onclick="descargarNotaPDF('${d.id}')">⬇️ Descargar PDF</button>
+    html += `
+    <div class="doc-carpeta">
+      <div class="doc-header" onclick="toggleCarpeta('${docu.id}')">
+        📁 ${cliente}
+        <span>${nota}</span>
+        <span>$${total.toLocaleString()}</span>
+        <span>${fecha}</span>
+        <span>▼</span>
+      </div>
+      <div class="doc-body" id="carpeta-${docu.id}" style="display:none">
+        <div class="doc-item">
+          📋 Nota ${nota}
+          <button onclick="descargarNota('${docu.id}')">⬇️ Descargar PDF</button>
         </div>
-        <div style="padding:12px;border-left:3px solid #f59e0b;margin-left:30px;margin-bottom:10px;background:rgba(245,158,11,0.05);border-radius:4px">
-          <div style="margin-bottom:8px">🧾 Factura</div>
-          ${d.facturaURL
-            ? `<div style="display:flex;gap:8px"><button class="btn btn-sm" style="background:#4ade80;color:white" onclick="descargarFactura('${d.id}')">📄 Ver PDF</button><button class="btn btn-sm" style="background:#3BBCD4;color:white" onclick="descargarFactura('${d.id}')">⬇️ Descargar</button></div>`
-            : `<input type="file" accept=".pdf" id="factura-${d.id}" style="display:none" onchange="subirFactura('${d.id}', '${d.notaNumero}', this)"><button class="btn btn-sm" style="background:#fb923c;color:white" onclick="document.getElementById('factura-${d.id}').click()">📎 Subir PDF</button>`
+        <div class="doc-item">
+          🧾 Factura
+          ${v.facturaURL
+            ? `<button onclick="window.open('${v.facturaURL}')">📄 Ver</button>`
+            : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}', '${nota}', this)"><button onclick="document.getElementById('f-${docu.id}').click()">📎 Subir Factura</button>`
           }
         </div>
-      `).join('');
+      </div>
+    </div>`;
+    contador++;
+  });
 
-      return `
-        <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px" id="${carpId}">
-          <div style="background:var(--surface2);padding:12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleFolder('${carpId}')">
-            <div style="display:flex;gap:12px;flex:1">
-              <span style="font-size:1.2em">📁</span>
-              <div>
-                <div style="font-weight:600">${cliente}</div>
-                <div style="font-size:0.85em;color:var(--gray)">${docs.length} documento${docs.length > 1 ? 's' : ''}</div>
-              </div>
-              <div style="margin-left:auto;display:flex;gap:20px;text-align:right;font-size:0.9em;color:var(--gray)">
-                <div>${docs[0].notaNumero}</div>
-                <div>$${(docs[0].total || 0).toLocaleString()}</div>
-                <div>${docs[0].fecha || '-'}</div>
-              </div>
-            </div>
-            <span style="margin-left:10px;transition:transform 0.2s" id="arr-${carpId}">▼</span>
-          </div>
-          <div style="display:none;background:#fafafa" id="cont-${carpId}">
-            ${docsList}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    document.getElementById('doc-folders').innerHTML = html;
-  } catch (e) {
-    console.error('Error:', e);
-    window.toast('Error al cargar documentos', 'error');
-  }
+  document.getElementById('documentos-lista').innerHTML = html;
 };
 
-window.toggleFolder = function(carpId) {
-  const cont = document.getElementById('cont-' + carpId.substring(5));
-  const arr = document.getElementById('arr-' + carpId.substring(5));
-  const isOpen = cont.style.display !== 'none';
-  cont.style.display = isOpen ? 'none' : 'block';
-  arr.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+window.toggleCarpeta = function(id) {
+  const el = document.getElementById('carpeta-' + id);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 };
 
 window.filterDocumentos = function() {
@@ -2902,25 +2874,35 @@ window.filterDocumentos = function() {
   });
 };
 
-window.descargarNotaPDF = async function(ventaId) {
+window.descargarNota = async function(ventaId) {
   try {
-    const ventaRef = doc(window.db, 'ventas', ventaId);
-    const snap = await getDoc(ventaRef);
+    const snap = await getDoc(doc(window.db, 'ventas', ventaId));
     if (!snap.exists()) {
       window.toast('Venta no encontrada', 'error');
       return;
     }
     const v = snap.data();
+    const cliente = v.clienteNombre || v.cliente || 'Sin cliente';
+    const tipoEntrega = v.tipoEntrega || v.entrega || 'Local';
+    const total = v.total || v.monto || 0;
+    const fecha = v.fecha && v.fecha.toDate ? v.fecha.toDate().toLocaleDateString('es-MX') : v.fecha || '';
+    const descripcion = v.descripcion || v.detalles || '';
+
+    const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
     pdf.setFont('Helvetica');
     pdf.setFontSize(14);
     pdf.text('NOTA DE VENTA', 20, 20);
     pdf.setFontSize(10);
-    pdf.text(`Cliente: ${v.cliente || '-'}`, 20, 35);
-    pdf.text(`Fecha: ${v.fecha || '-'}`, 20, 45);
-    pdf.text(`Total: $${(v.total || 0).toLocaleString()}`, 20, 55);
-    if (v.descripcion) pdf.text(`Descripción: ${v.descripcion}`, 20, 70, {maxWidth: 170});
-    pdf.save(`nota-${ventaId}.pdf`);
+    pdf.text('Cliente: ' + cliente, 20, 35);
+    pdf.text('Fecha: ' + fecha, 20, 45);
+    pdf.text('Entrega: ' + tipoEntrega, 20, 55);
+    pdf.text('Total: $' + total.toLocaleString(), 20, 65);
+    if (descripcion) {
+      pdf.text('Detalles:', 20, 80);
+      pdf.text(descripcion, 20, 90, {maxWidth: 170});
+    }
+    pdf.save('nota-' + ventaId + '.pdf');
     window.toast('PDF descargado', 'success');
   } catch (e) {
     console.error('Error:', e);
