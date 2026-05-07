@@ -1839,6 +1839,9 @@ function fmtDate(ts) {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'2-digit' });
 }
+// Hacer disponible globalmente
+window.fmtDate = fmtDate;
+}
 
 function fmtMoney(n) {
   return '$' + (parseFloat(n)||0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
