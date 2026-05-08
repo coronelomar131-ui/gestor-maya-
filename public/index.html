@@ -2885,7 +2885,7 @@ window.cargarDocumentos = function() {
             <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
               <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">🧾 Factura</div>
               ${v.facturaURL
-                ? `<button onclick="window.open('${v.facturaURL}','_blank')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver Factura</button>`
+                ? `<button onclick="window.verFactura('${v.facturaURL}')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver Factura</button>`
                 : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}','${nota}',this)"><button onclick="document.getElementById('f-${docu.id}').click()" style="background:transparent;color:#F59E0B;border:2px dashed #F59E0B;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📎 Subir Factura PDF</button>`
               }
             </div>
@@ -3009,6 +3009,25 @@ window.descargarFactura = async function(ventaId) {
   } catch (e) {
     console.error('Error:', e);
     window.toast('Error al descargar factura', 'error');
+  }
+};
+
+window.verFactura = function(base64) {
+  try {
+    // Convertir base64 a blob
+    const byteString = atob(base64.split(',')[1]);
+    const mimeType = 'application/pdf';
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  } catch(error) {
+    console.error("Error abriendo factura:", error);
+    window.toast("Error al abrir PDF", "error");
   }
 };
 
