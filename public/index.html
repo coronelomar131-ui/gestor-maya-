@@ -3013,21 +3013,21 @@ window.descargarFactura = async function(ventaId) {
 };
 
 window.verFactura = function(base64) {
+  if (!base64) { alert('Factura no disponible'); return; }
   try {
-    // Convertir base64 a blob
     const byteString = atob(base64.split(',')[1]);
-    const mimeType = 'application/pdf';
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
     for (let i = 0; i < byteString.length; i++) {
       ia[i] = byteString.charCodeAt(i);
     }
-    const blob = new Blob([ab], { type: mimeType });
+    const blob = new Blob([ab], {type: 'application/pdf'});
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-  } catch(error) {
-    console.error("Error abriendo factura:", error);
-    window.toast("Error al abrir PDF", "error");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    console.error('Error abriendo factura:', e);
+    alert('Error al abrir la factura');
   }
 };
 
