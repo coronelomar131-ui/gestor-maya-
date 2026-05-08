@@ -906,6 +906,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" id="nav-finanzas" style="display:none" onclick="showModule('finanzas')">
         <span class="nav-icon">💰</span> Finanzas
       </div>
+      <div class="nav-item" id="nav-configuracion" style="display:none" onclick="showModule('configuracion')">
+        <span class="nav-icon">⚙️</span> Configuración
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div class="user-info">
@@ -981,7 +984,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <div class="table-title">Registro de Ventas</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
               <input class="search-box" placeholder="🔍 Buscar venta..." oninput="filterTable('ventas-table',this.value)">
-              <button class="btn btn-secondary btn-sm" onclick="openModal('modal-venta')">+ Nueva Venta</button>
+              <button class="btn btn-secondary btn-sm" onclick="openModal('modal-venta');setTimeout(inicializarFormularioVenta,100)">+ Nueva Venta</button>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -1282,6 +1285,46 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
       </div>
 
+      <!-- CONFIGURACIÓN MODULE (ADMIN ONLY) -->
+      <div class="module-view" id="mod-configuracion">
+        <div class="table-card" style="max-width:600px">
+          <div class="table-header">
+            <div class="table-title">⚙️ Datos Fiscales</div>
+            <p style="color:var(--gray);font-size:0.9em;margin:8px 0 0 0">Información de facturación utilizada en notas de venta</p>
+          </div>
+          <div style="padding:20px">
+            <div class="form-group">
+              <label>Razón Social</label>
+              <input type="text" id="config-razonSocial" placeholder="Nombre de la empresa">
+            </div>
+            <div class="form-group">
+              <label>RFC</label>
+              <input type="text" id="config-rfc" placeholder="XXXXXXXXXXXXXXXX">
+            </div>
+            <div class="form-group">
+              <label>Dirección</label>
+              <input type="text" id="config-direccion" placeholder="Calle y número">
+            </div>
+            <div class="form-group">
+              <label>Colonia</label>
+              <input type="text" id="config-colonia" placeholder="Nombre de la colonia">
+            </div>
+            <div class="form-group">
+              <label>Municipio</label>
+              <input type="text" id="config-municipio" placeholder="Municipio">
+            </div>
+            <div class="form-group">
+              <label>Código Postal</label>
+              <input type="text" id="config-cp" placeholder="CP 00000">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:20px">
+              <button class="btn btn-primary" onclick="guardarDatosFiscales()">✅ Guardar</button>
+              <button class="btn btn-secondary" onclick="cargarDatosFiscales()">🔄 Recargar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1290,103 +1333,81 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
 <!-- Modal Venta -->
 <div class="modal-overlay" id="modal-venta">
-  <div class="modal">
-    <div class="modal-head"><h3>💰 Nueva Venta</h3><button class="modal-close" onclick="closeModal('modal-venta')">×</button></div>
+  <div class="modal" style="max-width:900px;max-height:90vh;overflow-y:auto">
+    <div class="modal-head"><h3>💰 Nueva Venta (Maya Autopart)</h3><button class="modal-close" onclick="closeModal('modal-venta')">×</button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Cliente</label>
-        <select id="v-cliente"><option value="">— Selecciona cliente —</option></select>
-      </div>
-      <div class="form-group"><label>Descripción / Productos</label>
-        <textarea id="v-desc" placeholder="Ej: 2x Filtro de aceite Bosch, 1x Pastilla de freno..."></textarea>
-      </div>
-
-      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #3BBCD4">
-        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📋 Información del Vehículo</h4>
-
-        <div class="grid-2">
-          <div class="form-group"><label>Marca</label>
-            <select id="v-marca" onchange="actualizarSubmarkas()" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
-              <option value="">— Selecciona marca —</option>
-              <option>Nissan</option><option>VW</option><option>Ford</option><option>Chevrolet</option><option>Mazda</option>
-              <option>Honda</option><option>Suzuki</option><option>Jeep</option><option>Hyundai</option><option>Toyota</option>
-              <option>Kia</option><option>Renault</option><option>Peugeot</option><option>Fiat</option><option>BMW</option>
-              <option>Audi</option><option>Mercedes-Benz</option><option>Otro</option>
-            </select>
-          </div>
-          <div class="form-group"><label>Submarca / Modelo</label><input type="text" id="v-submarca" placeholder="Ej: Versa, March..." style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4"></div>
+      <!-- HEADER -->
+      <div class="grid-2" style="gap:15px;margin-bottom:20px">
+        <div class="form-group"><label>Fecha</label>
+          <input type="date" id="v-fecha" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
         </div>
-
-        <div class="grid-2">
-          <div class="form-group"><label>Responsable</label>
-            <select id="v-responsable" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
-              <option value="">— Sin asignar —</option>
-              <option>Israel</option><option>Elisa</option><option>Omar</option>
+        <div class="form-group"><label>Cliente</label>
+          <div style="display:flex;gap:8px">
+            <select id="v-cliente" style="flex:1;color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
+              <option value="">— Selecciona cliente —</option>
             </select>
+            <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer" onclick="abrirModalNuevoCliente()">+ Nuevo</button>
           </div>
-          <div class="form-group"><label>Número de Reporte</label><input type="text" id="v-reporte" placeholder="REP-2345" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4"></div>
         </div>
+      </div>
 
-        <div class="form-group"><label>Estatus Interno</label>
-          <select id="v-estatus-interno" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
-            <option value="">🟡 Para conseguir</option>
-            <option>🟢 Lista para enviar</option>
-            <option>🟡 Para conseguir</option>
-            <option>🔴 Para reparar</option>
-            <option>🔵 En proceso</option>
+      <div class="grid-2" style="gap:15px;margin-bottom:20px">
+        <div class="form-group"><label>Vendedor</label>
+          <select id="v-vendedor" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
+            <option value="">— Selecciona vendedor —</option>
           </select>
         </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="form-group"><label>Total ($)</label><input type="number" id="v-total" placeholder="0.00"></div>
-        <div class="form-group"><label>Método de pago</label>
-          <select id="v-metodo">
-            <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Crédito</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group"><label>Estatus</label>
-        <select id="v-estatus">
-          <option value="activo">Pagada</option><option value="pending">Pendiente de pago</option><option value="cancelled">Cancelada</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Notas</label><textarea id="v-notas" placeholder="Notas adicionales..."></textarea></div>
-
-      <!-- NUEVA: Tipo de Entrega -->
-      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #3BBCD4">
-        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📦 Tipo de Entrega</h4>
-        <div class="grid-3">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="radio" name="v-tipoentrega" value="local" checked>
-            <span>🏠 Local</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="radio" name="v-tipoentrega" value="paqueteria">
-            <span>📦 Paquetería</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="radio" name="v-tipoentrega" value="tienda">
-            <span>🏪 Recolección</span>
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+            <input type="checkbox" id="v-incluyeDatosFiscales">
+            <span style="font-size:0.95em">📋 Incluir datos fiscales en la nota PDF</span>
           </label>
         </div>
       </div>
 
-      <!-- NUEVA: Factura -->
-      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #4ade80">
-        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📄 Factura</h4>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:15px;cursor:pointer">
-          <input type="checkbox" id="v-llevaFactura" onchange="toggleFactura()">
-          <span>¿Lleva factura?</span>
-        </label>
-        <div id="facturaFields" style="display:none">
-          <div class="grid-2">
-            <div class="form-group"><label>Número de Factura</label><input type="text" id="v-facturaNumero" placeholder="F-001" readonly></div>
-            <div class="form-group"><label>Estatus Factura</label>
-              <select id="v-estatusFactura">
-                <option value="pendiente">Pendiente</option>
-                <option value="generada">Generada</option>
-                <option value="entregada">Entregada</option>
-              </select>
+      <!-- TABLA MULTI-LÍNEA -->
+      <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #1E4F7A">
+        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📦 Piezas</h4>
+        <div style="overflow-x:auto;margin-bottom:10px">
+          <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+            <thead>
+              <tr style="background:#1E4F7A;color:white">
+                <th style="padding:8px;text-align:left;border:1px solid #3BBCD4">Pedido (Descripción)</th>
+                <th style="padding:8px;text-align:left;border:1px solid #3BBCD4"># Siniestro</th>
+                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Precio ($)</th>
+                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:80px">IVA ($)</th>
+                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Ajuste ($)</th>
+                <th style="padding:8px;text-align:center;border:1px solid #3BBCD4;width:40px">🗑</th>
+              </tr>
+            </thead>
+            <tbody id="v-items-body">
+              <!-- Filas se agregan aquí -->
+            </tbody>
+          </table>
+        </div>
+        <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer" onclick="agregarFilaPieza()">+ Agregar pieza</button>
+      </div>
+
+      <!-- FOOTER CON CÁLCULOS -->
+      <div style="background:#e8f0f7;padding:15px;border-radius:8px;margin:20px 0;border:1px solid #3BBCD4">
+        <div class="grid-2" style="gap:20px">
+          <div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;color:#666">
+              <span>Subtotal:</span>
+              <strong style="color:#1E4F7A" id="v-subtotal">$0.00</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;color:#666">
+              <span>IVA Total:</span>
+              <strong style="color:#1E4F7A" id="v-iva-total">$0.00</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;color:#666">
+              <span>Ajuste Total:</span>
+              <strong style="color:#d32f2f" id="v-ajuste-total">-$0.00</strong>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;justify-content:center;align-items:flex-end">
+            <div style="font-size:1.3em;color:#1E4F7A;font-weight:bold">
+              TOTAL: <span id="v-total-final" style="color:#1E4F7A">$0.00</span>
             </div>
           </div>
         </div>
@@ -1394,7 +1415,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-venta')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveVenta()">Guardar Venta</button>
+      <button class="btn btn-primary" onclick="saveVentaMultiLinea()">Guardar Venta</button>
     </div>
   </div>
 </div>
@@ -1757,6 +1778,8 @@ async function loadUserProfile(uid) {
       document.getElementById('nav-admin-section').style.display = 'block';
       document.getElementById('nav-usuarios').style.display = 'flex';
       document.getElementById('nav-finanzas').style.display = 'flex';
+      document.getElementById('nav-configuracion').style.display = 'flex';
+      document.getElementById('nav-configuracion').style.display = 'flex';
     }
   } catch(e) {
     currentRole = 'admin';
@@ -2146,6 +2169,203 @@ window.toggleFactura = function() {
   document.getElementById('facturaFields').style.display = checked ? 'block' : 'none';
 };
 
+// ═══════════════════════════════════════════════════════════
+// NUEVO SISTEMA DE VENTAS MULTI-LÍNEA (Maya Autopart)
+// ═══════════════════════════════════════════════════════════
+
+window.inicializarFormularioVenta = function() {
+  // Establecer fecha a hoy
+  const hoy = new Date().toISOString().split('T')[0];
+  document.getElementById('v-fecha').value = hoy;
+
+  // Cargar clientes
+  const clienteSelect = document.getElementById('v-cliente');
+  clienteSelect.innerHTML = '<option value="">— Selecciona cliente —</option>';
+  if (data.clientes) {
+    data.clientes.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.razonSocial || c.nombre || c.id;
+      clienteSelect.appendChild(opt);
+    });
+  }
+
+  // Cargar vendedores (usuarios con rol Vendedor)
+  const vendedorSelect = document.getElementById('v-vendedor');
+  vendedorSelect.innerHTML = '<option value="">— Selecciona vendedor —</option>';
+  if (data.usuarios) {
+    data.usuarios.filter(u => u.rol === 'vendedor' || u.nombre === 'RODRIGO').forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.nombre || u.email;
+      opt.textContent = u.nombre || u.email;
+      vendedorSelect.appendChild(opt);
+    });
+    // Default = usuario actual si es vendedor
+    if (window.currentRole === 'vendedor') {
+      const userName = document.getElementById('user-name-display')?.textContent || '';
+      if (userName) vendedorSelect.value = userName;
+    }
+  }
+
+  // Limpiar tabla
+  document.getElementById('v-items-body').innerHTML = '';
+  document.getElementById('v-incluyeDatosFiscales').checked = false;
+
+  // Agregar una fila vacía para empezar
+  agregarFilaPieza();
+};
+
+window.agregarFilaPieza = function() {
+  const tbody = document.getElementById('v-items-body');
+  const rowCount = tbody.children.length;
+  const newRow = document.createElement('tr');
+  newRow.id = 'v-item-row-' + rowCount;
+  newRow.innerHTML = `
+    <td style="padding:8px;border:1px solid #3BBCD4">
+      <input type="text" class="v-item-pedido" placeholder="Ej: VEST PTA DEL IZQ audi a4" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em" onchange="recalcularTotales()">
+    </td>
+    <td style="padding:8px;border:1px solid #3BBCD4">
+      <input type="text" class="v-item-siniestro" placeholder="Ej: B6469216S" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em" onchange="recalcularTotales()">
+    </td>
+    <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
+      <input type="number" class="v-item-precio" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
+    </td>
+    <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
+      <input type="number" class="v-item-iva" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
+    </td>
+    <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
+      <input type="number" class="v-item-ajuste" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
+    </td>
+    <td style="padding:8px;border:1px solid #3BBCD4;text-align:center">
+      <button class="btn btn-danger btn-sm" onclick="eliminarFilaPieza('v-item-row-${rowCount}');recalcularTotales()">🗑</button>
+    </td>
+  `;
+  tbody.appendChild(newRow);
+};
+
+window.eliminarFilaPieza = function(rowId) {
+  const row = document.getElementById(rowId);
+  if (row) row.remove();
+};
+
+window.recalcularTotales = function() {
+  let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
+  const rows = document.querySelectorAll('#v-items-body tr');
+
+  rows.forEach(row => {
+    const precio = parseFloat(row.querySelector('.v-item-precio')?.value || 0);
+    const iva = parseFloat(row.querySelector('.v-item-iva')?.value || 0);
+    const ajuste = parseFloat(row.querySelector('.v-item-ajuste')?.value || 0);
+
+    subtotal += precio;
+    ivaTotal += iva;
+    ajusteTotal += ajuste;
+  });
+
+  const total = subtotal + ivaTotal - ajusteTotal;
+
+  document.getElementById('v-subtotal').textContent = '$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
+  document.getElementById('v-iva-total').textContent = '$' + ivaTotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
+  document.getElementById('v-ajuste-total').textContent = '-$' + ajusteTotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
+  document.getElementById('v-total-final').textContent = '$' + total.toLocaleString('es-MX', {minimumFractionDigits: 2});
+};
+
+window.abrirModalNuevoCliente = function() {
+  // Abre el modal de cliente existente
+  openModal('modal-cliente');
+};
+
+window.saveVentaMultiLinea = async function() {
+  const fecha = document.getElementById('v-fecha').value;
+  const clienteId = document.getElementById('v-cliente').value;
+  const vendedor = document.getElementById('v-vendedor').value;
+  const incluyeDatosFiscales = document.getElementById('v-incluyeDatosFiscales').checked;
+
+  if (!fecha || !clienteId || !vendedor) {
+    toast('Completa fecha, cliente y vendedor', 'error');
+    return;
+  }
+
+  // Recolectar items
+  const items = [];
+  const rows = document.querySelectorAll('#v-items-body tr');
+  rows.forEach(row => {
+    const pedido = row.querySelector('.v-item-pedido').value.trim();
+    const numSiniestro = row.querySelector('.v-item-siniestro').value.trim();
+    const precio = parseFloat(row.querySelector('.v-item-precio').value || 0);
+    const iva = parseFloat(row.querySelector('.v-item-iva').value || 0);
+    const ajuste = parseFloat(row.querySelector('.v-item-ajuste').value || 0);
+
+    if (pedido) {
+      items.push({
+        pedido,
+        numSiniestro,
+        precio,
+        iva,
+        ajuste
+      });
+    }
+  });
+
+  if (items.length === 0) {
+    toast('Agrega al menos una pieza', 'error');
+    return;
+  }
+
+  // Calcular totales
+  let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
+  items.forEach(item => {
+    subtotal += item.precio;
+    ivaTotal += item.iva;
+    ajusteTotal += item.ajuste;
+  });
+  const total = subtotal + ivaTotal - ajusteTotal;
+
+  // Generar número de nota
+  const notasSnap = await getDocs(query(collection(db, 'ventas'), where('notaId', '!=', null)));
+  const lastNote = notasSnap.docs.reduce((max, d) => {
+    const num = parseInt(d.data().notaId?.replace('NV-', '') || '0');
+    return num > max ? num : max;
+  }, 0);
+  const notaId = 'NV-' + String(lastNote + 1).padStart(3, '0');
+
+  // Preparar documento
+  const clienteNombre = document.querySelector('#v-cliente option:checked').textContent;
+  const venta = {
+    notaId,
+    fecha: new Date(fecha).getTime(),
+    clienteId,
+    clienteNombre,
+    vendedor,
+    items,
+    subtotal: parseFloat(subtotal.toFixed(2)),
+    ivaTotal: parseFloat(ivaTotal.toFixed(2)),
+    ajusteTotal: parseFloat(ajusteTotal.toFixed(2)),
+    total: parseFloat(total.toFixed(2)),
+    incluyeDatosFiscales,
+    estado: 'pendiente',
+    facturaURL: '',
+    tieneFactura: false,
+    createdAt: serverTimestamp(),
+    createdBy: auth.currentUser?.uid || ''
+  };
+
+  try {
+    const docRef = await addDoc(collection(db, 'ventas'), venta);
+
+    // Generar PDF de la nota
+    setTimeout(async () => {
+      await generarNotaPDFMultiLinea(venta);
+    }, 500);
+
+    closeModal('modal-venta');
+    toast(`✅ Venta ${notaId} registrada + Nota PDF generada`, 'success');
+  } catch(e) {
+    console.error('Error:', e);
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+};
+
 window.saveProducto = async function() {
   const obj = {
     codigo: document.getElementById('p-codigo').value,
@@ -2343,7 +2563,8 @@ window.showModule = function(name) {
     mercadolibre: ['admin'],
     documentos: ['admin', 'vendedor'],
     usuarios: ['admin'],
-    finanzas: ['admin']
+    finanzas: ['admin'],
+    configuracion: ['admin']
   };
 
   // Check if user has permission for this module
@@ -2371,7 +2592,8 @@ window.showModule = function(name) {
     mercadolibre: ['Mercado Libre', 'Sincronización con Mercado Libre'],
     documentos: ['Documentos', 'Gestión de notas de venta y facturas'],
     usuarios: ['Usuarios', 'Gestión de accesos'],
-    finanzas: ['Finanzas', 'Gestión de préstamos y pagos']
+    finanzas: ['Finanzas', 'Gestión de préstamos y pagos'],
+    configuracion: ['Configuración', 'Datos fiscales y configuración general']
   };
   const t = titles[name] || [name, ''];
   document.getElementById('topbar-title').textContent = t[0];
@@ -2385,6 +2607,11 @@ window.showModule = function(name) {
       el.classList.add('active');
     }
   });
+
+  // Cargar datos específicos del módulo
+  if (name === 'configuracion') {
+    setTimeout(() => cargarDatosFiscales(), 100);
+  }
 };
 
 window.openModal = function(id) {
@@ -3672,6 +3899,71 @@ window.filterNotasFacturas = function(tipo) {
   renderNotasFacturas(notasFacturasActuales);
 };
 
+// ═══════════════════════════════════════════════════════════
+// CONFIGURACIÓN - DATOS FISCALES
+// ═══════════════════════════════════════════════════════════
+
+window.cargarDatosFiscales = async function() {
+  try {
+    const docSnap = await getDoc(doc(db, 'config', 'datos_fiscales'));
+
+    if (docSnap.exists()) {
+      const datos = docSnap.data();
+      document.getElementById('config-razonSocial').value = datos.razonSocial || '';
+      document.getElementById('config-rfc').value = datos.rfc || '';
+      document.getElementById('config-direccion').value = datos.direccion || '';
+      document.getElementById('config-colonia').value = datos.colonia || '';
+      document.getElementById('config-municipio').value = datos.municipio || '';
+      document.getElementById('config-cp').value = datos.cp || '';
+    } else {
+      // Si no existe, crear con valores por defecto
+      const datosDefault = {
+        razonSocial: 'Estefania Cervantes Lozano',
+        rfc: 'CELE930309BY0',
+        direccion: 'Prol. Plutarco Elías Calles SMZ 3 MZ 8a',
+        colonia: 'Col. Ejército Constitucionalista',
+        municipio: 'Iztapalapa',
+        cp: '09220'
+      };
+      await setDoc(doc(db, 'config', 'datos_fiscales'), datosDefault);
+      document.getElementById('config-razonSocial').value = datosDefault.razonSocial;
+      document.getElementById('config-rfc').value = datosDefault.rfc;
+      document.getElementById('config-direccion').value = datosDefault.direccion;
+      document.getElementById('config-colonia').value = datosDefault.colonia;
+      document.getElementById('config-municipio').value = datosDefault.municipio;
+      document.getElementById('config-cp').value = datosDefault.cp;
+      window.toast('✅ Datos fiscales inicializados con valores por defecto', 'success');
+    }
+  } catch(e) {
+    console.error('Error cargando datos fiscales:', e);
+    window.toast('Error al cargar datos fiscales: ' + e.message, 'error');
+  }
+};
+
+window.guardarDatosFiscales = async function() {
+  try {
+    const datos = {
+      razonSocial: document.getElementById('config-razonSocial').value.trim(),
+      rfc: document.getElementById('config-rfc').value.trim(),
+      direccion: document.getElementById('config-direccion').value.trim(),
+      colonia: document.getElementById('config-colonia').value.trim(),
+      municipio: document.getElementById('config-municipio').value.trim(),
+      cp: document.getElementById('config-cp').value.trim()
+    };
+
+    if (!datos.razonSocial || !datos.rfc) {
+      window.toast('Completa al menos razón social y RFC', 'error');
+      return;
+    }
+
+    await setDoc(doc(db, 'config', 'datos_fiscales'), datos);
+    window.toast('✅ Datos fiscales guardados correctamente', 'success');
+  } catch(e) {
+    console.error('Error guardando datos fiscales:', e);
+    window.toast('Error al guardar: ' + e.message, 'error');
+  }
+};
+
 window.generarNotaPDF = function(venta) {
   try {
     const { jsPDF } = window.jspdf;
@@ -3756,6 +4048,159 @@ window.generarNotaPDF = function(venta) {
     window.toast('✅ Nota PDF descargada', 'success');
   } catch (error) {
     console.error('Error generando PDF:', error);
+    window.toast('Error al generar PDF: ' + error.message, 'error');
+  }
+};
+
+window.generarNotaPDFMultiLinea = async function(venta) {
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 12;
+    let y = margin;
+
+    // 1) DATOS FISCALES (si aplica)
+    if (venta.incluyeDatosFiscales) {
+      try {
+        const configSnap = await getDoc(doc(db, 'config', 'datos_fiscales'));
+        if (configSnap.exists()) {
+          const fiscal = configSnap.data();
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'normal');
+          doc.text(`${fiscal.razonSocial || ''}`, margin, y);
+          y += 3;
+          doc.text(`RFC: ${fiscal.rfc || ''}`, margin, y);
+          y += 3;
+          doc.text(`${fiscal.direccion || ''} | ${fiscal.colonia || ''}`, margin, y);
+          y += 3;
+          doc.text(`${fiscal.municipio || ''}, CP ${fiscal.cp || ''}`, margin, y);
+          y += 6;
+          doc.setDrawColor(150);
+          doc.line(margin, y, pageWidth - margin, y);
+          y += 5;
+        }
+      } catch(e) {
+        console.warn('No se cargaron datos fiscales:', e);
+      }
+    }
+
+    // 2) TÍTULO
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(30, 79, 122); // #1E4F7A
+    doc.text('MAYA AUTOPART DE COLISION', pageWidth / 2, y, { align: 'center' });
+    y += 7;
+    doc.setTextColor(0);
+
+    // 3) LÍNEA DE INFO
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    const fechaFormato = new Date(venta.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' });
+    doc.text(`Nota # ${venta.notaId} | Fecha: ${fechaFormato} | Cliente: ${venta.clienteNombre} | Vendedor: ${venta.vendedor}`, margin, y);
+    y += 6;
+
+    doc.setDrawColor(100);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 4;
+
+    // 4) TABLA DE PIEZAS
+    const tableData = [];
+    tableData.push(['FECHA', 'PEDIDO', '# SINIESTRO', 'VENDEDOR', 'PRECIO', 'IVA', 'AJUSTE']);
+
+    venta.items.forEach(item => {
+      tableData.push([
+        fechaFormato,
+        item.pedido || '—',
+        item.numSiniestro || '—',
+        venta.vendedor,
+        '$' + item.precio.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
+        '$' + item.iva.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
+        '-$' + item.ajuste.toLocaleString('es-MX', { minimumFractionDigits: 2 })
+      ]);
+    });
+
+    // Usar autoTable si está disponible
+    if (window.jspdf && window.jspdf.jsPDF.autoTable) {
+      doc.autoTable({
+        head: [tableData[0]],
+        body: tableData.slice(1),
+        startY: y,
+        margin: margin,
+        headStyles: {
+          fillColor: [30, 79, 122], // #1E4F7A
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 9
+        },
+        bodyStyles: {
+          fontSize: 8,
+          textColor: [0, 0, 0]
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 20 },
+          1: { halign: 'left' },
+          2: { halign: 'center', cellWidth: 25 },
+          3: { halign: 'center', cellWidth: 20 },
+          4: { halign: 'right', cellWidth: 20 },
+          5: { halign: 'right', cellWidth: 20 },
+          6: { halign: 'right', cellWidth: 20 }
+        }
+      });
+      y = doc.lastAutoTable.finalY + 6;
+    } else {
+      // Fallback: tabla manual simple
+      y += 8;
+    }
+
+    // 5) FOOTER - TOTALES
+    doc.setDrawColor(150);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 5;
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    const colX = pageWidth - margin - 60;
+
+    doc.text('Subtotal:', colX - 20, y);
+    doc.text('$' + venta.subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
+    y += 5;
+
+    doc.text('IVA:', colX - 20, y);
+    doc.text('$' + venta.ivaTotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
+    y += 5;
+
+    doc.text('Ajuste:', colX - 20, y);
+    doc.text('-$' + venta.ajusteTotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
+    y += 6;
+
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(30, 79, 122); // #1E4F7A
+    doc.text('TOTAL:', colX - 20, y);
+    doc.text('$' + venta.total.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
+
+    // Convertir a base64
+    const pdfDataUri = doc.output('dataurlstring');
+    const base64Pdf = pdfDataUri;
+
+    // Guardar en Firestore
+    const ventaRef = collection(db, 'ventas');
+    const q = query(ventaRef, where('notaId', '==', venta.notaId));
+    const querySnap = await getDocs(q);
+
+    if (!querySnap.empty) {
+      const ventaDocRef = querySnap.docs[0].ref;
+      await updateDoc(ventaDocRef, {
+        facturaURL: base64Pdf,
+        tieneFactura: true
+      });
+    }
+
+    window.toast('✅ Nota PDF generada automáticamente', 'success');
+  } catch (error) {
+    console.error('Error generando PDF multi-línea:', error);
     window.toast('Error al generar PDF: ' + error.message, 'error');
   }
 };
