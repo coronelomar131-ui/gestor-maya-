@@ -1852,6 +1852,7 @@ function folio(prefix, id) {
 
 function renderVentas() {
   const body = document.getElementById('ventas-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.ventas.length) {
     body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin ventas registradas</div></div></td></tr>';
     return;
@@ -1865,7 +1866,7 @@ function renderVentas() {
       <td>${v.metodoPago || '—'}</td>
       <td><span class="badge badge-${v.estatus === 'activo' ? 'active' : v.estatus === 'pending' ? 'pending' : 'cancelled'}">${v.estatus === 'activo' ? 'Pagada' : v.estatus === 'pending' ? 'Pendiente' : 'Cancelada'}</span></td>
       <td>${fmtDate(v.createdAt)}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button></td>
+      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
   // Actualizar tabla de notas y facturas
@@ -1874,6 +1875,7 @@ function renderVentas() {
 
 function renderProductos() {
   const body = document.getElementById('inv-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.productos.length) {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin productos aún</div></div></td></tr>';
     return;
@@ -1889,13 +1891,14 @@ function renderProductos() {
         ${parseInt(p.stock) <= parseInt(p.stockMin||0) ? '<span style="color:#ff6b6b;font-size:10px;margin-left:4px">⚠️ BAJO</span>' : ''}
       </td>
       <td><span class="badge badge-${(p.clase||'B').toLowerCase()}">${p.clase || 'B'}</span></td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('productos','${p.id}')">🗑</button></td>
+      <td>${['admin', 'almacen'].includes(rol) ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('productos','${p.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
 
 function renderClientes() {
   const body = document.getElementById('cli-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.clientes.length) {
     body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>';
     return;
@@ -1907,13 +1910,14 @@ function renderClientes() {
       <td>${c.telefono || c.tel || '—'}</td>
       <td>${c.email || '—'}</td>
       <td>${c.rfc || '—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('clientes','${c.id}')">🗑</button></td>
+      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('clientes','${c.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
 
 function renderCotizaciones() {
   const body = document.getElementById('cot-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.cotizaciones.length) {
     body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Sin cotizaciones</div></div></td></tr>';
     return;
@@ -1927,7 +1931,7 @@ function renderCotizaciones() {
       <td>${c.validez || '—'}</td>
       <td>
         <button class="btn btn-success btn-sm" onclick="cotToVenta('${c.id}')" title="Convertir a venta">✅ Venta</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteItem('cotizaciones','${c.id}')">🗑</button>
+        ${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('cotizaciones','${c.id}')">🗑</button>` : ''}
       </td>
     </tr>
   `).join('');
@@ -1935,6 +1939,7 @@ function renderCotizaciones() {
 
 function renderProveedores() {
   const body = document.getElementById('prov-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.proveedores.length) {
     body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-title">Sin proveedores</div></div></td></tr>';
     return;
@@ -1945,13 +1950,14 @@ function renderProveedores() {
       <td>${p.contacto || '—'}</td>
       <td>${p.telefono || '—'}</td>
       <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.productos || '—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('proveedores','${p.id}')">🗑</button></td>
+      <td>${['admin', 'almacen'].includes(rol) ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('proveedores','${p.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
 
 function renderEntregas() {
   const body = document.getElementById('ent-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.entregas.length) {
     body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🚚</div><div class="empty-title">Sin entregas registradas</div></div></td></tr>';
     return;
@@ -1971,13 +1977,14 @@ function renderEntregas() {
         </select>
       </td>
       <td>${fmtDate(e.createdAt)}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('entregas','${e.id}')">🗑</button></td>
+      <td>${['admin', 'almacen'].includes(rol) ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('entregas','${e.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
 
 function renderUsuarios() {
   const body = document.getElementById('users-body');
+  const rol = window.currentRole || 'vendedor';
   if (!data.usuarios.length) {
     body.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">⚙️</div><div class="empty-title">Sin usuarios adicionales</div></div></td></tr>';
     return;
@@ -1987,7 +1994,7 @@ function renderUsuarios() {
       <td style="font-weight:600">${u.nombre || '—'}</td>
       <td>${u.email || '—'}</td>
       <td><span class="badge badge-b">${u.rol || '—'}</span></td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button></td>
+      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
@@ -2321,6 +2328,32 @@ window.cotToVenta = async function(id) {
 <script>
 // ── UI FUNCTIONS (non-module) ──
 window.showModule = function(name) {
+  const rol = window.currentRole || 'vendedor';
+
+  // Define module permissions
+  const permissions = {
+    dashboard: ['admin', 'vendedor', 'almacen'],
+    ventas: ['admin', 'vendedor'],
+    inventario: ['admin', 'almacen'],
+    clientes: ['admin', 'vendedor'],
+    cotizaciones: ['admin', 'vendedor'],
+    proveedores: ['admin', 'almacen'],
+    entregas: ['admin', 'vendedor', 'almacen'],
+    reportes: ['admin'],
+    mercadolibre: ['admin'],
+    documentos: ['admin', 'vendedor'],
+    usuarios: ['admin'],
+    finanzas: ['admin']
+  };
+
+  // Check if user has permission for this module
+  const allowedRoles = permissions[name] || [];
+  if (!allowedRoles.includes(rol)) {
+    window.toast('No tienes permiso para acceder a este módulo', 'error');
+    showModule('dashboard');
+    return;
+  }
+
   document.querySelectorAll('.module-view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('mod-' + name).classList.add('active');
@@ -3494,6 +3527,7 @@ function startFinanzasListeners() {
 
 function renderPrestamos(prestamos) {
   const body = document.getElementById('prestamos-body');
+  const rol = window.currentRole || 'vendedor';
   if (!prestamos || prestamos.length === 0) {
     body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin préstamos registrados</div></div></td></tr>';
     return;
@@ -3505,13 +3539,14 @@ function renderPrestamos(prestamos) {
       <td>${p.fecha || '—'}</td>
       <td>${p.plazo || '—'} meses</td>
       <td><span class="badge badge-${p.estatus === 'activo' ? 'b' : p.estatus === 'pagado' ? 'g' : 'r'}">${p.estatus || '—'}</span></td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('finanzas_prestamos','${p.id}')">🗑</button></td>
+      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('finanzas_prestamos','${p.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
 
 function renderPagos(pagos) {
   const body = document.getElementById('pagos-body');
+  const rol = window.currentRole || 'vendedor';
   if (!pagos || pagos.length === 0) {
     body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin pagos registrados</div></div></td></tr>';
     return;
@@ -3522,7 +3557,7 @@ function renderPagos(pagos) {
       <td>$${(p.monto || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
       <td><span class="badge badge-${p.tipo === 'entrada' ? 'g' : 'r'}">${p.tipo || '—'}</span></td>
       <td>${p.fecha || '—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteItem('finanzas_pagos','${p.id}')">🗑</button></td>
+      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('finanzas_pagos','${p.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
