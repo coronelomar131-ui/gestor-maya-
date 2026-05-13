@@ -888,6 +888,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" onclick="showModule('entregas')">
         <span class="nav-icon">🚚</span> Entregas
       </div>
+      <div class="nav-item" onclick="showModule('envios')">
+        <span class="nav-icon">📦</span> Envíos
+      </div>
       <div class="nav-section">Reportes</div>
       <div class="nav-item" onclick="showModule('reportes')">
         <span class="nav-icon">📈</span> Reportes
@@ -973,6 +976,15 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div class="table-card">
             <div class="table-header"><div class="table-title">Entregas de hoy</div></div>
             <div id="dash-entregas-list"><div class="empty-state"><div class="empty-icon">🚚</div><div class="empty-title">Sin entregas hoy</div></div></div>
+          </div>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><div class="table-title">📦 Envíos del mes</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;padding:20px">
+            <div><div style="color:var(--gray);font-size:12px">Total envíos</div><div style="font-size:24px;font-weight:700;color:#3BBCD4" id="dash-envios-total">0</div></div>
+            <div><div style="color:var(--gray);font-size:12px">En tránsito</div><div style="font-size:24px;font-weight:700;color:#3BBCD4" id="dash-envios-transito">0</div></div>
+            <div><div style="color:var(--gray);font-size:12px">Entregados</div><div style="font-size:24px;font-weight:700;color:#4ade80" id="dash-envios-entregados">0</div></div>
+            <div><div style="color:var(--gray);font-size:12px">Monto total</div><div style="font-size:24px;font-weight:700;color:#fbbf24" id="dash-envios-monto">$0</div></div>
           </div>
         </div>
       </div>
@@ -1282,6 +1294,71 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div id="doc-empty" style="text-align:center;padding:40px;color:var(--gray);display:none">
           <div style="font-size:3em;margin-bottom:10px">📁</div>
           <div>Sin documentos registrados</div>
+        </div>
+      </div>
+
+      <!-- ENVIOS -->
+      <div class="module-view" id="mod-envios">
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">📦 Envíos</div>
+            <button class="btn btn-secondary btn-sm" onclick="openModal('modal-envio')">+ Nuevo Envío</button>
+          </div>
+          <!-- Filtros -->
+          <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;padding:0 15px">
+            <input type="text" placeholder="🔍 Buscar por guía o destinatario..." id="envios-search" onkeyup="filterEnvios()" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:4px">
+            <select id="envios-filter-vendedor" onchange="filterEnvios()" style="padding:8px 12px">
+              <option value="">— Todos vendedores —</option>
+            </select>
+            <select id="envios-filter-estado" onchange="filterEnvios()">
+              <option value="">— Todos estados —</option>
+              <option value="PENDIENTE">PENDIENTE</option>
+              <option value="TRANSITO">TRANSITO</option>
+              <option value="ENTREGADO">ENTREGADO</option>
+              <option value="DEVUELTO">DEVUELTO</option>
+            </select>
+          </div>
+          <!-- Tabla -->
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr><th>Fecha</th><th>Vendedor</th><th>Destinatario</th><th>Guía</th><th># Piezas</th><th>Estado</th><th>Costo Total</th><th></th></tr>
+              </thead>
+              <tbody id="envios-body">
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL: Crear/Editar Envío -->
+      <div class="modal" id="modal-envio">
+        <div class="modal-content" style="max-width:900px">
+          <div class="modal-header"><span class="modal-title" id="modal-envio-title">Nuevo Envío</span><button class="modal-close" onclick="closeModal('modal-envio')">&times;</button></div>
+          <div class="modal-body">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px">
+              <div class="form-group"><label>Fecha</label><input type="date" id="env-fecha"></div>
+              <div class="form-group"><label>Vendedor</label><input type="text" id="env-vendedor" placeholder="Ej: ELIZA"></div>
+              <div class="form-group"><label>Destinatario</label><input type="text" id="env-destinatario" placeholder="Cliente o taller"></div>
+              <div class="form-group"><label>Paquetería</label><input type="text" id="env-paqueteria" placeholder="Estafeta, DHL..."></div>
+              <div class="form-group"><label>Guía (STRING)</label><input type="text" id="env-guia" maxlength="30" placeholder="211240989270"></div>
+              <div class="form-group"><label>Estado</label><select id="env-estado"><option value="PENDIENTE">PENDIENTE</option><option value="TRANSITO">TRANSITO</option><option value="ENTREGADO">ENTREGADO</option><option value="DEVUELTO">DEVUELTO</option></select></div>
+            </div>
+            <div style="margin-bottom:20px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><label style="font-weight:600">Piezas</label><button class="btn btn-secondary btn-sm" onclick="addEnvioPieza()">+ Agregar Pieza</button></div>
+            <div style="overflow-x:auto"><table class="data-table" style="font-size:0.9em"><thead><tr><th>Pieza</th><th>Modelo</th><th style="width:80px">Costo</th><th style="width:40px"></th></tr></thead><tbody id="envio-piezas-body"></tbody></table></div></div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:15px"><div class="form-group"><label>Notas</label><textarea id="env-notas" placeholder="Observaciones..." style="min-height:80px"></textarea></div><div><label style="display:block;font-weight:600;margin-bottom:10px">Costo Total</label><div style="font-size:1.8em;color:#3BBCD4;font-weight:700" id="env-costoTotal">$0</div></div></div>
+          </div>
+          <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modal-envio')">Cancelar</button><button class="btn btn-danger" id="env-btn-delete" onclick="deleteEnvio()" style="display:none">Eliminar</button><button class="btn btn-primary" onclick="saveEnvio()">Guardar Envío</button></div>
+        </div>
+      </div>
+
+      <!-- MODAL: Ver Detalle de Piezas -->
+      <div class="modal" id="modal-envio-detalle">
+        <div class="modal-content" style="max-width:700px">
+          <div class="modal-header"><span class="modal-title">Detalle de Piezas - Guía <span id="detalle-guia"></span></span><button class="modal-close" onclick="closeModal('modal-envio-detalle')">&times;</button></div>
+          <div class="modal-body"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Pieza</th><th>Modelo</th><th>Costo</th></tr></thead><tbody id="detalle-piezas-body"></tbody></table></div></div>
+          <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modal-envio-detalle')">Cerrar</button></div>
         </div>
       </div>
 
@@ -1716,7 +1793,7 @@ const db = window.db;
 // ── STATE ──
 let currentUser = null;
 window.currentRole = 'vendedor';
-const data = { ventas: [], productos: [], clientes: [], cotizaciones: [], proveedores: [], entregas: [], usuarios: [] };
+const data = { ventas: [], productos: [], clientes: [], cotizaciones: [], proveedores: [], entregas: [], usuarios: [], envios: [] };
 const unsubs = [];
 
 // ── LOADING ──
@@ -1828,6 +1905,7 @@ function startListeners() {
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('usuarios', 'users-body', renderUsuarios);
   startFinanzasListeners();
+  startEnviosListeners();
 }
 
 function listenCollection(colName, bodyId, renderFn) {
@@ -2060,6 +2138,24 @@ function updateDashboard() {
         <td style="padding:10px 16px;font-size:13px;text-align:right"><span class="badge badge-${e.estatus}">${e.estatus === 'pending' ? 'Pendiente' : e.estatus === 'delivered' ? 'Entregado' : 'Cancelado'}</span></td>
       </tr>`).join('')}</tbody></table>`;
   }
+
+  // Envios del mes
+  const monthEnvios = (data.envios || []).filter(e => {
+    if (!e.fecha) return false;
+    const fParts = e.fecha.split('-');
+    const fMes = parseInt(fParts[1]) - 1;
+    const fAno = parseInt(fParts[0]);
+    return fMes === now.getMonth() && fAno === now.getFullYear();
+  });
+  const totalEnvios = monthEnvios.length;
+  const envirosTransito = monthEnvios.filter(e => e.estado === 'TRANSITO').length;
+  const enviosEntregados = monthEnvios.filter(e => e.estado === 'ENTREGADO').length;
+  const montoEnvios = monthEnvios.reduce((s, e) => s + (parseFloat(e.costoTotal) || 0), 0);
+
+  document.getElementById('dash-envios-total').textContent = totalEnvios;
+  document.getElementById('dash-envios-transito').textContent = envirosTransito;
+  document.getElementById('dash-envios-entregados').textContent = enviosEntregados;
+  document.getElementById('dash-envios-monto').textContent = fmtMoney(montoEnvios);
 }
 
 // ── CLIENT SELECTS ──
@@ -2558,6 +2654,7 @@ window.showModule = function(name) {
     cotizaciones: ['admin', 'vendedor'],
     proveedores: ['admin', 'almacen'],
     entregas: ['admin', 'vendedor', 'almacen'],
+    envios: ['admin', 'vendedor', 'almacen'],
     reportes: ['admin'],
     mercadolibre: ['admin'],
     documentos: ['admin', 'vendedor'],
@@ -2587,6 +2684,7 @@ window.showModule = function(name) {
     cotizaciones: ['Cotizaciones', 'Genera y gestiona cotizaciones'],
     proveedores: ['Proveedores', 'Directorio de proveedores'],
     entregas: ['Entregas', 'Logística y control de entregas'],
+    envios: ['Envíos', 'Seguimiento de envíos por guía'],
     reportes: ['Reportes', 'Análisis y métricas del negocio'],
     mercadolibre: ['Mercado Libre', 'Sincronización con Mercado Libre'],
     documentos: ['Documentos', 'Gestión de notas de venta y facturas'],
@@ -3635,6 +3733,160 @@ window.exportClientesExcel = async function() {
     window.toast('Error: ' + error.message, 'error');
   }
 };
+
+// ═══════════════════════════════════════════════════════════
+// ENVIOS
+// ═══════════════════════════════════════════════════════════
+
+let currentEnvioId = null;
+let currentEnvioPiezas = [];
+
+function renderEnvios() {
+  const body = document.getElementById('envios-body');
+  const rol = window.currentRole || 'vendedor';
+  if (!data.envios.length) {
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div></div></td></tr>';
+    return;
+  }
+  body.innerHTML = data.envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+}
+
+function editEnvio(id) {
+  const envio = data.envios.find(e => e.id === id);
+  if (!envio) return;
+  currentEnvioId = id;
+  currentEnvioPiezas = JSON.parse(JSON.stringify(envio.items || []));
+  document.getElementById('modal-envio-title').textContent = 'Editar Envío';
+  document.getElementById('env-fecha').value = envio.fecha || '';
+  document.getElementById('env-vendedor').value = envio.vendedor || '';
+  document.getElementById('env-destinatario').value = envio.destinatario || '';
+  document.getElementById('env-paqueteria').value = envio.paqueteria || '';
+  document.getElementById('env-guia').value = envio.guia || '';
+  document.getElementById('env-estado').value = envio.estado || 'PENDIENTE';
+  document.getElementById('env-notas').value = envio.notas || '';
+  document.getElementById('env-btn-delete').style.display = 'block';
+  renderEnvioPiezas();
+  calcularEnvioCostoTotal();
+  openModal('modal-envio');
+}
+
+function addEnvioPieza() {
+  currentEnvioPiezas.push({ pieza: '', modelo: '', costo: 0 });
+  renderEnvioPiezas();
+}
+
+function removeEnvioPieza(idx) {
+  currentEnvioPiezas.splice(idx, 1);
+  renderEnvioPiezas();
+  calcularEnvioCostoTotal();
+}
+
+function renderEnvioPiezas() {
+  const body = document.getElementById('envio-piezas-body');
+  if (!currentEnvioPiezas.length) {
+    body.innerHTML = '<tr><td colspan="4"><div style="text-align:center;padding:20px;color:var(--gray)">Sin piezas agregadas</div></td></tr>';
+    return;
+  }
+  body.innerHTML = currentEnvioPiezas.map((p, i) => `<tr><td><input type="text" value="${p.pieza || ''}" onchange="currentEnvioPiezas[${i}].pieza=this.value" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><input type="text" value="${p.modelo || ''}" onchange="currentEnvioPiezas[${i}].modelo=this.value" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><input type="number" value="${p.costo || 0}" onchange="currentEnvioPiezas[${i}].costo=parseFloat(this.value)||0;calcularEnvioCostoTotal()" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><a href="#" style="color:#EF4444;cursor:pointer" onclick="removeEnvioPieza(${i})">🗑</a></td></tr>`).join('');
+}
+
+function calcularEnvioCostoTotal() {
+  const total = currentEnvioPiezas.reduce((s, p) => s + (parseFloat(p.costo) || 0), 0);
+  document.getElementById('env-costoTotal').textContent = '$' + total.toLocaleString('es-MX', {minimumFractionDigits: 2});
+  return total;
+}
+
+window.saveEnvio = async function() {
+  const fecha = document.getElementById('env-fecha').value;
+  const vendedor = document.getElementById('env-vendedor').value.trim();
+  const destinatario = document.getElementById('env-destinatario').value.trim();
+  const guia = document.getElementById('env-guia').value.trim();
+  const paqueteria = document.getElementById('env-paqueteria').value.trim();
+  const estado = document.getElementById('env-estado').value;
+  const notas = document.getElementById('env-notas').value.trim();
+  if (!fecha || !vendedor || !destinatario || !guia || !currentEnvioPiezas.length) {
+    window.toast('Completa todos los campos requeridos', 'error');
+    return;
+  }
+  const costoTotal = calcularEnvioCostoTotal();
+  const envioData = { fecha, vendedor, destinatario, guia, paqueteria, estado, notas, items: currentEnvioPiezas, costoTotal, createdAt: new Date(), createdBy: window.currentUser?.email || 'desconocido' };
+  try {
+    if (currentEnvioId) {
+      await updateDoc(doc(db, 'envios', currentEnvioId), envioData);
+      window.toast('✅ Envío actualizado', 'success');
+    } else {
+      await addDoc(collection(db, 'envios'), envioData);
+      window.toast('✅ Envío creado', 'success');
+    }
+    closeModal('modal-envio');
+    currentEnvioId = null;
+    currentEnvioPiezas = [];
+  } catch (e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+};
+
+window.deleteEnvio = async function(id) {
+  if (!id) id = currentEnvioId;
+  if (!id) return;
+  try {
+    await deleteDoc(doc(db, 'envios', id));
+    window.toast('✅ Envío eliminado', 'success');
+    closeModal('modal-envio');
+    currentEnvioId = null;
+  } catch (e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+};
+
+function showEnvioDetalle(id) {
+  const envio = data.envios.find(e => e.id === id);
+  if (!envio) return;
+  document.getElementById('detalle-guia').textContent = envio.guia || '—';
+  const body = document.getElementById('detalle-piezas-body');
+  body.innerHTML = (envio.items || []).map(p => `<tr><td>${p.pieza || '—'}</td><td>${p.modelo || '—'}</td><td>$${(p.costo || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td></tr>`).join('');
+  openModal('modal-envio-detalle');
+}
+
+window.filterEnvios = function() {
+  const q = document.getElementById('envios-search').value.toLowerCase();
+  const vendedor = document.getElementById('envios-filter-vendedor').value;
+  const estado = document.getElementById('envios-filter-estado').value;
+  const filtered = data.envios.filter(e => {
+    const matchQ = (e.guia || '').toLowerCase().includes(q) || (e.destinatario || '').toLowerCase().includes(q);
+    const matchV = !vendedor || e.vendedor === vendedor;
+    const matchE = !estado || e.estado === estado;
+    return matchQ && matchV && matchE;
+  });
+  const body = document.getElementById('envios-body');
+  const rol = window.currentRole || 'vendedor';
+  if (!filtered.length) {
+    body.innerHTML = '<tr><td colspan="8"><div style="text-align:center;padding:20px;color:var(--gray)">Sin resultados</div></td></tr>';
+    return;
+  }
+  body.innerHTML = filtered.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+};
+
+function startEnviosListeners() {
+  try {
+    const qEnvios = query(collection(db, 'envios'), orderBy('fecha', 'desc'));
+    const unsubEnvios = onSnapshot(qEnvios, (snap) => {
+      data.envios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderEnvios();
+      updateEnviosSelects();
+      updateDashboard();
+    }, (err) => { console.log('Listener error (envios):', err.message); });
+    unsubs.push(unsubEnvios);
+  } catch (e) { console.log('Error starting envios listener:', e); }
+}
+
+function updateEnviosSelects() {
+  const vendedores = [...new Set(data.envios.map(e => e.vendedor).filter(Boolean))];
+  const sel = document.getElementById('envios-filter-vendedor');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— Todos vendedores —</option>' + vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  sel.value = current;
+}
 
 // ═══════════════════════════════════════════════════════════
 // FINANZAS
