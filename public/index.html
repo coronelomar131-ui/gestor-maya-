@@ -1302,7 +1302,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div class="table-card">
           <div class="table-header">
             <div class="table-title">📦 Envíos</div>
-            <button class="btn btn-secondary btn-sm" onclick="openModal('modal-envio')">+ Nuevo Envío</button>
+            <button class="btn btn-secondary btn-sm" onclick="openEnvioForm()">+ Nuevo Envío</button>
           </div>
           <!-- Filtros -->
           <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;padding:0 15px">
@@ -3787,7 +3787,15 @@ function renderEnvioPiezas() {
     body.innerHTML = '<tr><td colspan="4"><div style="text-align:center;padding:20px;color:var(--gray)">Sin piezas agregadas</div></td></tr>';
     return;
   }
-  body.innerHTML = currentEnvioPiezas.map((p, i) => `<tr><td><input type="text" value="${p.pieza || ''}" onchange="currentEnvioPiezas[${i}].pieza=this.value" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><input type="text" value="${p.modelo || ''}" onchange="currentEnvioPiezas[${i}].modelo=this.value" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><input type="number" value="${p.costo || 0}" onchange="currentEnvioPiezas[${i}].costo=parseFloat(this.value)||0;calcularEnvioCostoTotal()" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><a href="#" style="color:#EF4444;cursor:pointer" onclick="removeEnvioPieza(${i})">🗑</a></td></tr>`).join('');
+  body.innerHTML = currentEnvioPiezas.map((p, i) => `<tr><td><input type="text" value="${p.pieza || ''}" onchange="updateEnvioPieza(${i},'pieza',this.value)" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><input type="text" value="${p.modelo || ''}" onchange="updateEnvioPieza(${i},'modelo',this.value)" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><input type="number" value="${p.costo || 0}" onchange="updateEnvioPieza(${i},'costo',this.value)" style="width:100%;padding:4px 8px;border:1px solid var(--border)"></td><td><a href="#" style="color:#EF4444;cursor:pointer" onclick="removeEnvioPieza(${i})">🗑</a></td></tr>`).join('');
+}
+
+function updateEnvioPieza(idx, field, value) {
+  if (currentEnvioPiezas[idx]) {
+    if (field === 'costo') currentEnvioPiezas[idx].costo = parseFloat(value) || 0;
+    else currentEnvioPiezas[idx][field] = value;
+    if (field === 'costo') calcularEnvioCostoTotal();
+  }
 }
 
 function calcularEnvioCostoTotal() {
