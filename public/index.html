@@ -3744,15 +3744,16 @@ let currentEnvioPiezas = [];
 function renderEnvios() {
   const body = document.getElementById('envios-body');
   const rol = window.currentRole || 'vendedor';
-  if (!data.envios.length) {
+  const envios = window.data?.envios || [];
+  if (!envios.length) {
     body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+  body.innerHTML = envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
 }
 
 function editEnvio(id) {
-  const envio = data.envios.find(e => e.id === id);
+  const envio = (window.data?.envios || []).find(e => e.id === id);
   if (!envio) return;
   currentEnvioId = id;
   currentEnvioPiezas = JSON.parse(JSON.stringify(envio.items || []));
@@ -3848,7 +3849,7 @@ window.deleteEnvio = async function(id) {
 };
 
 function showEnvioDetalle(id) {
-  const envio = data.envios.find(e => e.id === id);
+  const envio = (window.data?.envios || []).find(e => e.id === id);
   if (!envio) return;
   document.getElementById('detalle-guia').textContent = envio.guia || '—';
   const body = document.getElementById('detalle-piezas-body');
@@ -3860,7 +3861,7 @@ window.filterEnvios = function() {
   const q = document.getElementById('envios-search').value.toLowerCase();
   const vendedor = document.getElementById('envios-filter-vendedor').value;
   const estado = document.getElementById('envios-filter-estado').value;
-  const filtered = data.envios.filter(e => {
+  const filtered = (window.data?.envios || []).filter(e => {
     const matchQ = (e.guia || '').toLowerCase().includes(q) || (e.destinatario || '').toLowerCase().includes(q);
     const matchV = !vendedor || e.vendedor === vendedor;
     const matchE = !estado || e.estado === estado;
@@ -3877,24 +3878,42 @@ window.filterEnvios = function() {
 
 function startEnviosListeners() {
   try {
+    if (!window.data) window.data = {};
     const qEnvios = query(collection(db, 'envios'), orderBy('fecha', 'desc'));
     const unsubEnvios = onSnapshot(qEnvios, (snap) => {
-      data.envios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      window.data.envios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderEnvios();
       updateEnviosSelects();
       updateDashboard();
     }, (err) => { console.log('Listener error (envios):', err.message); });
-    unsubs.push(unsubEnvios);
+    if (window.unsubs) window.unsubs.push(unsubEnvios);
   } catch (e) { console.log('Error starting envios listener:', e); }
 }
 
 function updateEnviosSelects() {
-  const vendedores = [...new Set(data.envios.map(e => e.vendedor).filter(Boolean))];
+  const vendedores = [...new Set((window.data?.envios || []).map(e => e.vendedor).filter(Boolean))];
   const sel = document.getElementById('envios-filter-vendedor');
   const current = sel.value;
   sel.innerHTML = '<option value="">— Todos vendedores —</option>' + vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
   sel.value = current;
 }
+
+window.openEnvioForm = function() {
+  currentEnvioId = null;
+  currentEnvioPiezas = [{ pieza: '', modelo: '', costo: 0 }];
+  document.getElementById('modal-envio-title').textContent = 'Nuevo Envío';
+  document.getElementById('env-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('env-vendedor').value = '';
+  document.getElementById('env-destinatario').value = '';
+  document.getElementById('env-paqueteria').value = '';
+  document.getElementById('env-guia').value = '';
+  document.getElementById('env-estado').value = 'PENDIENTE';
+  document.getElementById('env-notas').value = '';
+  document.getElementById('env-btn-delete').style.display = 'none';
+  renderEnvioPiezas();
+  document.getElementById('env-costoTotal').textContent = '$0';
+  openModal('modal-envio');
+};
 
 // ═══════════════════════════════════════════════════════════
 // FINANZAS
