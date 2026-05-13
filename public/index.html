@@ -1702,11 +1702,10 @@ window.serverTimestamp = serverTimestamp;
 window.writeBatch = writeBatch;
 window.onSnapshot = onSnapshot;
 
-// Export Storage functions
-// window.getStorage = getStorage; // Removed (Firebase Storage no longer used)
-window.ref = ref;
-// Firebase Storage global references removed (no longer needed for facturas)
-window.getDownloadURL = getDownloadURL;
+// Export Storage functions - COMMENTED OUT (Firebase Storage no longer used)
+// window.getStorage = getStorage;
+// window.ref = ref;
+// window.getDownloadURL = getDownloadURL;
 
 // Keep references for module scope
 const auth = window.auth;
