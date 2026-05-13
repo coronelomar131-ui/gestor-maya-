@@ -3744,7 +3744,7 @@ let currentEnvioPiezas = [];
 function renderEnvios() {
   const body = document.getElementById('envios-body');
   const rol = window.currentRole || 'vendedor';
-  const envios = window.data?.envios || [];
+  const envios = data.envios || [];
   if (!envios.length) {
     body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div></div></td></tr>';
     return;
@@ -3753,7 +3753,7 @@ function renderEnvios() {
 }
 
 function editEnvio(id) {
-  const envio = (window.data?.envios || []).find(e => e.id === id);
+  const envio = (data.envios || []).find(e => e.id === id);
   if (!envio) return;
   currentEnvioId = id;
   currentEnvioPiezas = JSON.parse(JSON.stringify(envio.items || []));
@@ -3849,7 +3849,7 @@ window.deleteEnvio = async function(id) {
 };
 
 function showEnvioDetalle(id) {
-  const envio = (window.data?.envios || []).find(e => e.id === id);
+  const envio = (data.envios || []).find(e => e.id === id);
   if (!envio) return;
   document.getElementById('detalle-guia').textContent = envio.guia || '—';
   const body = document.getElementById('detalle-piezas-body');
@@ -3861,7 +3861,7 @@ window.filterEnvios = function() {
   const q = document.getElementById('envios-search').value.toLowerCase();
   const vendedor = document.getElementById('envios-filter-vendedor').value;
   const estado = document.getElementById('envios-filter-estado').value;
-  const filtered = (window.data?.envios || []).filter(e => {
+  const filtered = (data.envios || []).filter(e => {
     const matchQ = (e.guia || '').toLowerCase().includes(q) || (e.destinatario || '').toLowerCase().includes(q);
     const matchV = !vendedor || e.vendedor === vendedor;
     const matchE = !estado || e.estado === estado;
@@ -3878,20 +3878,30 @@ window.filterEnvios = function() {
 
 function startEnviosListeners() {
   try {
-    if (!window.data) window.data = {};
     const qEnvios = query(collection(db, 'envios'), orderBy('fecha', 'desc'));
     const unsubEnvios = onSnapshot(qEnvios, (snap) => {
-      window.data.envios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.envios = snap.docs.map(d => {
+        const docData = d.data() || {};
+        const newObj = { id: d.id };
+        for (const key in docData) {
+          newObj[key] = docData[key];
+        }
+        return newObj;
+      });
       renderEnvios();
       updateEnviosSelects();
       updateDashboard();
-    }, (err) => { console.log('Listener error (envios):', err.message); });
-    if (window.unsubs) window.unsubs.push(unsubEnvios);
+    }, (err) => {
+      console.log('Listener error (envios):', err.message);
+      data.envios = [];
+      renderEnvios();
+    });
+    unsubs.push(unsubEnvios);
   } catch (e) { console.log('Error starting envios listener:', e); }
 }
 
 function updateEnviosSelects() {
-  const vendedores = [...new Set((window.data?.envios || []).map(e => e.vendedor).filter(Boolean))];
+  const vendedores = [...new Set((data.envios || []).map(e => e.vendedor).filter(Boolean))];
   const sel = document.getElementById('envios-filter-vendedor');
   const current = sel.value;
   sel.innerHTML = '<option value="">— Todos vendedores —</option>' + vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
