@@ -1302,7 +1302,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div class="table-card">
           <div class="table-header">
             <div class="table-title">📦 Envíos</div>
-            <button class="btn btn-secondary btn-sm" onclick="openEnvioForm()">+ Nuevo Envío</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="cargarEnvios()" style="background-color:#3BBCD4;color:white">🔄 Actualizar</button>
+              <button class="btn btn-secondary btn-sm" onclick="openEnvioForm()">+ Nuevo Envío</button>
+            </div>
           </div>
           <!-- Filtros -->
           <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;padding:0 15px">
@@ -1905,7 +1908,6 @@ function startListeners() {
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('usuarios', 'users-body', renderUsuarios);
   startFinanzasListeners();
-  startEnviosListeners();
 }
 
 function listenCollection(colName, bodyId, renderFn) {
@@ -2706,7 +2708,9 @@ window.showModule = function(name) {
   });
 
   // Cargar datos específicos del módulo
-  if (name === 'configuracion') {
+  if (name === 'envios') {
+    cargarEnvios();
+  } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
   }
 };
@@ -3830,6 +3834,7 @@ window.saveEnvio = async function() {
     closeModal('modal-envio');
     currentEnvioId = null;
     currentEnvioPiezas = [];
+    await cargarEnvios();
   } catch (e) {
     window.toast('Error: ' + e.message, 'error');
   }
@@ -3843,6 +3848,7 @@ window.deleteEnvio = async function(id) {
     window.toast('✅ Envío eliminado', 'success');
     closeModal('modal-envio');
     currentEnvioId = null;
+    await cargarEnvios();
   } catch (e) {
     window.toast('Error: ' + e.message, 'error');
   }
@@ -3876,25 +3882,25 @@ window.filterEnvios = function() {
   body.innerHTML = filtered.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
 };
 
-function startEnviosListeners() {
+async function cargarEnvios() {
   try {
-    const qEnvios = query(collection(db, 'envios'), orderBy('fecha', 'desc'));
-    const unsubEnvios = onSnapshot(qEnvios, (snap) => {
-      allEnvios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderEnvios(allEnvios);
-      updateEnviosSelects(allEnvios);
-      updateDashboard(allEnvios);
-    }, (err) => {
-      console.log('Listener error (envios):', err.message);
-      allEnvios = [];
-      renderEnvios([]);
-      updateEnviosSelects([]);
-      updateDashboard([]);
+    const snap = await getDocs(collection(db, 'envios'));
+    const envios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    envios.sort((a, b) => {
+      const fa = a.fecha?.seconds || a.fecha || 0;
+      const fb = b.fecha?.seconds || b.fecha || 0;
+      return fb - fa;
     });
-    if (typeof unsubs !== 'undefined') {
-      unsubs.push(unsubEnvios);
-    }
-  } catch (e) { console.log('Error starting envios listener:', e); }
+    renderEnvios(envios);
+    if (typeof updateEnviosSelects === 'function') updateEnviosSelects(envios);
+    if (typeof updateDashboard === 'function') updateDashboard(envios);
+    allEnvios = envios;
+    return envios;
+  } catch (e) {
+    console.error('Error cargando envios:', e);
+    renderEnvios([]);
+    return [];
+  }
 }
 
 function updateEnviosSelects(envios = []) {
