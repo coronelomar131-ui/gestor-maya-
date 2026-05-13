@@ -2647,6 +2647,10 @@ window.cotToVenta = async function(id) {
 window.showModule = function(name) {
   const rol = window.currentRole || 'vendedor';
 
+  // Cerrar formularios abiertos al cambiar de módulo
+  closeModal('modal-envio');
+  closeModal('modal-envio-detalle');
+
   // Define module permissions
   const permissions = {
     dashboard: ['admin', 'vendedor', 'almacen'],
