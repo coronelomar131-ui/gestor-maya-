@@ -2563,7 +2563,7 @@ window.showModule = function(name) {
     mercadolibre: ['admin'],
     documentos: ['admin', 'vendedor'],
     usuarios: ['admin'],
-    finanzas: ['admin'],
+    finanzas: ['admin', 'vendedor', 'almacen'],
     configuracion: ['admin']
   };
 
@@ -3642,10 +3642,16 @@ window.exportClientesExcel = async function() {
 // ═══════════════════════════════════════════════════════════
 
 window.showFinanzasTab = function(tab) {
+  const rol = window.currentRole || 'vendedor';
+  // Non-admin cannot access 'prestamos' tab
+  if (tab === 'prestamos' && rol !== 'admin') {
+    window.toast('No tienes permiso para acceder a Préstamos', 'error');
+    tab = 'pagos'; // Redirect to Pagos tab
+  }
   document.querySelectorAll('.finanzas-tab').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.getElementById('tab-' + tab).style.display = 'block';
-  event.target.classList.add('active');
+  event.target && event.target.classList.add('active');
 };
 
 window.savePrestamo = async function() {
