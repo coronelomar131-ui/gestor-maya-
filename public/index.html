@@ -4210,6 +4210,18 @@ function calcularEnvioCostoTotal() {
   return total;
 }
 
+/**
+ * 💾 saveEnvio() — Guarda un envío nuevo o actualiza uno existente en Firebase.
+ *
+ * Imagínalo: el formulario del modal es un papelito. Cuando clickeas "Guardar Envío",
+ * este papelito se convierte en "tinta permanente" en la bodega (Firestore).
+ *
+ * Si estás editando uno que ya existe (currentEnvioId es diferente de null),
+ * lo actualiza. Si es nuevo, lo crea.
+ *
+ * 🚫 NO TOCAR EL INTERIOR — otras funciones dependen de la estructura exacta.
+ * ✅ Puedes ver y entender esta función sin problema.
+ */
 window.saveEnvio = async function() {
   const fecha = document.getElementById('env-fecha').value;
   const vendedor = document.getElementById('env-vendedor').value.trim();
@@ -4241,6 +4253,16 @@ window.saveEnvio = async function() {
   }
 };
 
+/**
+ * 🗑️ deleteEnvio(id) — Borra un envío de Firebase PERMANENTEMENTE.
+ *
+ * Imagínalo: rompes el papelito de la bodega. Una vez que lo haces, no hay vuelta atrás.
+ *
+ * Si no le pasas un `id`, usa `currentEnvioId` (el que estás editando).
+ *
+ * 🚫 NO TOCAR EL INTERIOR — es MUY crítica.
+ * ✅ Puedes llamarla sin problema desde botones.
+ */
 window.deleteEnvio = async function(id) {
   if (!id) id = currentEnvioId;
   if (!id) return;
@@ -4341,6 +4363,18 @@ window.filterEnvios = function() {
   updateEnviosKPIs(filtered);
 };
 
+/**
+ * 🚚 cargarEnvios() — Trae TODOS los envíos guardados en Firebase y los pone en la tabla.
+ *
+ * Imagínalo: vas a la bodega, traes todas las guías de paquetes, las pones sobre una mesa
+ * en orden (más nuevo primero), y le dices al pizarrón "muéstralas para que todos las vean".
+ * Eso es esta función.
+ *
+ * También actualiza los números de arriba (Pendientes, Tránsito, Entregados, Monto).
+ *
+ * 🚫 NO TOCAR EL INTERIOR — otras partes dependen de esto.
+ * ✅ Puedes llamarla cuando quieras (botón 🔄, al guardar, etc.).
+ */
 async function cargarEnvios() {
   try {
     const snap = await getDocs(collection(db, 'envios'));
