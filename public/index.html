@@ -3954,7 +3954,7 @@ function renderEnvios(envios = []) {
     body.innerHTML = `<tr><td colspan="8"><div class="envios-empty"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div><div class="empty-sub">Crea el primero para empezar a rastrear paquetes</div><button onclick="openEnvioForm()" class="btn btn-primary" style="margin-top:1rem">+ Nuevo Envío</button></div></td></tr>`;
     return;
   }
-  body.innerHTML = envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+  body.innerHTML = envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><select onchange="cambiarEstadoEnvio('${e.id}', this.value)" class="badge-env-select badge-env-${(e.estado || 'PENDIENTE').toLowerCase()}" title="Click para cambiar estado"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
 }
 
 function editEnvio(id) {
@@ -4055,6 +4055,39 @@ window.deleteEnvio = async function(id) {
   }
 };
 
+/**
+ * 🔄 cambiarEstadoEnvio(id, nuevoEstado) — Cambia el estado de un envío directamente desde la tabla.
+ *
+ * Imagínalo: en la tabla ves un pequeño selector (una caja) con opciones (Pendiente, Tránsito, etc.)
+ * Le das click, elegís el nuevo estado, y automáticamente se guarda en Firebase sin necesidad de
+ * abrir el formulario completo.
+ *
+ * Si cambia a ENTREGADO, automáticamente registra quién lo entregó (el usuario actual) y la fecha.
+ *
+ * ✅ Llamada desde inline en la tabla, MUY segura de tocar.
+ */
+window.cambiarEstadoEnvio = async function(id, nuevoEstado) {
+  if (!id || !nuevoEstado) return;
+  const envio = allEnvios.find(e => e.id === id);
+  if (!envio) { window.toast('Envío no encontrado', 'error'); return; }
+  if (envio.estado === nuevoEstado) return;
+
+  try {
+    const updateData = { estado: nuevoEstado };
+    if (nuevoEstado === 'ENTREGADO') {
+      updateData.fechaEntrega = new Date();
+      updateData.entregadoPor = window.currentUser?.email || window.currentUser?.nombre || 'desconocido';
+    }
+    await updateDoc(doc(db, 'envios', id), updateData);
+    window.toast(`✅ Estado: ${nuevoEstado}`, 'success');
+    await cargarEnvios();
+  } catch (e) {
+    console.error(e);
+    window.toast('Error: ' + e.message, 'error');
+    await cargarEnvios();
+  }
+};
+
 function showEnvioDetalle(id) {
   const envio = allEnvios.find(e => e.id === id);
   if (!envio) return;
@@ -4080,7 +4113,7 @@ window.filterEnvios = function() {
     body.innerHTML = '<tr><td colspan="8"><div class="envios-empty"><div class="empty-icon">🔍</div><div class="empty-title">Sin resultados</div><div class="empty-sub">Ajusta los filtros e intenta nuevamente</div></div></td></tr>';
     return;
   }
-  body.innerHTML = filtered.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+  body.innerHTML = filtered.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><select onchange="cambiarEstadoEnvio('${e.id}', this.value)" class="badge-env-select badge-env-${(e.estado || 'PENDIENTE').toLowerCase()}" title="Click para cambiar estado"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
 };
 
 async function cargarEnvios() {
