@@ -759,6 +759,127 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   color: var(--white);
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
+
+/* ── ENVÍOS MODULE STYLES ── */
+.envios-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--navy-dark);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.envios-table thead th {
+  background: #1a3a52;
+  color: var(--white);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.envios-table tbody td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(59,188,212,0.1);
+  color: var(--gray-light);
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.envios-table tbody tr {
+  transition: background 0.15s;
+}
+
+.envios-table tbody tr:hover {
+  background: rgba(59,188,212,0.05);
+}
+
+.envios-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.envios-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+
+.envios-empty .empty-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.5;
+}
+
+.envios-empty .empty-title {
+  color: var(--white);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.envios-empty .empty-sub {
+  color: var(--gray);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.badge-env-select {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 1.5rem 0.3rem 0.65rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  border: 1px solid;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 10px;
+  transition: transform 0.15s;
+}
+
+.badge-env-select:hover {
+  transform: scale(1.04);
+}
+
+.badge-env-select.badge-env-pendiente {
+  background-color: rgba(252,211,77,0.15);
+  color: #FCD34D;
+  border-color: rgba(252,211,77,0.3);
+}
+
+.badge-env-select.badge-env-transito {
+  background-color: rgba(59,188,212,0.15);
+  color: #3BBCD4;
+  border-color: rgba(59,188,212,0.3);
+}
+
+.badge-env-select.badge-env-entregado {
+  background-color: rgba(16,185,129,0.15);
+  color: #10B981;
+  border-color: rgba(16,185,129,0.3);
+}
+
+.badge-env-select.badge-env-devuelto {
+  background-color: rgba(239,68,68,0.15);
+  color: #EF4444;
+  border-color: rgba(239,68,68,0.3);
+}
+
+.badge-env-select option {
+  background: var(--navy-dark);
+  color: var(--white);
+}
 </style>
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1300,30 +1421,36 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <!-- ENVIOS -->
       <div class="module-view" id="mod-envios">
         <div class="table-card">
-          <div class="table-header">
-            <div class="table-title">📦 Envíos</div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-secondary btn-sm" onclick="cargarEnvios()" style="background-color:#3BBCD4;color:white">🔄 Actualizar</button>
-              <button class="btn btn-secondary btn-sm" onclick="openEnvioForm()">+ Nuevo Envío</button>
+          <!-- HEADER MEJORADO -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;padding:0 15px;padding-top:15px">
+            <div>
+              <h2 style="margin:0;color:var(--white);font-family:var(--font-head);font-weight:700;font-size:1.8rem">🚚 Envíos</h2>
+              <p style="margin:0.25rem 0 0;color:var(--gray);font-size:0.9rem">Seguimiento de paquetes y entregas</p>
+            </div>
+            <div style="display:flex;gap:0.5rem">
+              <button onclick="cargarEnvios()" class="btn btn-secondary btn-sm" title="Refrescar" style="background-color:#3BBCD4;color:white">🔄</button>
+              <button onclick="openEnvioForm()" class="btn btn-primary" style="white-space:nowrap">+ Nuevo Envío</button>
             </div>
           </div>
-          <!-- Filtros -->
-          <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;padding:0 15px">
-            <input type="text" placeholder="🔍 Buscar por guía o destinatario..." id="envios-search" onkeyup="filterEnvios()" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:4px">
-            <select id="envios-filter-vendedor" onchange="filterEnvios()" style="padding:8px 12px">
-              <option value="">— Todos vendedores —</option>
+
+          <!-- FILTROS MEJORADOS -->
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;padding:0 15px">
+            <input type="text" id="envios-search" placeholder="🔍 Buscar por guía o destinatario..." oninput="filterEnvios()" style="flex:1;min-width:200px;padding:0.5rem 0.75rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
+            <select id="envios-filter-vendedor" onchange="filterEnvios()" style="padding:0.5rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
+              <option value="">Todos los vendedores</option>
             </select>
-            <select id="envios-filter-estado" onchange="filterEnvios()">
-              <option value="">— Todos estados —</option>
-              <option value="PENDIENTE">PENDIENTE</option>
-              <option value="TRANSITO">TRANSITO</option>
-              <option value="ENTREGADO">ENTREGADO</option>
-              <option value="DEVUELTO">DEVUELTO</option>
+            <select id="envios-filter-estado" onchange="filterEnvios()" style="padding:0.5rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
+              <option value="">Todos los estados</option>
+              <option value="PENDIENTE">⏳ PENDIENTE</option>
+              <option value="TRANSITO">🚚 TRÁNSITO</option>
+              <option value="ENTREGADO">✅ ENTREGADO</option>
+              <option value="DEVUELTO">↩️ DEVUELTO</option>
             </select>
           </div>
+
           <!-- Tabla -->
-          <div style="overflow-x:auto">
-            <table class="data-table">
+          <div style="overflow-x:auto;padding:0 15px">
+            <table class="data-table envios-table">
               <thead>
                 <tr><th>Fecha</th><th>Vendedor</th><th>Destinatario</th><th>Guía</th><th># Piezas</th><th>Estado</th><th>Costo Total</th><th></th></tr>
               </thead>
@@ -3824,7 +3951,7 @@ function renderEnvios(envios = []) {
   const body = document.getElementById('envios-body');
   const rol = window.currentRole || 'vendedor';
   if (!envios.length) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div></div></td></tr>';
+    body.innerHTML = `<tr><td colspan="8"><div class="envios-empty"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div><div class="empty-sub">Crea el primero para empezar a rastrear paquetes</div><button onclick="openEnvioForm()" class="btn btn-primary" style="margin-top:1rem">+ Nuevo Envío</button></div></td></tr>`;
     return;
   }
   body.innerHTML = envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
@@ -3950,7 +4077,7 @@ window.filterEnvios = function() {
   const body = document.getElementById('envios-body');
   const rol = window.currentRole || 'vendedor';
   if (!filtered.length) {
-    body.innerHTML = '<tr><td colspan="8"><div style="text-align:center;padding:20px;color:var(--gray)">Sin resultados</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="8"><div class="envios-empty"><div class="empty-icon">🔍</div><div class="empty-title">Sin resultados</div><div class="empty-sub">Ajusta los filtros e intenta nuevamente</div></div></td></tr>';
     return;
   }
   body.innerHTML = filtered.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><span class="badge badge-${e.estado === 'PENDIENTE' ? 'y' : e.estado === 'TRANSITO' ? 't' : e.estado === 'ENTREGADO' ? 'g' : 'r'}">${e.estado || 'PENDIENTE'}</span></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
