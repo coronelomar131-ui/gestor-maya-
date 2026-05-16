@@ -1433,6 +1433,26 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             </div>
           </div>
 
+          <!-- KPIs DEL MÓDULO -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem;padding:0 15px">
+            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #FCD34D;padding:1rem;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Pendientes</div>
+              <div id="env-kpi-pendientes" style="color:#FCD34D;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">0</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #3BBCD4;padding:1rem;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">En tránsito</div>
+              <div id="env-kpi-transito" style="color:#3BBCD4;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">0</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #10B981;padding:1rem;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Entregados</div>
+              <div id="env-kpi-entregados" style="color:#10B981;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">0</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #ff8c00;padding:1rem;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Monto Total</div>
+              <div id="env-kpi-monto" style="color:#ff8c00;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">$0</div>
+            </div>
+          </div>
+
           <!-- FILTROS MEJORADOS -->
           <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;padding:0 15px">
             <input type="text" id="envios-search" placeholder="🔍 Buscar por guía o destinatario..." oninput="filterEnvios()" style="flex:1;min-width:200px;padding:0.5rem 0.75rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
@@ -4088,6 +4108,29 @@ window.cambiarEstadoEnvio = async function(id, nuevoEstado) {
   }
 };
 
+/**
+ * 📊 updateEnviosKPIs(envios) — Actualiza los números de arriba: Pendientes, Tránsito, Entregados, Monto.
+ *
+ * Imagínalo: cada vez que cambias algo en los envíos, estos números se actualizan automáticamente
+ * arriba de la tabla para que veas de un vistazo: "Tengo X pendientes, Y en tránsito, Z entregados".
+ *
+ * Se llama automáticamente desde cargarEnvios() y filterEnvios().
+ * ✅ Completamente segura de tocar — solo actualiza elementos del DOM.
+ */
+function updateEnviosKPIs(envios) {
+  const lista = envios || allEnvios || [];
+  const pendientes = lista.filter(e => e.estado === 'PENDIENTE').length;
+  const transito = lista.filter(e => e.estado === 'TRANSITO').length;
+  const entregados = lista.filter(e => e.estado === 'ENTREGADO').length;
+  const monto = lista.reduce((acc, e) => acc + (Number(e.costoTotal) || 0), 0);
+
+  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setText('env-kpi-pendientes', pendientes);
+  setText('env-kpi-transito', transito);
+  setText('env-kpi-entregados', entregados);
+  setText('env-kpi-monto', '$' + monto.toLocaleString('es-MX', {minimumFractionDigits: 0}));
+}
+
 function showEnvioDetalle(id) {
   const envio = allEnvios.find(e => e.id === id);
   if (!envio) return;
@@ -4111,9 +4154,11 @@ window.filterEnvios = function() {
   const rol = window.currentRole || 'vendedor';
   if (!filtered.length) {
     body.innerHTML = '<tr><td colspan="8"><div class="envios-empty"><div class="empty-icon">🔍</div><div class="empty-title">Sin resultados</div><div class="empty-sub">Ajusta los filtros e intenta nuevamente</div></div></td></tr>';
+    updateEnviosKPIs(filtered);
     return;
   }
   body.innerHTML = filtered.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><select onchange="cambiarEstadoEnvio('${e.id}', this.value)" class="badge-env-select badge-env-${(e.estado || 'PENDIENTE').toLowerCase()}" title="Click para cambiar estado"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+  updateEnviosKPIs(filtered);
 };
 
 async function cargarEnvios() {
@@ -4126,6 +4171,7 @@ async function cargarEnvios() {
       return fb - fa;
     });
     renderEnvios(envios);
+    if (typeof updateEnviosKPIs === 'function') updateEnviosKPIs(envios);
     if (typeof updateEnviosSelects === 'function') updateEnviosSelects(envios);
     if (typeof updateDashboard === 'function') updateDashboard(envios);
     allEnvios = envios;
