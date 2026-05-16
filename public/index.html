@@ -2145,6 +2145,38 @@ function listenCollection(colName, bodyId, renderFn) {
   unsubs.push(unsub);
 }
 
+/**
+ * 🔔 startEnviosListener() — Escucha cambios en Firestore en TIEMPO REAL.
+ *
+ * Imagínalo: le pones un "campana" a la puerta de la bodega de envíos. Cada vez que
+ * alguien agrega, edita o borra un paquete, la campana suena y todos los que están
+ * viendo la tabla la ven actualizar automáticamente (sin necesidad de refrescar).
+ *
+ * Se llama solo UNA VEZ al cargar la app (en startListeners).
+ * ✅ Puedes tocar esta función sin problema — la lógica es segura.
+ */
+function startEnviosListener() {
+  try {
+    const q = query(collection(db, 'envios'), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      allEnvios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const modEnvios = document.getElementById('mod-envios');
+      if (modEnvios && modEnvios.classList.contains('active')) {
+        if (typeof renderEnvios === 'function') renderEnvios(allEnvios);
+        if (typeof updateEnviosSelects === 'function') updateEnviosSelects(allEnvios);
+        if (typeof updateEnviosKPIs === 'function') updateEnviosKPIs(allEnvios);
+      }
+      if (typeof updateDashboard === 'function') updateDashboard();
+    }, (err) => {
+      console.error('Error listener envios:', err.message);
+      allEnvios = [];
+    });
+    unsubs.push(unsub);
+  } catch (e) {
+    console.error('Error en startEnviosListener:', e);
+  }
+}
+
 // ── RENDER FUNCTIONS ──
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -4105,46 +4137,6 @@ function cerrarTodoEnvios() {
       el.classList.remove('open', 'active', 'show');
     }
   });
-}
-
-/**
- * 🔔 startEnviosListener() — Escucha cambios en Firestore en TIEMPO REAL.
- *
- * Imagínalo: le pones un "campana" a la puerta de la bodega de envíos. Cada vez que
- * alguien agrega, edita o borra un paquete, la campana suena y todos los que están
- * viendo la tabla la ven actualizar automáticamente (sin necesidad de refrescar).
- *
- * Se llama solo UNA VEZ al cargar la app (en startListeners).
- * ✅ Puedes tocar esta función sin problema — la lógica es segura.
- */
-function startEnviosListener() {
-  try {
-    const q = query(collection(db, 'envios'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
-      allEnvios = snap.docs.map(d => {
-        const docData = d.data() || {};
-        const newObj = { id: d.id };
-        for (const key in docData) {
-          newObj[key] = docData[key];
-        }
-        return newObj;
-      });
-      // Actualizar tabla si estamos viendo el módulo de Envíos
-      const modEnvios = document.getElementById('mod-envios');
-      if (modEnvios && modEnvios.classList.contains('active')) {
-        renderEnvios(allEnvios);
-        if (typeof updateEnviosSelects === 'function') updateEnviosSelects(allEnvios);
-      }
-      // Actualizar números del dashboard
-      if (typeof updateDashboard === 'function') updateDashboard();
-    }, (err) => {
-      console.error('Error listener envios:', err.message);
-      allEnvios = [];
-    });
-    unsubs.push(unsub);
-  } catch (e) {
-    console.error('Error en startEnviosListener:', e);
-  }
 }
 
 function renderEnvios(envios = []) {
