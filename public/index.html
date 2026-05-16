@@ -1081,6 +1081,35 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <div class="stat-label">Entregas pendientes</div>
           </div>
         </div>
+        <!-- CARD DE AVANCE DEL SISTEMA -->
+        <div class="table-card" style="margin-bottom:20px">
+          <div style="background:var(--surface2);border:1px solid rgba(59,188,212,0.2);border-radius:10px;padding:1.5rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+              <div>
+                <div style="color:var(--white);font-size:1.1rem;font-weight:700;font-family:var(--font-head)">🏗️ Avance del Sistema Maya</div>
+                <div style="color:var(--gray);font-size:0.8rem">Estado general del gestor</div>
+              </div>
+              <div id="sistema-porcentaje" style="color:#3BBCD4;font-size:2rem;font-weight:800;font-family:var(--font-head)">90%</div>
+            </div>
+            <div style="background:var(--navy-deeper);height:14px;border-radius:7px;overflow:hidden;margin-bottom:1rem">
+              <div id="sistema-progress-bar" style="height:100%;background:linear-gradient(90deg,#10B981,#3BBCD4);width:90%;border-radius:7px;transition:width 0.6s ease"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem">
+              <div>
+                <div style="color:#10B981;font-size:0.75rem;text-transform:uppercase;font-weight:700;margin-bottom:0.5rem">✅ Completos (<span id="sistema-completos-count">0</span>)</div>
+                <div id="sistema-completos" style="color:var(--gray-light);font-size:0.85rem;line-height:1.6"></div>
+              </div>
+              <div>
+                <div style="color:#FCD34D;font-size:0.75rem;text-transform:uppercase;font-weight:700;margin-bottom:0.5rem">🟡 En desarrollo (<span id="sistema-desarrollo-count">0</span>)</div>
+                <div id="sistema-desarrollo" style="color:var(--gray-light);font-size:0.85rem;line-height:1.6"></div>
+              </div>
+              <div>
+                <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;font-weight:700;margin-bottom:0.5rem">⚪ Pendientes (<span id="sistema-pendientes-count">0</span>)</div>
+                <div id="sistema-pendientes" style="color:var(--gray);font-size:0.85rem;line-height:1.6"></div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="table-card" style="margin-bottom:20px">
           <div class="table-header"><div class="table-title">🛒 Alertas de Mercado Libre</div></div>
           <div id="ml-alerts-container" style="padding:20px;color:var(--gray);text-align:center">
@@ -1550,6 +1579,38 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             </div>
           </div>
         </div>
+
+        <!-- AVANCE DEL SISTEMA (ADMIN ONLY) -->
+        <div class="table-card" style="max-width:900px;margin-top:20px">
+          <div class="table-header">
+            <div class="table-title">🏗️ Avance del Sistema</div>
+            <p style="color:var(--gray);font-size:0.9em;margin:8px 0 0 0">Solo administrador puede editar el estado general del gestor</p>
+          </div>
+          <div style="padding:20px">
+            <div class="form-group">
+              <label>Porcentaje de Avance (%)</label>
+              <input type="number" id="avance-porcentaje" min="0" max="100" placeholder="90">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px">
+              <div class="form-group">
+                <label>Módulos Completos (uno por línea)</label>
+                <textarea id="avance-completos" placeholder="Dashboard&#10;Clientes&#10;Ventas" style="min-height:100px;font-family:monospace"></textarea>
+              </div>
+              <div class="form-group">
+                <label>Módulos en Desarrollo (uno por línea)</label>
+                <textarea id="avance-desarrollo" placeholder="Envíos" style="min-height:100px;font-family:monospace"></textarea>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Pendientes (uno por línea)</label>
+              <textarea id="avance-pendientes" placeholder="Google Drive&#10;Notificaciones push" style="min-height:80px;font-family:monospace"></textarea>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:20px">
+              <button class="btn btn-primary" onclick="guardarAvanceSistema()">✅ Guardar</button>
+              <button class="btn btn-secondary" onclick="cargarFormularioAvance()">🔄 Recargar</button>
+            </div>
+          </div>
+        </div>
       </div>
 
     </div><!-- /content -->
@@ -1976,6 +2037,7 @@ onAuthStateChanged(auth, async (user) => {
     await loadUserProfile(user.uid);
     showApp();
     startListeners();
+    setTimeout(() => cargarAvanceSistema(), 100);
     hideLoading();
   } else {
     currentUser = null;
@@ -2306,6 +2368,121 @@ function updateDashboard(envios = []) {
   document.getElementById('dash-envios-transito').textContent = envirosTransito;
   document.getElementById('dash-envios-entregados').textContent = enviosEntregados;
   document.getElementById('dash-envios-monto').textContent = fmtMoney(montoEnvios);
+}
+
+/**
+ * 📊 cargarAvanceSistema() — Trae el estado de avance del gestor desde Firestore.
+ *
+ * Imagínalo: en Firestore tenés una "libretita" con el % de avance del sistema y qué módulos
+ * ya están listos, cuáles están en construcción y cuáles faltan. Esta función trae esa info
+ * y la muestra en un gráfico bonito en el Dashboard.
+ *
+ * Si es la primera vez, crea la libretita con valores por defecto.
+ * Se llama al cargar el Dashboard.
+ *
+ * ✅ Completamente segura de tocar.
+ */
+async function cargarAvanceSistema() {
+  try {
+    const docRef = doc(db, 'config', 'sistema_avance');
+    const docSnap = await getDoc(docRef);
+    let data;
+    if (!docSnap.exists()) {
+      data = {
+        porcentaje: 90,
+        modulosCompletos: ['Dashboard','Clientes','Ventas','Inventario','Cotizaciones','Proveedores','Documentos','Finanzas','Mercado Libre','Auth'],
+        modulosEnDesarrollo: ['Envíos'],
+        pendientes: ['Google Drive','Compac','Notificaciones push'],
+        ultimaActualizacion: new Date()
+      };
+      await setDoc(docRef, data);
+    } else {
+      data = docSnap.data();
+    }
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const setHTML = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
+    setText('sistema-porcentaje', (data.porcentaje || 0) + '%');
+    const bar = document.getElementById('sistema-progress-bar');
+    if (bar) bar.style.width = (data.porcentaje || 0) + '%';
+    const completos = data.modulosCompletos || [];
+    const desarrollo = data.modulosEnDesarrollo || [];
+    const pendientes = data.pendientes || [];
+    setText('sistema-completos-count', completos.length);
+    setText('sistema-desarrollo-count', desarrollo.length);
+    setText('sistema-pendientes-count', pendientes.length);
+    setHTML('sistema-completos', completos.map(m => `• ${m}`).join('<br>'));
+    setHTML('sistema-desarrollo', desarrollo.map(m => `• ${m}`).join('<br>'));
+    setHTML('sistema-pendientes', pendientes.map(m => `• ${m}`).join('<br>'));
+  } catch (e) {
+    console.error('Error cargando avance del sistema:', e);
+  }
+}
+
+/**
+ * 📝 cargarFormularioAvance() — Carga el formulario de edición en Configuración.
+ *
+ * Se llama cuando el admin abre la sección de Configuración.
+ * Trae los datos de Firestore y los pone en los textareas/inputs para editar.
+ *
+ * ✅ Segura de tocar.
+ */
+async function cargarFormularioAvance() {
+  if (window.currentRole !== 'admin') {
+    window.toast('Solo admin puede editar el avance', 'error');
+    return;
+  }
+  try {
+    const docRef = doc(db, 'config', 'sistema_avance');
+    const docSnap = await getDoc(docRef);
+    const data = docSnap.exists() ? docSnap.data() : {
+      porcentaje: 90,
+      modulosCompletos: ['Dashboard','Clientes','Ventas','Inventario','Cotizaciones','Proveedores','Documentos','Finanzas','Mercado Libre','Auth'],
+      modulosEnDesarrollo: ['Envíos'],
+      pendientes: ['Google Drive','Compac','Notificaciones push']
+    };
+    document.getElementById('avance-porcentaje').value = data.porcentaje || 90;
+    document.getElementById('avance-completos').value = (data.modulosCompletos || []).join('\n');
+    document.getElementById('avance-desarrollo').value = (data.modulosEnDesarrollo || []).join('\n');
+    document.getElementById('avance-pendientes').value = (data.pendientes || []).join('\n');
+    window.toast('✅ Datos cargados en el formulario', 'success');
+  } catch (e) {
+    window.toast('Error cargando formulario: ' + e.message, 'error');
+  }
+}
+
+/**
+ * 💾 guardarAvanceSistema() — Guarda los cambios en Firestore y actualiza la card del Dashboard.
+ *
+ * Lee lo que escribiste en los textareas, lo guarda en config/sistema_avance,
+ * y automáticamente actualiza la card bonita del Dashboard.
+ *
+ * ✅ Segura de tocar.
+ */
+async function guardarAvanceSistema() {
+  if (window.currentRole !== 'admin') {
+    window.toast('Solo admin puede editar el avance', 'error');
+    return;
+  }
+  try {
+    const porcentaje = parseInt(document.getElementById('avance-porcentaje').value) || 0;
+    const completos = document.getElementById('avance-completos').value.split('\n').map(m => m.trim()).filter(Boolean);
+    const desarrollo = document.getElementById('avance-desarrollo').value.split('\n').map(m => m.trim()).filter(Boolean);
+    const pendientes = document.getElementById('avance-pendientes').value.split('\n').map(m => m.trim()).filter(Boolean);
+
+    const docRef = doc(db, 'config', 'sistema_avance');
+    await setDoc(docRef, {
+      porcentaje: Math.min(100, Math.max(0, porcentaje)),
+      modulosCompletos: completos,
+      modulosEnDesarrollo: desarrollo,
+      pendientes: pendientes,
+      ultimaActualizacion: new Date()
+    }, { merge: true });
+
+    window.toast('✅ Avance del sistema actualizado', 'success');
+    await cargarAvanceSistema();
+  } catch (e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
 }
 
 // ── CLIENT SELECTS ──
@@ -2866,6 +3043,9 @@ window.showModule = function(name) {
     cargarEnvios();
   } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
+    if (window.currentRole === 'admin') {
+      setTimeout(() => cargarFormularioAvance(), 150);
+    }
   }
 };
 
