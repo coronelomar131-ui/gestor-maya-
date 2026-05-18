@@ -2135,6 +2135,12 @@ function listenCollection(colName, bodyId, renderFn) {
       return newObj;
     });
     renderFn();
+
+    // Cuando cambian ventas, actualizar documentos en tiempo real
+    if (colName === 'ventas' && typeof window.cargarDocumentos === 'function') {
+      window.cargarDocumentos();
+    }
+
     updateDashboard();
     updateClienteSelects();
   }, (err) => {
@@ -2160,12 +2166,11 @@ function startEnviosListener() {
     const q = query(collection(db, 'envios'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
       allEnvios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const modEnvios = document.getElementById('mod-envios');
-      if (modEnvios && modEnvios.classList.contains('active')) {
-        if (typeof renderEnvios === 'function') renderEnvios(allEnvios);
-        if (typeof updateEnviosSelects === 'function') updateEnviosSelects(allEnvios);
-        if (typeof updateEnviosKPIs === 'function') updateEnviosKPIs(allEnvios);
-      }
+
+      // SIEMPRE actualizar la tabla y KPIs, incluso si el módulo no está visible
+      if (typeof renderEnvios === 'function') renderEnvios(allEnvios);
+      if (typeof updateEnviosSelects === 'function') updateEnviosSelects(allEnvios);
+      if (typeof updateEnviosKPIs === 'function') updateEnviosKPIs(allEnvios);
       if (typeof updateDashboard === 'function') updateDashboard();
     }, (err) => {
       console.error('Error listener envios:', err.message);
