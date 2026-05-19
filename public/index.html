@@ -3077,7 +3077,7 @@ window.showModule = function(name) {
 
   // Cargar datos específicos del módulo
   if (name === 'envios') {
-    cargarEnvios();
+    // El listener de Firestore ya mantiene los datos actualizados
   } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
     if (window.currentRole === 'admin') {
@@ -4244,7 +4244,7 @@ window.saveEnvio = async function() {
     closeModal('modal-envio');
     currentEnvioId = null;
     currentEnvioPiezas = [];
-    await cargarEnvios();
+    // El listener de Firestore actualiza automáticamente
   } catch (e) {
     window.toast('Error: ' + e.message, 'error');
   }
@@ -4268,7 +4268,7 @@ window.deleteEnvio = async function(id) {
     window.toast('✅ Envío eliminado', 'success');
     closeModal('modal-envio');
     currentEnvioId = null;
-    await cargarEnvios();
+    // El listener de Firestore actualiza automáticamente
   } catch (e) {
     window.toast('Error: ' + e.message, 'error');
   }
@@ -4299,11 +4299,11 @@ window.cambiarEstadoEnvio = async function(id, nuevoEstado) {
     }
     await updateDoc(doc(db, 'envios', id), updateData);
     window.toast(`✅ Estado: ${nuevoEstado}`, 'success');
-    await cargarEnvios();
+    // El listener de Firestore actualiza automáticamente
   } catch (e) {
     console.error(e);
     window.toast('Error: ' + e.message, 'error');
-    await cargarEnvios();
+    // El listener de Firestore actualiza automáticamente
   }
 };
 
