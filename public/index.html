@@ -2135,12 +2135,6 @@ function listenCollection(colName, bodyId, renderFn) {
       return newObj;
     });
     renderFn();
-
-    // Cuando cambian ventas, actualizar documentos en tiempo real
-    if (colName === 'ventas' && typeof window.cargarDocumentos === 'function') {
-      window.cargarDocumentos();
-    }
-
     updateDashboard();
     updateClienteSelects();
   }, (err) => {
