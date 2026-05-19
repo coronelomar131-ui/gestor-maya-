@@ -4403,20 +4403,35 @@ function updateEnviosSelects(envios = []) {
 }
 
 window.openEnvioForm = function() {
-  currentEnvioId = null;
-  currentEnvioPiezas = [{ pieza: '', modelo: '', costo: 0 }];
-  document.getElementById('modal-envio-title').textContent = 'Nuevo Envío';
-  document.getElementById('env-fecha').value = new Date().toISOString().split('T')[0];
-  document.getElementById('env-vendedor').value = '';
-  document.getElementById('env-destinatario').value = '';
-  document.getElementById('env-paqueteria').value = '';
-  document.getElementById('env-guia').value = '';
-  document.getElementById('env-estado').value = 'PENDIENTE';
-  document.getElementById('env-notas').value = '';
-  document.getElementById('env-btn-delete').style.display = 'none';
-  renderEnvioPiezas();
-  document.getElementById('env-costoTotal').textContent = '$0';
-  openModal('modal-envio');
+  try {
+    currentEnvioId = null;
+    currentEnvioPiezas = [{ pieza: '', modelo: '', costo: 0 }];
+    const titleEl = document.getElementById('modal-envio-title');
+    if (titleEl) titleEl.textContent = 'Nuevo Envío';
+    const fechaEl = document.getElementById('env-fecha');
+    if (fechaEl) fechaEl.value = new Date().toISOString().split('T')[0];
+    const vendedorEl = document.getElementById('env-vendedor');
+    if (vendedorEl) vendedorEl.value = '';
+    const destinatarioEl = document.getElementById('env-destinatario');
+    if (destinatarioEl) destinatarioEl.value = '';
+    const paqueteriaEl = document.getElementById('env-paqueteria');
+    if (paqueteriaEl) paqueteriaEl.value = '';
+    const guiaEl = document.getElementById('env-guia');
+    if (guiaEl) guiaEl.value = '';
+    const estadoEl = document.getElementById('env-estado');
+    if (estadoEl) estadoEl.value = 'PENDIENTE';
+    const notasEl = document.getElementById('env-notas');
+    if (notasEl) notasEl.value = '';
+    const btnDeleteEl = document.getElementById('env-btn-delete');
+    if (btnDeleteEl) btnDeleteEl.style.display = 'none';
+    renderEnvioPiezas();
+    const costoEl = document.getElementById('env-costoTotal');
+    if (costoEl) costoEl.textContent = '$0';
+    openModal('modal-envio');
+  } catch (e) {
+    console.error('Error en openEnvioForm:', e);
+    window.toast('Error al abrir formulario: ' + e.message, 'error');
+  }
 };
 
 // ═══════════════════════════════════════════════════════════
