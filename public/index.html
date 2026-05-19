@@ -2117,7 +2117,7 @@ function startListeners() {
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('usuarios', 'users-body', renderUsuarios);
   // startEnviosListener(); // Comentado - usa cargarEnvios() en su lugar
-  startFinanzasListeners();
+  // startFinanzasListeners(); // Comentado - usar getDocs() en su lugar
 }
 
 function listenCollection(colName, bodyId, renderFn) {
