@@ -4930,24 +4930,9 @@ window.generarNotaPDFMultiLinea = async function(venta) {
     doc.text('TOTAL:', colX - 20, y);
     doc.text('$' + venta.total.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
 
-    // Convertir a base64
-    const pdfDataUri = doc.output('dataurlstring');
-    const base64Pdf = pdfDataUri;
-
-    // Guardar en Firestore
-    const ventaRef = collection(db, 'ventas');
-    const q = query(ventaRef, where('notaId', '==', venta.notaId));
-    const querySnap = await getDocs(q);
-
-    if (!querySnap.empty) {
-      const ventaDocRef = querySnap.docs[0].ref;
-      await updateDoc(ventaDocRef, {
-        facturaURL: base64Pdf,
-        tieneFactura: true
-      });
-    }
-
-    window.toast('✅ Nota PDF generada automáticamente', 'success');
+    // Descargar PDF
+    doc.save(`${venta.notaId || 'nota'}.pdf`);
+    window.toast('✅ Nota PDF generada y descargada', 'success');
   } catch (error) {
     console.error('Error generando PDF multi-línea:', error);
     window.toast('Error al generar PDF: ' + error.message, 'error');
