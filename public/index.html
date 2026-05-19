@@ -3541,19 +3541,14 @@ window.cargarOrdenesML = async function() {
 // MÓDULO DOCUMENTOS
 // ═════════════════════════════════════════════════════════════
 
-let documentosUnsubscribe = null;
-
 window.cargarDocumentos = function() {
   const contenedor = document.getElementById('documentos-lista');
   if (!contenedor) return;
 
-  // Si ya hay un listener activo, reutilizarlo
-  if (documentosUnsubscribe) return;
-
   contenedor.innerHTML = 'Cargando...';
 
-  // Crear listener UNA SOLA VEZ y reutilizarlo
-  documentosUnsubscribe = window.onSnapshot(
+  // Listener en tiempo real
+  window.onSnapshot(
     window.collection(window.db, 'ventas'),
     (snap) => {
       if (snap.empty) {
@@ -4403,35 +4398,20 @@ function updateEnviosSelects(envios = []) {
 }
 
 window.openEnvioForm = function() {
-  try {
-    currentEnvioId = null;
-    currentEnvioPiezas = [{ pieza: '', modelo: '', costo: 0 }];
-    const titleEl = document.getElementById('modal-envio-title');
-    if (titleEl) titleEl.textContent = 'Nuevo Envío';
-    const fechaEl = document.getElementById('env-fecha');
-    if (fechaEl) fechaEl.value = new Date().toISOString().split('T')[0];
-    const vendedorEl = document.getElementById('env-vendedor');
-    if (vendedorEl) vendedorEl.value = '';
-    const destinatarioEl = document.getElementById('env-destinatario');
-    if (destinatarioEl) destinatarioEl.value = '';
-    const paqueteriaEl = document.getElementById('env-paqueteria');
-    if (paqueteriaEl) paqueteriaEl.value = '';
-    const guiaEl = document.getElementById('env-guia');
-    if (guiaEl) guiaEl.value = '';
-    const estadoEl = document.getElementById('env-estado');
-    if (estadoEl) estadoEl.value = 'PENDIENTE';
-    const notasEl = document.getElementById('env-notas');
-    if (notasEl) notasEl.value = '';
-    const btnDeleteEl = document.getElementById('env-btn-delete');
-    if (btnDeleteEl) btnDeleteEl.style.display = 'none';
-    renderEnvioPiezas();
-    const costoEl = document.getElementById('env-costoTotal');
-    if (costoEl) costoEl.textContent = '$0';
-    openModal('modal-envio');
-  } catch (e) {
-    console.error('Error en openEnvioForm:', e);
-    window.toast('Error al abrir formulario: ' + e.message, 'error');
-  }
+  currentEnvioId = null;
+  currentEnvioPiezas = [{ pieza: '', modelo: '', costo: 0 }];
+  document.getElementById('modal-envio-title').textContent = 'Nuevo Envío';
+  document.getElementById('env-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('env-vendedor').value = '';
+  document.getElementById('env-destinatario').value = '';
+  document.getElementById('env-paqueteria').value = '';
+  document.getElementById('env-guia').value = '';
+  document.getElementById('env-estado').value = 'PENDIENTE';
+  document.getElementById('env-notas').value = '';
+  document.getElementById('env-btn-delete').style.display = 'none';
+  renderEnvioPiezas();
+  document.getElementById('env-costoTotal').textContent = '$0';
+  openModal('modal-envio');
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -4950,9 +4930,24 @@ window.generarNotaPDFMultiLinea = async function(venta) {
     doc.text('TOTAL:', colX - 20, y);
     doc.text('$' + venta.total.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
 
-    // Descargar PDF sin guardar en Firestore
-    doc.save(`${venta.notaId || 'nota'}.pdf`);
-    window.toast('✅ Nota PDF generada y descargada', 'success');
+    // Convertir a base64
+    const pdfDataUri = doc.output('dataurlstring');
+    const base64Pdf = pdfDataUri;
+
+    // Guardar en Firestore
+    const ventaRef = collection(db, 'ventas');
+    const q = query(ventaRef, where('notaId', '==', venta.notaId));
+    const querySnap = await getDocs(q);
+
+    if (!querySnap.empty) {
+      const ventaDocRef = querySnap.docs[0].ref;
+      await updateDoc(ventaDocRef, {
+        facturaURL: base64Pdf,
+        tieneFactura: true
+      });
+    }
+
+    window.toast('✅ Nota PDF generada automáticamente', 'success');
   } catch (error) {
     console.error('Error generando PDF multi-línea:', error);
     window.toast('Error al generar PDF: ' + error.message, 'error');
