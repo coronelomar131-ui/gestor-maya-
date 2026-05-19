@@ -3541,14 +3541,19 @@ window.cargarOrdenesML = async function() {
 // MÓDULO DOCUMENTOS
 // ═════════════════════════════════════════════════════════════
 
+let documentosUnsubscribe = null;
+
 window.cargarDocumentos = function() {
   const contenedor = document.getElementById('documentos-lista');
   if (!contenedor) return;
 
+  // Si ya hay un listener activo, reutilizarlo
+  if (documentosUnsubscribe) return;
+
   contenedor.innerHTML = 'Cargando...';
 
-  // Listener en tiempo real
-  window.onSnapshot(
+  // Crear listener UNA SOLA VEZ y reutilizarlo
+  documentosUnsubscribe = window.onSnapshot(
     window.collection(window.db, 'ventas'),
     (snap) => {
       if (snap.empty) {
