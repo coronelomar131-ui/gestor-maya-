@@ -2160,11 +2160,12 @@ function startEnviosListener() {
     const q = query(collection(db, 'envios'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
       allEnvios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-      // SIEMPRE actualizar la tabla y KPIs, incluso si el módulo no está visible
-      if (typeof renderEnvios === 'function') renderEnvios(allEnvios);
-      if (typeof updateEnviosSelects === 'function') updateEnviosSelects(allEnvios);
-      if (typeof updateEnviosKPIs === 'function') updateEnviosKPIs(allEnvios);
+      const modEnvios = document.getElementById('mod-envios');
+      if (modEnvios && modEnvios.classList.contains('active')) {
+        if (typeof renderEnvios === 'function') renderEnvios(allEnvios);
+        if (typeof updateEnviosSelects === 'function') updateEnviosSelects(allEnvios);
+        if (typeof updateEnviosKPIs === 'function') updateEnviosKPIs(allEnvios);
+      }
       if (typeof updateDashboard === 'function') updateDashboard();
     }, (err) => {
       console.error('Error listener envios:', err.message);
@@ -3071,7 +3072,7 @@ window.showModule = function(name) {
 
   // Cargar datos específicos del módulo
   if (name === 'envios') {
-    // El listener de Firestore ya mantiene los datos actualizados
+    cargarEnvios();
   } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
     if (window.currentRole === 'admin') {
@@ -4238,7 +4239,7 @@ window.saveEnvio = async function() {
     closeModal('modal-envio');
     currentEnvioId = null;
     currentEnvioPiezas = [];
-    // El listener de Firestore actualiza automáticamente
+    await cargarEnvios();
   } catch (e) {
     window.toast('Error: ' + e.message, 'error');
   }
@@ -4262,7 +4263,7 @@ window.deleteEnvio = async function(id) {
     window.toast('✅ Envío eliminado', 'success');
     closeModal('modal-envio');
     currentEnvioId = null;
-    // El listener de Firestore actualiza automáticamente
+    await cargarEnvios();
   } catch (e) {
     window.toast('Error: ' + e.message, 'error');
   }
@@ -4293,11 +4294,11 @@ window.cambiarEstadoEnvio = async function(id, nuevoEstado) {
     }
     await updateDoc(doc(db, 'envios', id), updateData);
     window.toast(`✅ Estado: ${nuevoEstado}`, 'success');
-    // El listener de Firestore actualiza automáticamente
+    await cargarEnvios();
   } catch (e) {
     console.error(e);
     window.toast('Error: ' + e.message, 'error');
-    // El listener de Firestore actualiza automáticamente
+    await cargarEnvios();
   }
 };
 
@@ -4929,9 +4930,24 @@ window.generarNotaPDFMultiLinea = async function(venta) {
     doc.text('TOTAL:', colX - 20, y);
     doc.text('$' + venta.total.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 15, y, {align: 'right'});
 
-    // Descargar el PDF
-    doc.save(`${venta.notaId || 'nota'}.pdf`);
-    window.toast('✅ Nota PDF generada y descargada', 'success');
+    // Convertir a base64
+    const pdfDataUri = doc.output('dataurlstring');
+    const base64Pdf = pdfDataUri;
+
+    // Guardar en Firestore
+    const ventaRef = collection(db, 'ventas');
+    const q = query(ventaRef, where('notaId', '==', venta.notaId));
+    const querySnap = await getDocs(q);
+
+    if (!querySnap.empty) {
+      const ventaDocRef = querySnap.docs[0].ref;
+      await updateDoc(ventaDocRef, {
+        facturaURL: base64Pdf,
+        tieneFactura: true
+      });
+    }
+
+    window.toast('✅ Nota PDF generada automáticamente', 'success');
   } catch (error) {
     console.error('Error generando PDF multi-línea:', error);
     window.toast('Error al generar PDF: ' + error.message, 'error');
