@@ -2116,7 +2116,7 @@ function startListeners() {
   listenCollection('proveedores', 'prov-body', renderProveedores);
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('usuarios', 'users-body', renderUsuarios);
-  startEnviosListener();
+  // startEnviosListener(); // Comentado - usa cargarEnvios() en su lugar
   startFinanzasListeners();
 }
 
