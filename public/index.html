@@ -1448,96 +1448,107 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       </div>
 
       <!-- ENVIOS -->
+      <!-- MÓDULO ENVÍOS (REESCRITO) -->
       <div class="module-view" id="mod-envios">
         <div class="table-card">
-          <!-- HEADER MEJORADO -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;padding:0 15px;padding-top:15px">
+          <div style="padding:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid rgba(59,188,212,0.2)">
             <div>
-              <h2 style="margin:0;color:var(--white);font-family:var(--font-head);font-weight:700;font-size:1.8rem">🚚 Envíos</h2>
-              <p style="margin:0.25rem 0 0;color:var(--gray);font-size:0.9rem">Seguimiento de paquetes y entregas</p>
+              <h2 style="margin:0;font-size:1.8em;color:var(--white)">🚚 Envíos</h2>
+              <p style="margin:5px 0 0;color:var(--gray);font-size:0.9em">Gestión de paquetes y entregas</p>
             </div>
-            <div style="display:flex;gap:0.5rem">
-              <button onclick="cargarEnvios()" class="btn btn-secondary btn-sm" title="Refrescar" style="background-color:#3BBCD4;color:white">🔄</button>
-              <button onclick="openEnvioForm()" class="btn btn-primary" style="white-space:nowrap">+ Nuevo Envío</button>
-            </div>
-          </div>
-
-          <!-- KPIs DEL MÓDULO -->
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem;padding:0 15px">
-            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #FCD34D;padding:1rem;border-radius:8px">
-              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Pendientes</div>
-              <div id="env-kpi-pendientes" style="color:#FCD34D;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">0</div>
-            </div>
-            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #3BBCD4;padding:1rem;border-radius:8px">
-              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">En tránsito</div>
-              <div id="env-kpi-transito" style="color:#3BBCD4;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">0</div>
-            </div>
-            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #10B981;padding:1rem;border-radius:8px">
-              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Entregados</div>
-              <div id="env-kpi-entregados" style="color:#10B981;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">0</div>
-            </div>
-            <div style="background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-left:4px solid #ff8c00;padding:1rem;border-radius:8px">
-              <div style="color:var(--gray);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Monto Total</div>
-              <div id="env-kpi-monto" style="color:#ff8c00;font-size:1.8rem;font-weight:700;font-family:var(--font-head);margin-top:0.25rem">$0</div>
+            <div style="display:flex;gap:10px">
+              <button onclick="envios_cargar()" class="btn btn-secondary" style="background:#3BBCD4;color:white">🔄 Refrescar</button>
+              <button onclick="envios_abrirForm()" class="btn btn-primary">➕ Nuevo Envío</button>
             </div>
           </div>
 
-          <!-- FILTROS MEJORADOS -->
-          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;padding:0 15px">
-            <input type="text" id="envios-search" placeholder="🔍 Buscar por guía o destinatario..." oninput="filterEnvios()" style="flex:1;min-width:200px;padding:0.5rem 0.75rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
-            <select id="envios-filter-vendedor" onchange="filterEnvios()" style="padding:0.5rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
-              <option value="">Todos los vendedores</option>
-            </select>
-            <select id="envios-filter-estado" onchange="filterEnvios()" style="padding:0.5rem;background:var(--surface);border:1px solid rgba(59,188,212,0.2);border-radius:6px;color:var(--white);font-family:var(--font-body)">
-              <option value="">Todos los estados</option>
-              <option value="PENDIENTE">⏳ PENDIENTE</option>
-              <option value="TRANSITO">🚚 TRÁNSITO</option>
-              <option value="ENTREGADO">✅ ENTREGADO</option>
-              <option value="DEVUELTO">↩️ DEVUELTO</option>
-            </select>
+          <!-- KPIs -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;padding:20px">
+            <div style="background:var(--surface);border:1px solid #FCD34D;border-left:5px solid #FCD34D;padding:15px;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.8em;font-weight:600">PENDIENTES</div>
+              <div id="envios-kpi-pendientes" style="font-size:2em;color:#FCD34D;font-weight:700;margin-top:5px">0</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid #3BBCD4;border-left:5px solid #3BBCD4;padding:15px;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.8em;font-weight:600">EN TRÁNSITO</div>
+              <div id="envios-kpi-transito" style="font-size:2em;color:#3BBCD4;font-weight:700;margin-top:5px">0</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid #10B981;border-left:5px solid #10B981;padding:15px;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.8em;font-weight:600">ENTREGADOS</div>
+              <div id="envios-kpi-entregados" style="font-size:2em;color:#10B981;font-weight:700;margin-top:5px">0</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid #FF6B6B;border-left:5px solid #FF6B6B;padding:15px;border-radius:8px">
+              <div style="color:var(--gray);font-size:0.8em;font-weight:600">MONTO TOTAL</div>
+              <div id="envios-kpi-monto" style="font-size:1.8em;color:#FF6B6B;font-weight:700;margin-top:5px">$0</div>
+            </div>
           </div>
 
           <!-- Tabla -->
-          <div style="overflow-x:auto;padding:0 15px">
-            <table class="data-table envios-table">
+          <div style="padding:20px;overflow-x:auto">
+            <table class="data-table" style="width:100%;border-collapse:collapse">
               <thead>
-                <tr><th>Fecha</th><th>Vendedor</th><th>Destinatario</th><th>Guía</th><th># Piezas</th><th>Estado</th><th>Costo Total</th><th></th></tr>
+                <tr style="background:var(--surface);border-bottom:2px solid rgba(59,188,212,0.3)">
+                  <th style="padding:12px;text-align:left">Fecha</th>
+                  <th style="padding:12px;text-align:left">Vendedor</th>
+                  <th style="padding:12px;text-align:left">Destinatario</th>
+                  <th style="padding:12px;text-align:left">Guía</th>
+                  <th style="padding:12px;text-align:center">Piezas</th>
+                  <th style="padding:12px;text-align:center">Estado</th>
+                  <th style="padding:12px;text-align:right">Costo</th>
+                  <th style="padding:12px;text-align:center">Acciones</th>
+                </tr>
               </thead>
-              <tbody id="envios-body">
-                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div></div></td></tr>
+              <tbody id="envios-tabla">
+                <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray)">📦 Sin envíos aún</td></tr>
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- MODAL: Crear/Editar Envío -->
-      <div class="modal" id="modal-envio">
-        <div class="modal-content" style="max-width:900px">
-          <div class="modal-header"><span class="modal-title" id="modal-envio-title">Nuevo Envío</span><button class="modal-close" onclick="closeModal('modal-envio')">&times;</button></div>
+      <!-- MODAL ENVÍOS -->
+      <div class="modal" id="modal-envios-form">
+        <div class="modal-content" style="max-width:700px">
+          <div class="modal-header">
+            <span class="modal-title" id="envios-modal-title">Nuevo Envío</span>
+            <button class="modal-close" onclick="closeModal('modal-envios-form')">&times;</button>
+          </div>
           <div class="modal-body">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px">
-              <div class="form-group"><label>Fecha</label><input type="date" id="env-fecha"></div>
-              <div class="form-group"><label>Vendedor</label><input type="text" id="env-vendedor" placeholder="Ej: ELIZA"></div>
-              <div class="form-group"><label>Destinatario</label><input type="text" id="env-destinatario" placeholder="Cliente o taller"></div>
-              <div class="form-group"><label>Paquetería</label><input type="text" id="env-paqueteria" placeholder="Estafeta, DHL..."></div>
-              <div class="form-group"><label>Guía (STRING)</label><input type="text" id="env-guia" maxlength="30" placeholder="211240989270"></div>
-              <div class="form-group"><label>Estado</label><select id="env-estado"><option value="PENDIENTE">PENDIENTE</option><option value="TRANSITO">TRANSITO</option><option value="ENTREGADO">ENTREGADO</option><option value="DEVUELTO">DEVUELTO</option></select></div>
+              <div class="form-group">
+                <label>Fecha</label>
+                <input type="date" id="envios-fecha" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div class="form-group">
+                <label>Vendedor</label>
+                <input type="text" id="envios-vendedor" placeholder="ELIZA" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div class="form-group">
+                <label>Destinatario</label>
+                <input type="text" id="envios-destinatario" placeholder="Cliente" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div class="form-group">
+                <label>Guía</label>
+                <input type="text" id="envios-guia" placeholder="211240989270" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div class="form-group">
+                <label>Paquetería</label>
+                <input type="text" id="envios-paqueteria" placeholder="DHL, Estafeta..." style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div class="form-group">
+                <label>Costo</label>
+                <input type="number" id="envios-costo" placeholder="0.00" step="0.01" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
             </div>
-            <div style="margin-bottom:20px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><label style="font-weight:600">Piezas</label><button class="btn btn-secondary btn-sm" onclick="addEnvioPieza()">+ Agregar Pieza</button></div>
-            <div style="overflow-x:auto"><table class="data-table" style="font-size:0.9em"><thead><tr><th>Pieza</th><th>Modelo</th><th style="width:80px">Costo</th><th style="width:40px"></th></tr></thead><tbody id="envio-piezas-body"></tbody></table></div></div>
-            <div style="display:grid;grid-template-columns:2fr 1fr;gap:15px"><div class="form-group"><label>Notas</label><textarea id="env-notas" placeholder="Observaciones..." style="min-height:80px"></textarea></div><div><label style="display:block;font-weight:600;margin-bottom:10px">Costo Total</label><div style="font-size:1.8em;color:#3BBCD4;font-weight:700" id="env-costoTotal">$0</div></div></div>
+            <div class="form-group" style="margin-bottom:20px">
+              <label>Notas</label>
+              <textarea id="envios-notas" placeholder="Observaciones..." style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white);min-height:80px"></textarea>
+            </div>
           </div>
-          <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modal-envio')">Cancelar</button><button class="btn btn-danger" id="env-btn-delete" onclick="deleteEnvio()" style="display:none">Eliminar</button><button class="btn btn-primary" onclick="saveEnvio()">Guardar Envío</button></div>
-        </div>
-      </div>
-
-      <!-- MODAL: Ver Detalle de Piezas -->
-      <div class="modal" id="modal-envio-detalle">
-        <div class="modal-content" style="max-width:700px">
-          <div class="modal-header"><span class="modal-title">Detalle de Piezas - Guía <span id="detalle-guia"></span></span><button class="modal-close" onclick="closeModal('modal-envio-detalle')">&times;</button></div>
-          <div class="modal-body"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Pieza</th><th>Modelo</th><th>Costo</th></tr></thead><tbody id="detalle-piezas-body"></tbody></table></div></div>
-          <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modal-envio-detalle')">Cerrar</button></div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('modal-envios-form')">Cancelar</button>
+            <button class="btn btn-danger" id="envios-btn-delete" onclick="envios_eliminar()" style="display:none">🗑 Eliminar</button>
+            <button class="btn btn-primary" onclick="envios_guardar()">💾 Guardar</button>
+          </div>
         </div>
       </div>
 
@@ -4437,6 +4448,133 @@ window.openEnvioForm = function() {
   document.getElementById('env-costoTotal').textContent = '$0';
   openModal('modal-envio');
 };
+
+// ═══════════════════════════════════════════════════════════
+// MÓDULO ENVÍOS (REESCRITO DESDE CERO - SIMPLE Y FUNCIONAL)
+// ═══════════════════════════════════════════════════════════
+
+let envios_all = [];
+let envios_editando = null;
+
+async function envios_cargar() {
+  try {
+    const snap = await getDocs(collection(db, 'envios'));
+    envios_all = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+    envios_renderizar();
+    envios_actualizarKPIs();
+  } catch(e) {
+    console.error('Error:', e);
+    window.toast('Error: ' + e.message, 'error');
+  }
+}
+
+function envios_renderizar() {
+  const body = document.getElementById('envios-tabla');
+  if (!envios_all.length) {
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray)">📦 Sin envíos aún</td></tr>';
+    return;
+  }
+  body.innerHTML = envios_all.map(e => `<tr style="border-bottom:1px solid rgba(59,188,212,0.1)"><td style="padding:12px">${e.fecha || '—'}</td><td style="padding:12px">${e.vendedor || '—'}</td><td style="padding:12px">${e.destinatario || '—'}</td><td style="padding:12px"><code style="color:#3BBCD4;font-size:0.9em">${e.guia || '—'}</code></td><td style="padding:12px;text-align:center">${e.piezas || 0}</td><td style="padding:12px;text-align:center"><select onchange="envios_cambiarEstado('${e.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white)"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td style="padding:12px;text-align:right">$${(e.costo || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="padding:12px;text-align:center"><button onclick="envios_editar('${e.id}')" style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;margin-right:8px">✏️</button><button onclick="if(confirm('¿Eliminar?')) envios_eliminarDirect('${e.id}')" style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1em">🗑</button></td></tr>`).join('');
+}
+
+function envios_actualizarKPIs() {
+  const pendientes = envios_all.filter(e => e.estado === 'PENDIENTE').length;
+  const transito = envios_all.filter(e => e.estado === 'TRANSITO').length;
+  const entregados = envios_all.filter(e => e.estado === 'ENTREGADO').length;
+  const monto = envios_all.reduce((s, e) => s + (parseFloat(e.costo) || 0), 0);
+  const e1 = document.getElementById('envios-kpi-pendientes');
+  const e2 = document.getElementById('envios-kpi-transito');
+  const e3 = document.getElementById('envios-kpi-entregados');
+  const e4 = document.getElementById('envios-kpi-monto');
+  if(e1) e1.textContent = pendientes;
+  if(e2) e2.textContent = transito;
+  if(e3) e3.textContent = entregados;
+  if(e4) e4.textContent = '$' + monto.toLocaleString('es-MX', {minimumFractionDigits: 2});
+}
+
+function envios_abrirForm() {
+  envios_editando = null;
+  document.getElementById('envios-modal-title').textContent = 'Nuevo Envío';
+  document.getElementById('envios-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('envios-vendedor').value = '';
+  document.getElementById('envios-destinatario').value = '';
+  document.getElementById('envios-guia').value = '';
+  document.getElementById('envios-paqueteria').value = '';
+  document.getElementById('envios-costo').value = '';
+  document.getElementById('envios-notas').value = '';
+  document.getElementById('envios-btn-delete').style.display = 'none';
+  openModal('modal-envios-form');
+}
+
+function envios_editar(id) {
+  const e = envios_all.find(x => x.id === id);
+  if (!e) return;
+  envios_editando = id;
+  document.getElementById('envios-modal-title').textContent = 'Editar Envío';
+  document.getElementById('envios-fecha').value = e.fecha || '';
+  document.getElementById('envios-vendedor').value = e.vendedor || '';
+  document.getElementById('envios-destinatario').value = e.destinatario || '';
+  document.getElementById('envios-guia').value = e.guia || '';
+  document.getElementById('envios-paqueteria').value = e.paqueteria || '';
+  document.getElementById('envios-costo').value = e.costo || '';
+  document.getElementById('envios-notas').value = e.notas || '';
+  document.getElementById('envios-btn-delete').style.display = 'inline-block';
+  openModal('modal-envios-form');
+}
+
+async function envios_guardar() {
+  const fecha = document.getElementById('envios-fecha').value;
+  const vendedor = document.getElementById('envios-vendedor').value.trim();
+  const destinatario = document.getElementById('envios-destinatario').value.trim();
+  const guia = document.getElementById('envios-guia').value.trim();
+  const paqueteria = document.getElementById('envios-paqueteria').value.trim();
+  const costo = parseFloat(document.getElementById('envios-costo').value) || 0;
+  const notas = document.getElementById('envios-notas').value.trim();
+  if (!fecha || !vendedor || !destinatario || !guia) {
+    window.toast('Completa campos requeridos', 'error');
+    return;
+  }
+  try {
+    const data = {fecha, vendedor, destinatario, guia, paqueteria, costo, notas, piezas: 1, estado: 'PENDIENTE', createdAt: new Date()};
+    if (envios_editando) {
+      await updateDoc(doc(db, 'envios', envios_editando), data);
+      window.toast('✅ Envío actualizado', 'success');
+    } else {
+      await addDoc(collection(db, 'envios'), data);
+      window.toast('✅ Envío creado', 'success');
+    }
+    closeModal('modal-envios-form');
+    envios_cargar();
+  } catch(e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+}
+
+function envios_eliminar() {
+  if (!envios_editando) return;
+  envios_eliminarDirect(envios_editando);
+  closeModal('modal-envios-form');
+}
+
+async function envios_eliminarDirect(id) {
+  try {
+    await deleteDoc(doc(db, 'envios', id));
+    window.toast('✅ Envío eliminado', 'success');
+    envios_cargar();
+  } catch(e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function envios_cambiarEstado(id, nuevoEstado) {
+  try {
+    await updateDoc(doc(db, 'envios', id), {estado: nuevoEstado});
+    window.toast(`✅ Estado: ${nuevoEstado}`, 'success');
+    envios_cargar();
+  } catch(e) {
+    window.toast('Error: ' + e.message, 'error');
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 // FINANZAS
