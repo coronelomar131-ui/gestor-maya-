@@ -3060,8 +3060,12 @@ window.cotToVenta = async function(id) {
 window.showModule = function(name) {
   const rol = window.currentRole || 'vendedor';
 
-  // Cerrar TODOS los modales y limpiar estado del módulo anterior
-  // (especialmente Envíos, que tenía problema de "tablita visible")
+  // Cerrar TODOS los modales abiertos
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.classList.remove('open');
+  });
+
+  // Limpiar estado de envíos específicamente
   if (typeof cerrarTodoEnvios === 'function') {
     cerrarTodoEnvios();
   }
@@ -4178,9 +4182,13 @@ let allEnvios = [];
  * Se llama AUTOMÁTICAMENTE cuando cambias de módulo, así no quedan "fantasmas" visibles.
  */
 function cerrarTodoEnvios() {
-  // Cerrar modal de envíos
-  closeModal('modal-envios-form');
+  // Cerrar modal de envíos de manera segura
+  const modal = document.getElementById('modal-envios-form');
+  if (modal) {
+    modal.classList.remove('open');
+  }
   envios_editando = null;
+  envios_puertas = [];
 }
 
 function renderEnvios(envios = []) {
