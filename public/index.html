@@ -4142,11 +4142,35 @@ function cerrarTodoEnvios() {
 function renderEnvios(envios = []) {
   const body = document.getElementById('envios-body');
   const rol = window.currentRole || 'vendedor';
-  if (!envios.length) {
-    body.innerHTML = `<tr><td colspan="8"><div class="envios-empty"><div class="empty-icon">📦</div><div class="empty-title">Sin envíos registrados</div><div class="empty-sub">Crea el primero para empezar a rastrear paquetes</div><button onclick="openEnvioForm()" class="btn btn-primary" style="margin-top:1rem">+ Nuevo Envío</button></div></td></tr>`;
+  if (!envios || !envios.length) {
+    body.innerHTML = `<tr><td colspan="8"><div style="text-align:center;padding:40px;"><div style="font-size:3em;margin-bottom:10px">📦</div><div style="color:var(--gray);font-size:1.1em">Sin envíos registrados</div></div></td></tr>`;
     return;
   }
-  body.innerHTML = envios.map(e => `<tr><td>${e.fecha || '—'}</td><td>${e.vendedor || '—'}</td><td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="showEnvioDetalle('${e.id}')">${e.destinatario || '—'}</a></td><td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td><td>${(e.items || []).length} piezas</td><td><select onchange="cambiarEstadoEnvio('${e.id}', this.value)" class="badge-env-select badge-env-${(e.estado || 'PENDIENTE').toLowerCase()}" title="Click para cambiar estado"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="text-align:center"><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="editEnvio('${e.id}')">✏️</a> ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer" onclick="if(confirm('¿Eliminar?')) deleteEnvio('${e.id}')">🗑</a>` : ''}</td></tr>`).join('');
+  try {
+    body.innerHTML = envios.map(e => `
+      <tr>
+        <td>${e.fecha || '—'}</td>
+        <td>${e.vendedor || '—'}</td>
+        <td><a href="#" style="color:#3BBCD4;cursor:pointer" onclick="return false">${e.destinatario || '—'}</a></td>
+        <td><code style="color:#3BBCD4;font-size:12px">${e.guia || '—'}</code></td>
+        <td>${(e.items || []).length} piezas</td>
+        <td><select onchange="cambiarEstadoEnvio('${e.id}', this.value)" style="padding:4px;border-radius:4px;border:1px solid #3BBCD4;background:var(--surface);color:var(--white)">
+          <option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option>
+          <option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option>
+          <option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option>
+          <option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option>
+        </select></td>
+        <td>$${(e.costoTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+        <td style="text-align:center">
+          <a href="#" style="color:#3BBCD4;cursor:pointer;text-decoration:none" onclick="editEnvio('${e.id}'); return false">✏️</a>
+          ${rol === 'admin' ? `<a href="#" style="color:#EF4444;cursor:pointer;margin-left:8px;text-decoration:none" onclick="deleteEnvio('${e.id}'); return false">🗑</a>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  } catch(err) {
+    console.error('Error renderEnvios:', err);
+    body.innerHTML = `<tr><td colspan="8"><div style="color:red">Error al renderizar envíos</div></td></tr>`;
+  }
 }
 
 function editEnvio(id) {
