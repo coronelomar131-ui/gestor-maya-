@@ -1546,30 +1546,32 @@ tr:hover td { background: rgba(59,188,212,0.03); }
                 <button type="button" onclick="envios_agregarPuerta()" class="btn btn-secondary btn-sm">+ Agregar Puerta</button>
               </div>
               <div style="overflow-x:auto;margin-bottom:15px">
-                <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+                <table style="width:100%;border-collapse:collapse;font-size:0.85em">
                   <thead>
                     <tr style="background:var(--surface);border-bottom:2px solid rgba(59,188,212,0.3)">
-                      <th style="padding:8px;text-align:left">Marca</th>
-                      <th style="padding:8px;text-align:left">Modelo</th>
-                      <th style="padding:8px;text-align:center">Año</th>
-                      <th style="padding:8px;text-align:center">Lado</th>
-                      <th style="padding:8px;text-align:center">Posición</th>
-                      <th style="padding:8px;text-align:center">Acción</th>
+                      <th style="padding:6px;text-align:left">Marca</th>
+                      <th style="padding:6px;text-align:left">Modelo</th>
+                      <th style="padding:6px;text-align:center">Año</th>
+                      <th style="padding:6px;text-align:center">Lado</th>
+                      <th style="padding:6px;text-align:center">Posición</th>
+                      <th style="padding:6px;text-align:center">Acción</th>
                     </tr>
                   </thead>
                   <tbody id="envios-puertas-tabla">
-                    <tr><td colspan="6" style="text-align:center;padding:15px;color:var(--gray)">Sin puertas agregadas</td></tr>
+                    <tr><td colspan="6" style="text-align:center;padding:12px;color:var(--gray)">Sin puertas agregadas</td></tr>
                   </tbody>
                 </table>
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:15px">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
                 <input type="text" id="envios-puerta-marca" placeholder="Marca" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
                 <input type="text" id="envios-puerta-modelo" placeholder="Modelo" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
                 <input type="number" id="envios-puerta-año" placeholder="Año" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
                 <select id="envios-puerta-lado" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
                   <option value="">Lado</option>
-                  <option value="Izquierda">← Izquierda</option>
-                  <option value="Derecha">Derecha →</option>
+                  <option value="Izquierda">👈 Izquierda</option>
+                  <option value="Derecha">Derecha 👉</option>
                 </select>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1578,7 +1580,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
                   <option value="Delantera">🚗 Delantera</option>
                   <option value="Trasera">🚗 Trasera</option>
                 </select>
-                <button type="button" onclick="envios_agregarPuerta()" class="btn btn-primary" style="background:#3BBCD4;color:white;border:none;padding:8px;border-radius:6px;cursor:pointer">➕ Agregar</button>
+                <button type="button" onclick="envios_agregarPuerta()" class="btn btn-primary" style="background:#3BBCD4;color:white;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:600">➕ Agregar</button>
               </div>
             </div>
 
