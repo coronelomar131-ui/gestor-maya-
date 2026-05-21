@@ -1539,9 +1539,52 @@ tr:hover td { background: rgba(59,188,212,0.03); }
                 <input type="number" id="envios-costo" placeholder="0.00" step="0.01" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
               </div>
             </div>
+            <!-- PUERTAS/PIEZAS -->
+            <div style="margin-bottom:20px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <label style="font-weight:600">🚪 Puertas</label>
+                <button type="button" onclick="envios_agregarPuerta()" class="btn btn-secondary btn-sm">+ Agregar Puerta</button>
+              </div>
+              <div style="overflow-x:auto;margin-bottom:15px">
+                <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+                  <thead>
+                    <tr style="background:var(--surface);border-bottom:2px solid rgba(59,188,212,0.3)">
+                      <th style="padding:8px;text-align:left">Marca</th>
+                      <th style="padding:8px;text-align:left">Modelo</th>
+                      <th style="padding:8px;text-align:center">Año</th>
+                      <th style="padding:8px;text-align:center">Lado</th>
+                      <th style="padding:8px;text-align:center">Posición</th>
+                      <th style="padding:8px;text-align:center">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody id="envios-puertas-tabla">
+                    <tr><td colspan="6" style="text-align:center;padding:15px;color:var(--gray)">Sin puertas agregadas</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:15px">
+                <input type="text" id="envios-puerta-marca" placeholder="Marca" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                <input type="text" id="envios-puerta-modelo" placeholder="Modelo" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                <input type="number" id="envios-puerta-año" placeholder="Año" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                <select id="envios-puerta-lado" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                  <option value="">Lado</option>
+                  <option value="Izquierda">← Izquierda</option>
+                  <option value="Derecha">Derecha →</option>
+                </select>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <select id="envios-puerta-posicion" style="padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                  <option value="">Posición</option>
+                  <option value="Delantera">🚗 Delantera</option>
+                  <option value="Trasera">🚗 Trasera</option>
+                </select>
+                <button type="button" onclick="envios_agregarPuerta()" class="btn btn-primary" style="background:#3BBCD4;color:white;border:none;padding:8px;border-radius:6px;cursor:pointer">➕ Agregar</button>
+              </div>
+            </div>
+
             <div class="form-group" style="margin-bottom:20px">
               <label>Notas</label>
-              <textarea id="envios-notas" placeholder="Observaciones..." style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white);min-height:80px"></textarea>
+              <textarea id="envios-notas" placeholder="Observaciones..." style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white);min-height:60px"></textarea>
             </div>
           </div>
           <div class="modal-footer">
@@ -4443,6 +4486,7 @@ window.openEnvioForm = function() {
 
 let envios_all = [];
 let envios_editando = null;
+let envios_puertas = [];
 
 async function envios_cargar() {
   try {
@@ -4462,7 +4506,43 @@ function envios_renderizar() {
     body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray)">📦 Sin envíos aún</td></tr>';
     return;
   }
-  body.innerHTML = envios_all.map(e => `<tr style="border-bottom:1px solid rgba(59,188,212,0.1)"><td style="padding:12px">${e.fecha || '—'}</td><td style="padding:12px">${e.vendedor || '—'}</td><td style="padding:12px">${e.destinatario || '—'}</td><td style="padding:12px"><code style="color:#3BBCD4;font-size:0.9em">${e.guia || '—'}</code></td><td style="padding:12px;text-align:center">${e.piezas || 0}</td><td style="padding:12px;text-align:center"><select onchange="envios_cambiarEstado('${e.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white)"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td style="padding:12px;text-align:right">$${(e.costo || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="padding:12px;text-align:center"><button onclick="envios_editar('${e.id}')" style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;margin-right:8px">✏️</button><button onclick="if(confirm('¿Eliminar?')) envios_eliminarDirect('${e.id}')" style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1em">🗑</button></td></tr>`).join('');
+  body.innerHTML = envios_all.map(e => `<tr style="border-bottom:1px solid rgba(59,188,212,0.1)"><td style="padding:12px">${e.fecha || '—'}</td><td style="padding:12px">${e.vendedor || '—'}</td><td style="padding:12px">${e.destinatario || '—'}</td><td style="padding:12px"><code style="color:#3BBCD4;font-size:0.9em">${e.guia || '—'}</code></td><td style="padding:12px;text-align:center">${(e.puertas || []).length}</td><td style="padding:12px;text-align:center"><select onchange="envios_cambiarEstado('${e.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white)"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td style="padding:12px;text-align:right">$${(e.costo || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="padding:12px;text-align:center"><button onclick="envios_editar('${e.id}')" style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;margin-right:8px">✏️</button><button onclick="if(confirm('¿Eliminar?')) envios_eliminarDirect('${e.id}')" style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1em">🗑</button></td></tr>`).join('');
+}
+
+function envios_renderizarPuertas() {
+  const tabla = document.getElementById('envios-puertas-tabla');
+  if (!envios_puertas.length) {
+    tabla.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:15px;color:var(--gray)">Sin puertas agregadas</td></tr>';
+    return;
+  }
+  tabla.innerHTML = envios_puertas.map((p, i) => `<tr style="border-bottom:1px solid rgba(59,188,212,0.1)"><td style="padding:8px">${p.marca || '—'}</td><td style="padding:8px">${p.modelo || '—'}</td><td style="padding:8px;text-align:center">${p.año || '—'}</td><td style="padding:8px;text-align:center">${p.lado || '—'}</td><td style="padding:8px;text-align:center">${p.posicion || '—'}</td><td style="padding:8px;text-align:center"><button onclick="envios_eliminarPuerta(${i})" style="background:none;border:none;color:#EF4444;cursor:pointer">🗑</button></td></tr>`).join('');
+}
+
+function envios_agregarPuerta() {
+  const marca = document.getElementById('envios-puerta-marca').value.trim();
+  const modelo = document.getElementById('envios-puerta-modelo').value.trim();
+  const año = document.getElementById('envios-puerta-año').value.trim();
+  const lado = document.getElementById('envios-puerta-lado').value;
+  const posicion = document.getElementById('envios-puerta-posicion').value;
+
+  if (!marca || !modelo || !año || !lado || !posicion) {
+    window.toast('Completa todos los campos de la puerta', 'error');
+    return;
+  }
+
+  envios_puertas.push({marca, modelo, año, lado, posicion});
+  document.getElementById('envios-puerta-marca').value = '';
+  document.getElementById('envios-puerta-modelo').value = '';
+  document.getElementById('envios-puerta-año').value = '';
+  document.getElementById('envios-puerta-lado').value = '';
+  document.getElementById('envios-puerta-posicion').value = '';
+  envios_renderizarPuertas();
+  window.toast('✅ Puerta agregada', 'success');
+}
+
+function envios_eliminarPuerta(index) {
+  envios_puertas.splice(index, 1);
+  envios_renderizarPuertas();
 }
 
 function envios_actualizarKPIs() {
@@ -4482,6 +4562,7 @@ function envios_actualizarKPIs() {
 
 function envios_abrirForm() {
   envios_editando = null;
+  envios_puertas = [];
   document.getElementById('envios-modal-title').textContent = 'Nuevo Envío';
   document.getElementById('envios-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('envios-vendedor').value = '';
@@ -4491,6 +4572,7 @@ function envios_abrirForm() {
   document.getElementById('envios-costo').value = '';
   document.getElementById('envios-notas').value = '';
   document.getElementById('envios-btn-delete').style.display = 'none';
+  envios_renderizarPuertas();
   openModal('modal-envios-form');
 }
 
@@ -4498,6 +4580,7 @@ function envios_editar(id) {
   const e = envios_all.find(x => x.id === id);
   if (!e) return;
   envios_editando = id;
+  envios_puertas = JSON.parse(JSON.stringify(e.puertas || []));
   document.getElementById('envios-modal-title').textContent = 'Editar Envío';
   document.getElementById('envios-fecha').value = e.fecha || '';
   document.getElementById('envios-vendedor').value = e.vendedor || '';
@@ -4507,6 +4590,7 @@ function envios_editar(id) {
   document.getElementById('envios-costo').value = e.costo || '';
   document.getElementById('envios-notas').value = e.notas || '';
   document.getElementById('envios-btn-delete').style.display = 'inline-block';
+  envios_renderizarPuertas();
   openModal('modal-envios-form');
 }
 
@@ -4523,7 +4607,7 @@ async function envios_guardar() {
     return;
   }
   try {
-    const data = {fecha, vendedor, destinatario, guia, paqueteria, costo, notas, piezas: 1, estado: 'PENDIENTE', createdAt: new Date()};
+    const data = {fecha, vendedor, destinatario, guia, paqueteria, costo, notas, puertas: envios_puertas, estado: 'PENDIENTE', createdAt: new Date()};
     if (envios_editando) {
       await updateDoc(doc(db, 'envios', envios_editando), data);
       window.toast('✅ Envío actualizado', 'success');
