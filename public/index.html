@@ -4133,21 +4133,9 @@ let allEnvios = [];
  * Se llama AUTOMÁTICAMENTE cuando cambias de módulo, así no quedan "fantasmas" visibles.
  */
 function cerrarTodoEnvios() {
-  // Cerrar ambos modales completamente
-  if (typeof closeModal === 'function') {
-    closeModal('modal-envio');
-    closeModal('modal-envio-detalle');
-  }
-  // Limpiar estado
-  currentEnvioId = null;
-  currentEnvioPiezas = [];
-  // Asegurarse que los elementos se oculten completamente (por si closeModal no lo hace)
-  document.querySelectorAll('#modal-envio, #modal-envio-detalle').forEach(el => {
-    if (el) {
-      el.style.display = 'none';
-      el.classList.remove('open', 'active', 'show');
-    }
-  });
+  // Cerrar modal de envíos
+  closeModal('modal-envios-form');
+  envios_editando = null;
 }
 
 function renderEnvios(envios = []) {
