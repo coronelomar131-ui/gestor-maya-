@@ -3132,7 +3132,7 @@ window.showModule = function(name) {
 
   // Cargar datos específicos del módulo
   if (name === 'envios') {
-    cargarEnvios();
+    envios_cargar();
   } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
     if (window.currentRole === 'admin') {
@@ -4182,6 +4182,12 @@ let allEnvios = [];
  * Se llama AUTOMÁTICAMENTE cuando cambias de módulo, así no quedan "fantasmas" visibles.
  */
 function cerrarTodoEnvios() {
+  // Detener listener en tiempo real
+  if (enviosUnsubscribe) {
+    enviosUnsubscribe();
+    enviosUnsubscribe = null;
+  }
+
   // Cerrar modal de envíos de manera segura
   const modal = document.getElementById('modal-envios-form');
   if (modal) {
@@ -4497,13 +4503,25 @@ window.openEnvioForm = function() {
 let envios_all = [];
 let envios_editando = null;
 let envios_puertas = [];
+let enviosUnsubscribe = null;
 
-async function envios_cargar() {
+function envios_cargar() {
+  // Detener listener anterior si existe
+  if (enviosUnsubscribe) {
+    enviosUnsubscribe();
+  }
+
+  // Iniciar listener en tiempo real
   try {
-    const snap = await getDocs(collection(db, 'envios'));
-    envios_all = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
-    envios_renderizar();
-    envios_actualizarKPIs();
+    const q = query(collection(db, 'envios'), orderBy('fecha', 'desc'));
+    enviosUnsubscribe = onSnapshot(q, (snap) => {
+      envios_all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      envios_renderizar();
+      envios_actualizarKPIs();
+    }, (err) => {
+      console.error('Error en envios listener:', err);
+      window.toast('Error de conexión con envíos', 'error');
+    });
   } catch(e) {
     console.error('Error:', e);
     window.toast('Error: ' + e.message, 'error');
