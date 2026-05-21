@@ -3133,6 +3133,8 @@ window.showModule = function(name) {
   // Cargar datos específicos del módulo
   if (name === 'envios') {
     envios_cargar();
+  } else if (name === 'documentos') {
+    cargarDocumentos();
   } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
     if (window.currentRole === 'admin') {
