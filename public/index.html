@@ -2659,7 +2659,7 @@ window.saveVenta = async function() {
 
     // Generar nota PDF automáticamente
     setTimeout(() => {
-      window.generarNotaPDF(obj);
+      window.generarNotaPDFMultiLinea(obj);
     }, 500);
 
     toast(`✅ Venta ${obj.notaNumero} registrada + Nota generada`, 'success');
