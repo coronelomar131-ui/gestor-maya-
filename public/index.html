@@ -5079,194 +5079,140 @@ window.generarNotaPDFMultiLinea = async function(venta) {
     let y = margin;
 
     // COLORES
-    const azulOscuro = [26, 58, 84]; // #1A3A54
-    const azulClaro = [59, 188, 212]; // #3BBCD4
-    const grisClaro = [248, 248, 248];
+    const azulOscuro = [26, 58, 84];
+    const azulClaro = [59, 188, 212];
     const textoDark = [0, 0, 0];
 
-    // 1) HEADER AZUL con logo y datos
+    // HEADER AZUL
     doc.setFillColor(...azulOscuro);
-    doc.rect(0, 0, pageWidth, 22, 'F');
+    doc.rect(0, 0, pageWidth, 20, 'F');
 
-    // Logo estilizado (cuadrado con M y rojo)
-    doc.setFillColor(255, 255, 255);
-    doc.rect(margin, 4, 6, 6, 'F');
-    doc.setTextColor(255, 0, 0);
-    doc.setFontSize(7);
-    doc.setFont(undefined, 'bold');
-    doc.text('M', margin + 3, 8.5, { align: 'center' });
-
-    // Título NOTA DE VENTA
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
+    doc.setFontSize(18);
     doc.setFont(undefined, 'bold');
-    doc.text('NOTA DE VENTA', margin + 10, 14);
+    doc.text('NOTA DE VENTA', pageWidth / 2, 12, { align: 'center' });
 
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com • CDMX, México', margin + 10, 19);
+    doc.text('maya-autopartes.myshopify.com • CDMX, México', pageWidth / 2, 17, { align: 'center' });
 
-    // Fecha en esquina superior derecha
+    // Número de nota y fecha
     doc.setFontSize(9);
-    const fechaFormato = new Date(venta.fecha).toLocaleDateString('es-MX');
-    const [day, month, year] = fechaFormato.split('/');
-    doc.text(`Fecha: ${day}/${month}/${year}`, pageWidth - margin - 30, 14);
+    doc.text(`Nota: ${venta.notaNumero || ''}`, margin, 25);
+    const hoy = new Date().toLocaleDateString('es-MX');
+    doc.text(`Fecha: ${hoy}`, pageWidth - margin - 30, 25);
 
-    y = 26;
+    y = 32;
 
-    // 2) SECCIÓN CLIENTE
+    // CLIENTE
     doc.setTextColor(...azulOscuro);
     doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
     doc.text('CLIENTE', margin, y);
-    y += 5;
+    y += 6;
 
-    // Línea azul
-    doc.setDrawColor(...azulClaro);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y - 2, margin + 5, y - 2);
-
-    // Datos cliente
     doc.setTextColor(...textoDark);
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-    doc.text(`Nombre: ${venta.clienteNombre || ''}`, margin + 5, y);
+    doc.text(`Nombre: ${venta.cliente || '—'}`, margin, y);
+    y += 6;
 
-    doc.text(`Teléfono: ${venta.clienteTelefono || ''}`, margin + 5, y + 5);
-    doc.text(`RFC / Empresa: ${venta.clienteRFC || ''}`, pageWidth / 2, y + 5);
-
-    y += 12;
-
-    // 3) SECCIÓN DETALLE DE VENTA
+    // DETALLE DE VENTA
+    y += 3;
     doc.setTextColor(...azulOscuro);
     doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
     doc.text('DETALLE DE VENTA', margin, y);
-    y += 4;
+    y += 7;
 
-    // Tabla header
+    // Tabla simple
     doc.setFillColor(...azulOscuro);
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(8);
+    doc.setFontSize(9);
     doc.setFont(undefined, 'bold');
+    doc.rect(margin, y - 5, pageWidth - 2 * margin, 6, 'F');
+    doc.text('CONCEPTO', margin + 2, y - 1);
+    doc.text('CANTIDAD/DETALLE', margin + 60, y - 1);
+    doc.text('TOTAL', pageWidth - margin - 20, y - 1, { align: 'right' });
 
-    const tableWidth = pageWidth - 2 * margin;
-    const colWidths = [8, 38, 35, 18, 14, 30];
-    const headers = ['#', 'DESCRIPCIÓN/PIEZA', 'APLICACIÓN/AÑO', 'COLOR', 'CANT.', 'PRECIO'];
-    let x = margin;
-
-    headers.forEach((header, idx) => {
-      doc.rect(x, y, colWidths[idx], 6, 'F');
-      doc.text(header, x + 1.5, y + 4.5, { maxWidth: colWidths[idx] - 2, align: 'left', fontSize: 7 });
-      x += colWidths[idx];
-    });
-    y += 6;
-
-    // Filas de datos
-    doc.setTextColor(...textoDark);
-    doc.setFont(undefined, 'normal');
-    doc.setFontSize(7.5);
-
-    let subtotal = 0;
-    const rowHeight = 7;
-
-    venta.items.forEach((item, idx) => {
-      const precio = parseFloat(item.precio) || 0;
-      const cantidad = parseInt(item.cantidad) || 1;
-      const lineTotal = precio * cantidad;
-      subtotal += lineTotal;
-
-      const bgColor = idx % 2 === 0 ? [255, 255, 255] : grisClaro;
-      doc.setFillColor(...bgColor);
-      doc.rect(margin, y, tableWidth, rowHeight, 'F');
-
-      x = margin + 1;
-      doc.text(String(idx + 1), x, y + 4.5, { maxWidth: colWidths[0] - 2, align: 'center' });
-      x += colWidths[0];
-      doc.text((item.descripcion || '—').substring(0, 30), x + 0.5, y + 4.5, { maxWidth: colWidths[1] - 1, align: 'left' });
-      x += colWidths[1];
-      doc.text((item.aplicacion || '—').substring(0, 20), x + 0.5, y + 4.5, { maxWidth: colWidths[2] - 1, align: 'left' });
-      x += colWidths[2];
-      doc.text((item.color || '—').substring(0, 15), x + 0.5, y + 4.5, { maxWidth: colWidths[3] - 1, align: 'center' });
-      x += colWidths[3];
-      doc.text(String(cantidad), x + 1, y + 4.5, { maxWidth: colWidths[4] - 2, align: 'center' });
-      x += colWidths[4];
-      doc.text('$' + lineTotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), x + 1, y + 4.5, { maxWidth: colWidths[5] - 2, align: 'right' });
-
-      y += rowHeight;
-    });
-
-    y += 5;
-
-    // 4) TOTALES (lado derecho)
-    const totalsX = pageWidth - margin - 55;
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.setTextColor(...textoDark);
-
-    const iva = subtotal * 0.16;
-    const total = subtotal + iva;
-
-    doc.text('Subtotal:', totalsX, y);
-    doc.text('$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y, { align: 'right' });
     y += 4;
 
-    doc.text('IVA (16%):', totalsX, y);
-    doc.text('$' + iva.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y, { align: 'right' });
+    // Fila 1: Descripción
+    doc.setTextColor(...textoDark);
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    const desc = (venta.descripcion || venta.marca || 'Venta de refacciones').substring(0, 40);
+    doc.text(desc, margin + 2, y);
+    doc.text('1x', margin + 60, y);
+    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y, { align: 'right' });
+
+    y += 8;
+
+    // TOTALES
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, y, pageWidth - margin, y);
     y += 5;
+
+    const subtotal = (venta.total || 0) / 1.16;
+    const iva = venta.total - subtotal;
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text('Subtotal:', pageWidth - margin - 50, y);
+    doc.text('$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y, { align: 'right' });
+    y += 5;
+
+    doc.text('IVA (16%):', pageWidth - margin - 50, y);
+    doc.text('$' + iva.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y, { align: 'right' });
+    y += 6;
 
     // TOTAL destacado
     doc.setFillColor(...azulOscuro);
-    doc.rect(totalsX - 2, y - 1, 60, 7, 'F');
+    doc.rect(pageWidth - margin - 65, y - 2, 60, 8, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont(undefined, 'bold');
-    doc.setFontSize(9);
-    doc.text('TOTAL:', totalsX, y + 3);
-    doc.text('$' + total.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y + 3, { align: 'right' });
-
-    y += 10;
-
-    // 5) OBSERVACIONES
-    doc.setTextColor(...azulOscuro);
     doc.setFontSize(11);
+    doc.text('TOTAL:', pageWidth - margin - 50, y + 3);
+    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y + 3, { align: 'right' });
+
+    y += 15;
+
+    // OBSERVACIONES
+    doc.setTextColor(...azulOscuro);
+    doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
-    doc.text('OBSERVACIONES', margin, y);
+    doc.text('OBSERVACIONES:', margin, y);
     y += 4;
-    doc.setDrawColor(...azulClaro);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y - 2, margin + 5, y - 2);
 
     doc.setTextColor(...textoDark);
+    doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
-    doc.setFontSize(8);
-    doc.text(venta.observaciones || '', margin + 5, y, { maxWidth: pageWidth - 2 * margin - 5 });
+    doc.text(venta.notas || '—', margin, y, { maxWidth: pageWidth - 2 * margin });
 
-    // 6) FIRMAS
-    y = pageHeight - 20;
+    // FIRMAS
+    y = pageHeight - 18;
     doc.setDrawColor(...textoDark);
     doc.setLineWidth(0.3);
-    const lineY = y + 8;
-    doc.line(margin, lineY, margin + 40, lineY);
-    doc.line(pageWidth / 2 + 5, lineY, pageWidth - margin, lineY);
+    doc.line(margin, y, margin + 45, y);
+    doc.line(pageWidth / 2 + 5, y, pageWidth - margin, y);
 
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.text('Vendedor / Maya Autopartes', margin + 5, lineY + 3);
-    doc.text('Recibido / Cliente', pageWidth / 2 + 10, lineY + 3);
+    doc.setTextColor(...textoDark);
+    doc.text('Vendedor / Maya Autopartes', margin + 5, y + 3);
+    doc.text('Recibido / Cliente', pageWidth / 2 + 10, y + 3);
 
-    // 7) FOOTER
+    // FOOTER
     y = pageHeight - 8;
     doc.setFillColor(...azulOscuro);
-    doc.rect(0, y + 1, pageWidth, 8, 'F');
+    doc.rect(0, y, pageWidth, 10, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com', pageWidth / 2, y + 5, { align: 'center' });
-    doc.text('Maya Autopartes • La parte que necesitas. • Ciudad de México', pageWidth / 2, y + 6.5, { align: 'center' });
+    doc.text('Maya Autopartes • La parte que necesitas. • Ciudad de México', pageWidth / 2, y + 5, { align: 'center' });
 
-    // Descargar
     doc.save(`${venta.notaNumero || 'nota'}.pdf`);
-    window.toast('✅ Nota PDF generada con tu plantilla', 'success');
+    window.toast('✅ Nota PDF generada', 'success');
   } catch (error) {
     console.error('Error generando PDF:', error);
     window.toast('Error al generar PDF: ' + error.message, 'error');
