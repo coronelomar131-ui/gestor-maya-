@@ -2865,7 +2865,7 @@ window.saveVentaMultiLinea = async function() {
 
     // Generar PDF de la nota
     setTimeout(async () => {
-      await generarNotaPDFMultiLinea(venta);
+      await window.generarNotaPDF(venta);
     }, 500);
 
     closeModal('modal-venta');
@@ -4981,95 +4981,7 @@ window.guardarDatosFiscales = async function() {
   }
 };
 
-window.generarNotaPDF = function(venta) {
-  try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'letter'
-    });
-
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 15;
-    let y = margin;
-
-    // Encabezado - Logo/Nombre
-    doc.setFontSize(18);
-    doc.setFont(undefined, 'bold');
-    doc.text('MAYA AUTOPARTES', pageWidth / 2, y, { align: 'center' });
-    y += 7;
-
-    // Número de nota
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text(`NOTA DE VENTA ${venta.notaNumero || 'NV-001'}`, pageWidth / 2, y, { align: 'center' });
-    y += 2;
-
-    // Línea separadora 1
-    doc.setDrawColor(100);
-    doc.setLineWidth(0.5);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 8;
-
-    // Detalles del cliente
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-
-    const details = [
-      `Cliente: ${venta.cliente || '—'}`,
-      `Fecha: ${new Date().toLocaleDateString('es-MX')}`,
-      `Responsable: ${venta.responsable || '—'}`,
-      `Tipo de Entrega: ${venta.tipoEntrega === 'local' ? '🏠 Local' : venta.tipoEntrega === 'paqueteria' ? '📦 Paquetería' : '🏪 Recolección'}`,
-      ...(venta.numeroReporte ? [`No. Reporte: ${venta.numeroReporte}`] : [])
-    ];
-
-    details.forEach(detail => {
-      doc.text(detail, margin, y);
-      y += 5;
-    });
-
-    y += 3;
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 6;
-
-    // Descripción de productos
-    doc.setFont(undefined, 'bold');
-    doc.text('PRODUCTOS:', margin, y);
-    y += 5;
-
-    doc.setFont(undefined, 'normal');
-    const desc = venta.descripcion || 'Sin descripción';
-    const descLines = doc.splitTextToSize(desc, pageWidth - 2 * margin);
-    doc.text(descLines, margin, y);
-    y += descLines.length * 4 + 3;
-
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 6;
-
-    // Total y método de pago
-    doc.setFontSize(12);
-    doc.setFont(undefined, 'bold');
-    doc.text(`TOTAL: $${(venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}`, margin, y);
-    y += 7;
-
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Método de Pago: ${venta.metodoPago || '—'}`, margin, y);
-    y += 5;
-
-    doc.line(margin, y, pageWidth - margin, y);
-
-    // Descargar PDF
-    doc.save(`NOTA_${venta.notaNumero || 'NV-001'}.pdf`);
-    window.toast('✅ Nota PDF descargada', 'success');
-  } catch (error) {
-    console.error('Error generando PDF:', error);
-    window.toast('Error al generar PDF: ' + error.message, 'error');
-  }
-};
-
-window.generarNotaPDFMultiLinea = async function(venta) {
+window.generarNotaPDF = async function(venta) {
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
