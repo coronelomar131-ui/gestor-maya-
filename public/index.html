@@ -5088,19 +5088,23 @@ window.generarNotaPDFMultiLinea = async function(venta) {
     doc.setFillColor(...azulOscuro);
     doc.rect(0, 0, pageWidth, 22, 'F');
 
-    // Placeholder para logo (M de Maya)
+    // Logo estilizado (cuadrado con M y rojo)
+    doc.setFillColor(255, 255, 255);
+    doc.rect(margin, 4, 6, 6, 'F');
+    doc.setTextColor(255, 0, 0);
+    doc.setFontSize(7);
+    doc.setFont(undefined, 'bold');
+    doc.text('M', margin + 3, 8.5, { align: 'center' });
+
+    // Título NOTA DE VENTA
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('M', margin + 2, 14);
-
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text('NOTA DE VENTA', margin + 12, 14);
+    doc.text('NOTA DE VENTA', margin + 10, 14);
 
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com • CDMX, México', margin + 12, 19);
+    doc.text('maya-autopartes.myshopify.com • CDMX, México', margin + 10, 19);
 
     // Fecha en esquina superior derecha
     doc.setFontSize(9);
