@@ -5049,14 +5049,26 @@ window.generarNotaPDF = async function(venta) {
 
     y += 4;
 
-    // Fila 1: Descripción
+    // Fila 1: Descripción completa
     doc.setTextColor(...textoDark);
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
-    const desc = (venta.descripcion || venta.marca || 'Venta de refacciones').substring(0, 40);
-    doc.text(desc, margin + 2, y);
-    doc.text('1x', margin + 60, y);
-    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y, { align: 'right' });
+
+    // Construir descripción con todos los datos
+    let desc = venta.descripcion || '';
+    if (venta.marca) desc += ` | ${venta.marca}`;
+    if (venta.submarca) desc += ` ${venta.submarca}`;
+    if (!desc.trim()) desc = 'Venta de refacciones';
+
+    // Mostrar descripción (permite múltiples líneas si es necesario)
+    const descLines = doc.splitTextToSize(desc, pageWidth - margin - 50);
+    doc.text(descLines, margin + 2, y);
+
+    // Total en la última línea
+    const lastLineY = y + (descLines.length - 1) * 4;
+    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, lastLineY, { align: 'right' });
+
+    y += descLines.length * 4;
 
     y += 8;
 
