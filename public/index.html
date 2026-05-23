@@ -4507,38 +4507,51 @@ let envios_editando = null;
 let envios_puertas = [];
 let enviosUnsubscribe = null;
 
-function envios_cargar() {
-  // Detener listener anterior si existe
-  if (enviosUnsubscribe) {
-    enviosUnsubscribe();
-  }
-
-  // Iniciar listener en tiempo real
+// Cargar envíos desde Firebase y renderizar
+async function envios_cargar() {
   try {
-    const q = query(collection(db, 'envios'), orderBy('fecha', 'desc'));
-    enviosUnsubscribe = onSnapshot(q, (snap) => {
-      envios_all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      envios_renderizar();
-      envios_actualizarKPIs();
-    }, (err) => {
-      console.error('Error en envios listener:', err);
-      window.toast('Error de conexión con envíos', 'error');
-    });
+    const snap = await getDocs(collection(db, 'envios'));
+    envios_all = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+    envios_renderizar();
+    envios_actualizarKPIs();
   } catch(e) {
-    console.error('Error:', e);
+    console.error('Error cargando envíos:', e);
     window.toast('Error: ' + e.message, 'error');
   }
 }
 
+// Renderizar tabla de envíos
 function envios_renderizar() {
   const body = document.getElementById('envios-tabla');
   if (!envios_all.length) {
     body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray)">📦 Sin envíos aún</td></tr>';
     return;
   }
-  body.innerHTML = envios_all.map(e => `<tr style="border-bottom:1px solid rgba(59,188,212,0.1)"><td style="padding:12px">${e.fecha || '—'}</td><td style="padding:12px">${e.vendedor || '—'}</td><td style="padding:12px">${e.destinatario || '—'}</td><td style="padding:12px"><code style="color:#3BBCD4;font-size:0.9em">${e.guia || '—'}</code></td><td style="padding:12px;text-align:center">${(e.puertas || []).length}</td><td style="padding:12px;text-align:center"><select onchange="envios_cambiarEstado('${e.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white)"><option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option><option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option><option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option><option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option></select></td><td style="padding:12px;text-align:right">$${(e.costo || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td><td style="padding:12px;text-align:center"><button onclick="envios_editar('${e.id}')" style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;margin-right:8px">✏️</button><button onclick="if(confirm('¿Eliminar?')) envios_eliminarDirect('${e.id}')" style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1em">🗑</button></td></tr>`).join('');
+  body.innerHTML = envios_all.map(e => `
+    <tr style="border-bottom:1px solid rgba(59,188,212,0.1)">
+      <td style="padding:12px">${e.fecha || '—'}</td>
+      <td style="padding:12px">${e.vendedor || '—'}</td>
+      <td style="padding:12px">${e.destinatario || '—'}</td>
+      <td style="padding:12px"><code style="color:#3BBCD4;font-size:0.9em">${e.guia || '—'}</code></td>
+      <td style="padding:12px;text-align:center">${(e.puertas || []).length}</td>
+      <td style="padding:12px;text-align:center">
+        <select onchange="envios_cambiarEstado('${e.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white)">
+          <option value="PENDIENTE" ${e.estado === 'PENDIENTE' ? 'selected' : ''}>⏳ PENDIENTE</option>
+          <option value="TRANSITO" ${e.estado === 'TRANSITO' ? 'selected' : ''}>🚚 TRÁNSITO</option>
+          <option value="ENTREGADO" ${e.estado === 'ENTREGADO' ? 'selected' : ''}>✅ ENTREGADO</option>
+          <option value="DEVUELTO" ${e.estado === 'DEVUELTO' ? 'selected' : ''}>↩️ DEVUELTO</option>
+        </select>
+      </td>
+      <td style="padding:12px;text-align:right">$${(e.costo || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+      <td style="padding:12px;text-align:center">
+        <button onclick="envios_editar('${e.id}')" style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;margin-right:8px">✏️</button>
+        <button onclick="if(confirm('¿Eliminar?')) envios_eliminarDirect('${e.id}')" style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1em">🗑</button>
+      </td>
+    </tr>
+  `).join('');
 }
 
+// Renderizar tabla de puertas en el modal
 function envios_renderizarPuertas() {
   const tabla = document.getElementById('envios-puertas-tabla');
   if (!envios_puertas.length) {
@@ -4552,6 +4565,7 @@ function envios_renderizarPuertas() {
   }).join('');
 }
 
+// Agregar puerta al array temporal
 function envios_agregarPuerta() {
   const marca = document.getElementById('envios-puerta-marca').value.trim();
   const modelo = document.getElementById('envios-puerta-modelo').value.trim();
@@ -4574,26 +4588,31 @@ function envios_agregarPuerta() {
   window.toast('✅ Puerta agregada', 'success');
 }
 
+// Eliminar puerta del array temporal
 function envios_eliminarPuerta(index) {
   envios_puertas.splice(index, 1);
   envios_renderizarPuertas();
 }
 
+// Actualizar KPIs
 function envios_actualizarKPIs() {
   const pendientes = envios_all.filter(e => e.estado === 'PENDIENTE').length;
   const transito = envios_all.filter(e => e.estado === 'TRANSITO').length;
   const entregados = envios_all.filter(e => e.estado === 'ENTREGADO').length;
   const monto = envios_all.reduce((s, e) => s + (parseFloat(e.costo) || 0), 0);
-  const e1 = document.getElementById('envios-kpi-pendientes');
-  const e2 = document.getElementById('envios-kpi-transito');
-  const e3 = document.getElementById('envios-kpi-entregados');
-  const e4 = document.getElementById('envios-kpi-monto');
-  if(e1) e1.textContent = pendientes;
-  if(e2) e2.textContent = transito;
-  if(e3) e3.textContent = entregados;
-  if(e4) e4.textContent = '$' + monto.toLocaleString('es-MX', {minimumFractionDigits: 2});
+
+  const el1 = document.getElementById('envios-kpi-pendientes');
+  const el2 = document.getElementById('envios-kpi-transito');
+  const el3 = document.getElementById('envios-kpi-entregados');
+  const el4 = document.getElementById('envios-kpi-monto');
+
+  if(el1) el1.textContent = pendientes;
+  if(el2) el2.textContent = transito;
+  if(el3) el3.textContent = entregados;
+  if(el4) el4.textContent = '$' + monto.toLocaleString('es-MX', {minimumFractionDigits: 2});
 }
 
+// Abrir formulario para crear nuevo envío
 function envios_abrirForm() {
   envios_editando = null;
   envios_puertas = [];
@@ -4610,6 +4629,7 @@ function envios_abrirForm() {
   openModal('modal-envios-form');
 }
 
+// Editar envío
 function envios_editar(id) {
   const e = envios_all.find(x => x.id === id);
   if (!e) return;
@@ -4628,6 +4648,7 @@ function envios_editar(id) {
   openModal('modal-envios-form');
 }
 
+// Guardar envío (crear o actualizar)
 async function envios_guardar() {
   const fecha = document.getElementById('envios-fecha').value;
   const vendedor = document.getElementById('envios-vendedor').value.trim();
@@ -4636,12 +4657,20 @@ async function envios_guardar() {
   const paqueteria = document.getElementById('envios-paqueteria').value.trim();
   const costo = parseFloat(document.getElementById('envios-costo').value) || 0;
   const notas = document.getElementById('envios-notas').value.trim();
+
   if (!fecha || !vendedor || !destinatario || !guia) {
     window.toast('Completa campos requeridos', 'error');
     return;
   }
+
   try {
-    const data = {fecha, vendedor, destinatario, guia, paqueteria, costo, notas, puertas: envios_puertas, estado: 'PENDIENTE', createdAt: new Date()};
+    const data = {
+      fecha, vendedor, destinatario, guia, paqueteria,
+      costo, notas, puertas: envios_puertas,
+      estado: 'PENDIENTE',
+      createdAt: new Date()
+    };
+
     if (envios_editando) {
       await updateDoc(doc(db, 'envios', envios_editando), data);
       window.toast('✅ Envío actualizado', 'success');
@@ -4649,6 +4678,7 @@ async function envios_guardar() {
       await addDoc(collection(db, 'envios'), data);
       window.toast('✅ Envío creado', 'success');
     }
+
     closeModal('modal-envios-form');
     envios_cargar();
   } catch(e) {
@@ -4656,12 +4686,14 @@ async function envios_guardar() {
   }
 }
 
+// Eliminar envío
 function envios_eliminar() {
   if (!envios_editando) return;
   envios_eliminarDirect(envios_editando);
   closeModal('modal-envios-form');
 }
 
+// Eliminar directo (sin modal)
 async function envios_eliminarDirect(id) {
   try {
     await deleteDoc(doc(db, 'envios', id));
@@ -4672,9 +4704,10 @@ async function envios_eliminarDirect(id) {
   }
 }
 
+// Cambiar estado del envío
 async function envios_cambiarEstado(id, nuevoEstado) {
   try {
-    await updateDoc(doc(db, 'envios', id), {estado: nuevoEstado});
+    await updateDoc(doc(db, 'envios', id), { estado: nuevoEstado });
     window.toast(`✅ Estado: ${nuevoEstado}`, 'success');
     envios_cargar();
   } catch(e) {
@@ -4987,131 +5020,110 @@ window.generarNotaPDF = async function(venta) {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 12;
+    const margin = 10;
     let y = margin;
 
     // COLORES
     const azulOscuro = [26, 58, 84];
     const azulClaro = [59, 188, 212];
+    const blanco = [255, 255, 255];
     const textoDark = [0, 0, 0];
 
-    // HEADER AZUL
+    // HEADER
     doc.setFillColor(...azulOscuro);
-    doc.rect(0, 0, pageWidth, 20, 'F');
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
+    doc.rect(0, 0, pageWidth, 18, 'F');
+    doc.setTextColor(...blanco);
+    doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('NOTA DE VENTA', pageWidth / 2, 12, { align: 'center' });
+    doc.text('NOTA DE VENTA', pageWidth / 2, 10, { align: 'center' });
+    doc.setFontSize(7);
+    doc.setFont(undefined, 'normal');
+    doc.text('maya-autopartes.myshopify.com • CDMX, México', pageWidth / 2, 15, { align: 'center' });
 
+    y = 22;
+
+    // INFO ENCABEZADO
+    doc.setTextColor(...textoDark);
+    doc.setFontSize(9);
+    doc.text(`Nota: ${venta.notaId || 'N/A'} | Cliente: ${venta.clienteNombre || '—'} | Vendedor: ${venta.vendedor || '—'}`, margin, y);
+    y += 5;
     doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com • CDMX, México', pageWidth / 2, 17, { align: 'center' });
-
-    // Número de nota y fecha
-    doc.setFontSize(9);
-    doc.text(`Nota: ${venta.notaNumero || ''}`, margin, 25);
-    const hoy = new Date().toLocaleDateString('es-MX');
-    doc.text(`Fecha: ${hoy}`, pageWidth - margin - 30, 25);
-
-    y = 32;
-
-    // CLIENTE
-    doc.setTextColor(...azulOscuro);
-    doc.setFontSize(11);
-    doc.setFont(undefined, 'bold');
-    doc.text('CLIENTE', margin, y);
+    const fecha = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX');
+    doc.text(`Fecha: ${fecha}`, margin, y);
     y += 6;
 
-    doc.setTextColor(...textoDark);
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Nombre: ${venta.cliente || '—'}`, margin, y);
-    y += 6;
+    // TABLA DE PIEZAS
+    if (venta.items && venta.items.length > 0 && window.jspdf && window.jspdf.jsPDF.autoTable) {
+      const tableData = [];
+      tableData.push(['PEDIDO (DESCRIPCIÓN)', '# SINIESTRO', 'PRECIO', 'IVA', 'AJUSTE']);
 
-    // DETALLE DE VENTA
-    y += 3;
-    doc.setTextColor(...azulOscuro);
-    doc.setFontSize(11);
-    doc.setFont(undefined, 'bold');
-    doc.text('DETALLE DE VENTA', margin, y);
-    y += 7;
+      venta.items.forEach(item => {
+        tableData.push([
+          item.pedido || '—',
+          item.numSiniestro || '—',
+          '$' + (item.precio || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}),
+          '$' + (item.iva || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}),
+          '-$' + (item.ajuste || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})
+        ]);
+      });
 
-    // Tabla simple
-    doc.setFillColor(...azulOscuro);
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'bold');
-    doc.rect(margin, y - 5, pageWidth - 2 * margin, 6, 'F');
-    doc.text('CONCEPTO', margin + 2, y - 1);
-    doc.text('CANTIDAD/DETALLE', margin + 60, y - 1);
-    doc.text('TOTAL', pageWidth - margin - 20, y - 1, { align: 'right' });
-
-    y += 4;
-
-    // Fila 1: Descripción (lo que escriben en la venta)
-    doc.setTextColor(...textoDark);
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'normal');
-
-    const desc = venta.descripcion || '—';
-    const descLines = doc.splitTextToSize(desc, pageWidth - margin - 50);
-    doc.text(descLines, margin + 2, y);
-
-    // Total
-    const lastLineY = y + (descLines.length - 1) * 4;
-    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, lastLineY, { align: 'right' });
-
-    y += descLines.length * 4;
-
-    y += 8;
+      doc.autoTable({
+        head: [tableData[0]],
+        body: tableData.slice(1),
+        startY: y,
+        margin: margin,
+        headStyles: {
+          fillColor: azulOscuro,
+          textColor: blanco,
+          fontStyle: 'bold',
+          fontSize: 8
+        },
+        bodyStyles: {
+          fontSize: 8,
+          textColor: textoDark
+        },
+        columnStyles: {
+          2: { halign: 'right' },
+          3: { halign: 'right' },
+          4: { halign: 'right' }
+        }
+      });
+      y = doc.lastAutoTable.finalY + 5;
+    }
 
     // TOTALES
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
-
-    const subtotal = (venta.total || 0) / 1.16;
-    const iva = venta.total - subtotal;
-
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text('Subtotal:', pageWidth - margin - 50, y);
-    doc.text('$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y, { align: 'right' });
-    y += 5;
-
-    doc.text('IVA (16%):', pageWidth - margin - 50, y);
-    doc.text('$' + iva.toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y, { align: 'right' });
-    y += 6;
-
-    // TOTAL destacado
-    doc.setFillColor(...azulOscuro);
-    doc.rect(pageWidth - margin - 65, y - 2, 60, 8, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(11);
-    doc.text('TOTAL:', pageWidth - margin - 50, y + 3);
-    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 5, y + 3, { align: 'right' });
-
-    y += 15;
-
-    // OBSERVACIONES
-    doc.setTextColor(...azulOscuro);
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'bold');
-    doc.text('OBSERVACIONES:', margin, y);
-    y += 4;
-
-    doc.setTextColor(...textoDark);
+    y += 3;
+    const totalsX = pageWidth - margin - 60;
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
-    doc.text(venta.notas || '—', margin, y, { maxWidth: pageWidth - 2 * margin });
+    doc.setTextColor(...textoDark);
+
+    doc.text('Subtotal:', totalsX, y);
+    doc.text('$' + (venta.subtotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y, { align: 'right' });
+    y += 4;
+
+    doc.text('IVA:', totalsX, y);
+    doc.text('$' + (venta.ivaTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y, { align: 'right' });
+    y += 4;
+
+    doc.text('Ajuste:', totalsX, y);
+    doc.text('-$' + (venta.ajusteTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y, { align: 'right' });
+    y += 6;
+
+    // TOTAL DESTACADO
+    doc.setFillColor(...azulOscuro);
+    doc.rect(totalsX - 3, y - 2, 63, 7, 'F');
+    doc.setTextColor(...blanco);
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(10);
+    doc.text('TOTAL:', totalsX, y + 2);
+    doc.text('$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}), pageWidth - margin - 3, y + 2, { align: 'right' });
 
     // FIRMAS
-    y = pageHeight - 18;
+    y = pageHeight - 16;
     doc.setDrawColor(...textoDark);
-    doc.setLineWidth(0.3);
-    doc.line(margin, y, margin + 45, y);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y, margin + 40, y);
     doc.line(pageWidth / 2 + 5, y, pageWidth - margin, y);
 
     doc.setFontSize(8);
@@ -5121,19 +5133,19 @@ window.generarNotaPDF = async function(venta) {
     doc.text('Recibido / Cliente', pageWidth / 2 + 10, y + 3);
 
     // FOOTER
-    y = pageHeight - 8;
+    y = pageHeight - 7;
     doc.setFillColor(...azulOscuro);
-    doc.rect(0, y, pageWidth, 10, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(8);
+    doc.rect(0, y, pageWidth, 7, 'F');
+    doc.setTextColor(...blanco);
+    doc.setFontSize(7);
     doc.setFont(undefined, 'normal');
-    doc.text('Maya Autopartes • La parte que necesitas. • Ciudad de México', pageWidth / 2, y + 5, { align: 'center' });
+    doc.text('Maya Autopartes • La parte que necesitas. • Ciudad de México', pageWidth / 2, y + 4, { align: 'center' });
 
-    doc.save(`${venta.notaNumero || 'nota'}.pdf`);
+    doc.save(`${venta.notaId || 'nota'}.pdf`);
     window.toast('✅ Nota PDF generada', 'success');
   } catch (error) {
     console.error('Error generando PDF:', error);
-    window.toast('Error al generar PDF: ' + error.message, 'error');
+    window.toast('Error: ' + error.message, 'error');
   }
 };
 
