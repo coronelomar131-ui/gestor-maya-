@@ -5016,6 +5016,8 @@ window.guardarDatosFiscales = async function() {
 
 window.generarNotaPDF = async function(venta) {
   try {
+    console.log('📄 Generando PDF con venta:', venta);
+    console.log('📦 Items en venta:', venta.items);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -5053,42 +5055,48 @@ window.generarNotaPDF = async function(venta) {
     y += 6;
 
     // TABLA DE PIEZAS
-    if (venta.items && venta.items.length > 0 && window.jspdf && window.jspdf.jsPDF.autoTable) {
-      const tableData = [];
-      tableData.push(['PEDIDO (DESCRIPCIÓN)', '# SINIESTRO', 'PRECIO', 'IVA', 'AJUSTE']);
+    if (venta.items && venta.items.length > 0) {
+      try {
+        const tableData = [];
+        tableData.push(['PEDIDO (DESCRIPCIÓN)', '# SINIESTRO', 'PRECIO', 'IVA', 'AJUSTE']);
 
-      venta.items.forEach(item => {
-        tableData.push([
-          item.pedido || '—',
-          item.numSiniestro || '—',
-          '$' + (item.precio || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}),
-          '$' + (item.iva || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}),
-          '-$' + (item.ajuste || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})
-        ]);
-      });
+        venta.items.forEach(item => {
+          tableData.push([
+            item.pedido || '—',
+            item.numSiniestro || '—',
+            '$' + (item.precio || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}),
+            '$' + (item.iva || 0).toLocaleString('es-MX', {minimumFractionDigits: 2}),
+            '-$' + (item.ajuste || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})
+          ]);
+        });
 
-      doc.autoTable({
-        head: [tableData[0]],
-        body: tableData.slice(1),
-        startY: y,
-        margin: margin,
-        headStyles: {
-          fillColor: azulOscuro,
-          textColor: blanco,
-          fontStyle: 'bold',
-          fontSize: 8
-        },
-        bodyStyles: {
-          fontSize: 8,
-          textColor: textoDark
-        },
-        columnStyles: {
-          2: { halign: 'right' },
-          3: { halign: 'right' },
-          4: { halign: 'right' }
+        if (doc.autoTable) {
+          doc.autoTable({
+            head: [tableData[0]],
+            body: tableData.slice(1),
+            startY: y,
+            margin: margin,
+            headStyles: {
+              fillColor: azulOscuro,
+              textColor: blanco,
+              fontStyle: 'bold',
+              fontSize: 8
+            },
+            bodyStyles: {
+              fontSize: 8,
+              textColor: textoDark
+            },
+            columnStyles: {
+              2: { halign: 'right' },
+              3: { halign: 'right' },
+              4: { halign: 'right' }
+            }
+          });
+          y = doc.lastAutoTable.finalY + 5;
         }
-      });
-      y = doc.lastAutoTable.finalY + 5;
+      } catch(e) {
+        console.error('Error renderizando tabla:', e);
+      }
     }
 
     // TOTALES
