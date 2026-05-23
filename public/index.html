@@ -1720,7 +1720,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4">Pedido (Descripción)</th>
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4"># Siniestro</th>
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Precio ($)</th>
-                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:80px">IVA ($)</th>
+                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:80px">% IVA</th>
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Ajuste ($)</th>
                 <th style="padding:8px;text-align:center;border:1px solid #3BBCD4;width:40px">🗑</th>
               </tr>
@@ -2739,10 +2739,11 @@ window.agregarFilaPieza = function() {
       <input type="text" class="v-item-siniestro" placeholder="Ej: B6469216S" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em" onchange="recalcularTotales()">
     </td>
     <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
-      <input type="number" class="v-item-precio" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
+      <input type="number" class="v-item-precio" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="calcularIVA(this.parentElement.parentElement);recalcularTotales()" value="0">
     </td>
     <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
-      <input type="number" class="v-item-iva" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
+      <input type="number" class="v-item-iva-porcentaje" placeholder="16" min="0" max="100" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="calcularIVA(this.parentElement.parentElement);recalcularTotales()" value="16" title="% de IVA">
+      <input type="hidden" class="v-item-iva-valor">
     </td>
     <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
       <input type="number" class="v-item-ajuste" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
@@ -2759,13 +2760,33 @@ window.eliminarFilaPieza = function(rowId) {
   if (row) row.remove();
 };
 
+// Calcular IVA automáticamente basado en porcentaje
+window.calcularIVA = function(row) {
+  const precio = parseFloat(row.querySelector('.v-item-precio')?.value || 0);
+  const porcentaje = parseFloat(row.querySelector('.v-item-iva-porcentaje')?.value || 16);
+  const ivaCalculado = (precio * porcentaje) / 100;
+
+  // Guardar el valor calculado en el hidden field
+  const ivaHidden = row.querySelector('.v-item-iva-valor');
+  if (ivaHidden) {
+    ivaHidden.value = ivaCalculado.toFixed(2);
+  }
+
+  // Mostrar en el campo de porcentaje para referencia visual
+  const porcentajeField = row.querySelector('.v-item-iva-porcentaje');
+  if (porcentajeField && porcentajeField.title) {
+    porcentajeField.title = `${porcentaje}% = $${ivaCalculado.toFixed(2)}`;
+  }
+};
+
 window.recalcularTotales = function() {
   let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
   const rows = document.querySelectorAll('#v-items-body tr');
 
   rows.forEach(row => {
     const precio = parseFloat(row.querySelector('.v-item-precio')?.value || 0);
-    const iva = parseFloat(row.querySelector('.v-item-iva')?.value || 0);
+    // Lee el IVA calculado del hidden field, o del campo legacy si existe
+    const iva = parseFloat(row.querySelector('.v-item-iva-valor')?.value || row.querySelector('.v-item-iva')?.value || 0);
     const ajuste = parseFloat(row.querySelector('.v-item-ajuste')?.value || 0);
 
     subtotal += precio;
@@ -2810,7 +2831,8 @@ window.saveVentaMultiLinea = async function() {
     const pedido = row.querySelector('.v-item-pedido').value.trim();
     const numSiniestro = row.querySelector('.v-item-siniestro').value.trim();
     const precio = parseFloat(row.querySelector('.v-item-precio').value || 0);
-    const iva = parseFloat(row.querySelector('.v-item-iva').value || 0);
+    // Lee el IVA calculado del hidden field, o del campo legacy si existe
+    const iva = parseFloat(row.querySelector('.v-item-iva-valor')?.value || row.querySelector('.v-item-iva')?.value || 0);
     const ajuste = parseFloat(row.querySelector('.v-item-ajuste').value || 0);
 
     console.log(`🏷️ Fila ${idx}: ${pedido} | ${numSiniestro} | $${precio} | IVA $${iva} | Ajuste $${ajuste}`);
