@@ -2786,25 +2786,33 @@ window.abrirModalNuevoCliente = function() {
 };
 
 window.saveVentaMultiLinea = async function() {
+  console.log('💾 saveVentaMultiLinea() iniciado');
   const fecha = document.getElementById('v-fecha').value;
   const clienteId = document.getElementById('v-cliente').value;
   const vendedor = document.getElementById('v-vendedor').value;
   const incluyeDatosFiscales = document.getElementById('v-incluyeDatosFiscales').checked;
 
+  console.log('📅 Fecha:', fecha, '👤 Cliente:', clienteId, '🧑 Vendedor:', vendedor);
+
   if (!fecha || !clienteId || !vendedor) {
     toast('Completa fecha, cliente y vendedor', 'error');
+    console.warn('⚠️ Campos requeridos incompletos');
     return;
   }
 
   // Recolectar items
   const items = [];
   const rows = document.querySelectorAll('#v-items-body tr');
-  rows.forEach(row => {
+  console.log('📊 Filas encontradas:', rows.length);
+
+  rows.forEach((row, idx) => {
     const pedido = row.querySelector('.v-item-pedido').value.trim();
     const numSiniestro = row.querySelector('.v-item-siniestro').value.trim();
     const precio = parseFloat(row.querySelector('.v-item-precio').value || 0);
     const iva = parseFloat(row.querySelector('.v-item-iva').value || 0);
     const ajuste = parseFloat(row.querySelector('.v-item-ajuste').value || 0);
+
+    console.log(`🏷️ Fila ${idx}: ${pedido} | ${numSiniestro} | $${precio} | IVA $${iva} | Ajuste $${ajuste}`);
 
     if (pedido) {
       items.push({
@@ -2816,6 +2824,8 @@ window.saveVentaMultiLinea = async function() {
       });
     }
   });
+
+  console.log('✅ Items recolectados:', items);
 
   if (items.length === 0) {
     toast('Agrega al menos una pieza', 'error');
@@ -2861,17 +2871,21 @@ window.saveVentaMultiLinea = async function() {
   };
 
   try {
+    console.log('💾 Guardando venta en Firebase:', venta);
     const docRef = await addDoc(collection(db, 'ventas'), venta);
+    console.log('✅ Venta guardada con ID:', docRef.id);
 
     // Generar PDF de la nota
+    console.log('⏱️ Iniciando PDF generation en 500ms...');
     setTimeout(async () => {
+      console.log('🎬 Ejecutando generarNotaPDF()...');
       await window.generarNotaPDF(venta);
     }, 500);
 
     closeModal('modal-venta');
     toast(`✅ Venta ${notaId} registrada + Nota PDF generada`, 'success');
   } catch(e) {
-    console.error('Error:', e);
+    console.error('❌ Error en saveVentaMultiLinea:', e);
     toast('Error al guardar: ' + e.message, 'error');
   }
 };
