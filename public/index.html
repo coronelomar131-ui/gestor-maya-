@@ -3970,24 +3970,30 @@ window.toggleCarpeta = function(id) {
 };
 
 window.filterDocumentos = function() {
-  const search = document.getElementById('doc-search').value.toLowerCase();
-  const documentos = document.querySelectorAll('#documentos-lista > div');
+  const searchInput = document.getElementById('doc-search');
+  if (!searchInput) return;
+
+  const search = searchInput.value.toLowerCase().trim();
+  const contenedor = document.getElementById('documentos-lista');
+  if (!contenedor) return;
+
+  const documentos = contenedor.querySelectorAll(':scope > div');
+  console.log(`🔍 Buscando: "${search}" en ${documentos.length} documentos`);
+
+  let encontrados = 0;
 
   documentos.forEach(doc => {
-    // Buscar en:
-    // 1. Cliente (data-cliente)
-    // 2. Siniestros (data-siniestros)
-    // 3. Todo el texto visible del documento
-    const cliente = doc.getAttribute('data-cliente') || '';
-    const siniestros = doc.getAttribute('data-siniestros') || '';
-    const textoVisible = doc.textContent.toLowerCase();
+    const textoCompleto = doc.textContent.toLowerCase();
 
-    const coincide = cliente.toLowerCase().includes(search) ||
-                     siniestros.toLowerCase().includes(search) ||
-                     textoVisible.includes(search);
-
-    doc.style.display = coincide ? '' : 'none';
+    if (search === '' || textoCompleto.includes(search)) {
+      doc.style.display = '';
+      encontrados++;
+    } else {
+      doc.style.display = 'none';
+    }
   });
+
+  console.log(`📊 Encontrados: ${encontrados} documentos`);
 };
 
 // Abrir modal para editar nota
