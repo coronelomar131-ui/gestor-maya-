@@ -3895,6 +3895,7 @@ window.cargarDocumentos = function() {
   if (!window._ventasAntigasActualizadas) {
     window._ventasAntigasActualizadas = true;
     window.actualizarVentasAntiguas().catch(e => console.error('Error actualizando ventas antiguas:', e));
+    window.actualizarSiniestrosAntiguas().catch(e => console.error('Error actualizando siniestros:', e));
     // Corregir latam parts específicamente
     window.corregirLatamParts().catch(e => console.error('Error corrigiendo latam parts:', e));
   }
@@ -4030,6 +4031,45 @@ window.guardarCambiosNota = async function() {
   } catch (error) {
     console.error('Error al guardar cambios:', error);
     window.toast('❌ Error al guardar: ' + error.message, 'error');
+  }
+};
+
+// Actualizar automáticamente todas las notas antiguas para agregar campo siniestros
+window.actualizarSiniestrosAntiguas = async function() {
+  try {
+    window.toast('🔧 Actualizando siniestros en notas antiguas...', 'info');
+
+    const ventasSnap = await window.getDocs(window.collection(window.db, 'ventas'));
+    let actualizadas = 0;
+    let procesadas = 0;
+
+    const batch = window.writeBatch(window.db);
+
+    ventasSnap.forEach(doc => {
+      procesadas++;
+      const venta = doc.data();
+
+      // Si NO tiene siniestros pero tiene items, calcularlos
+      if (!venta.siniestros && venta.items && venta.items.length > 0) {
+        const siniestros = venta.items.map(i => i.numSiniestro).filter(s => s).join(' | ');
+        if (siniestros) {
+          batch.update(window.doc(window.db, 'ventas', doc.id), {
+            siniestros: siniestros
+          });
+          actualizadas++;
+          console.log(`✅ Actualizados siniestros para: ${venta.clienteNombre || venta.cliente || 'Sin nombre'} -> ${siniestros}`);
+        }
+      }
+    });
+
+    await batch.commit();
+
+    window.toast(`✅ Se actualizaron ${actualizadas} de ${procesadas} notas`, 'success');
+    console.log(`✅ Actualizadas ${actualizadas} notas con siniestros`);
+    cargarDocumentos();
+  } catch(error) {
+    console.error('Error actualizando siniestros:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
   }
 };
 
