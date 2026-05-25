@@ -2775,17 +2775,17 @@ window.inicializarFormularioVenta = function() {
     });
   }
 
-  // Cargar vendedores (usuarios con rol Vendedor)
+  // Cargar vendedores y admins (usuarios con rol Vendedor o Admin)
   const vendedorSelect = document.getElementById('v-vendedor');
   vendedorSelect.innerHTML = '<option value="">— Selecciona vendedor —</option>';
   if (data.usuarios) {
-    data.usuarios.filter(u => u.rol === 'vendedor' || u.nombre === 'RODRIGO').forEach(u => {
+    data.usuarios.filter(u => u.rol === 'vendedor' || u.rol === 'admin').forEach(u => {
       const opt = document.createElement('option');
       opt.value = u.nombre || u.email;
       opt.textContent = u.nombre || u.email;
       vendedorSelect.appendChild(opt);
     });
-    // Default = usuario actual si es vendedor
+    // Default = usuario actual si es vendedor o admin
     if (window.currentRole === 'vendedor') {
       const userName = document.getElementById('user-name-display')?.textContent || '';
       if (userName) vendedorSelect.value = userName;
