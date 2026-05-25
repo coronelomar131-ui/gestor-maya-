@@ -2042,6 +2042,43 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   </div>
 </div>
 
+<!-- MODAL EDITAR NOTA -->
+<div class="modal-overlay" id="modal-editar-nota">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-head">
+      <span class="modal-title">📝 Editar Nota de Venta</span>
+      <button class="modal-close" onclick="closeModal('modal-editar-nota')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nota ID</label>
+        <input type="text" id="editar-nota-id" disabled style="background:var(--surface3);cursor:not-allowed">
+      </div>
+      <div class="form-group">
+        <label>Cliente</label>
+        <input type="text" id="editar-nota-cliente" disabled style="background:var(--surface3);cursor:not-allowed">
+      </div>
+      <div class="form-group">
+        <label>Observaciones</label>
+        <textarea id="editar-nota-observaciones" placeholder="Escribe observaciones, notas, o comentarios..." style="width:100%;padding:10px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white);min-height:100px;font-family:var(--font-body);resize:vertical"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Estatus</label>
+        <select id="editar-nota-estatus" style="width:100%;padding:10px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+          <option value="Pendiente">⏳ Pendiente</option>
+          <option value="En Proceso">🔄 En Proceso</option>
+          <option value="Entregado">✅ Entregado</option>
+          <option value="Cancelado">❌ Cancelado</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-editar-nota')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCambiosNota()">💾 Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST CONTAINER -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -3806,23 +3843,31 @@ window.cargarDocumentos = function() {
         const cliente = v.clienteNombre || v.cliente || 'Sin nombre';
         const total = v.total || 0;
 
+        const estatus = v.estatus || 'Pendiente';
+        const observaciones = v.observaciones || '';
+
         html += `
         <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
           <div style="color:#3BBCD4;font-weight:700;font-size:16px;margin-bottom:12px">
             📁 ${cliente} — ${nota}
             <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
+            <span style="background:#3BBCD4;color:#0D1F2E;padding:4px 10px;border-radius:4px;font-size:11px;margin-left:8px;font-weight:600">${estatus}</span>
           </div>
           <div style="display:flex;gap:12px;flex-wrap:wrap">
             <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
               <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
-              <button onclick="descargarNotaPorId('${docu.id}')" style="background:#3BBCD4;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⬇️ Descargar Nota PDF</button>
+              <button onclick="descargarNotaPorId('${docu.id}')" style="background:#3BBCD4;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⬇️ Descargar</button>
             </div>
             <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
               <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">🧾 Factura</div>
               ${v.facturaURL
-                ? `<button onclick="window.verFactura('${v.facturaURL}')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver Factura</button>`
-                : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}','${nota}',this)"><button onclick="document.getElementById('f-${docu.id}').click()" style="background:transparent;color:#F59E0B;border:2px dashed #F59E0B;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📎 Subir Factura PDF</button>`
+                ? `<button onclick="window.verFactura('${v.facturaURL}')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver</button>`
+                : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}','${nota}',this)"><button onclick="document.getElementById('f-${docu.id}').click()" style="background:transparent;color:#F59E0B;border:2px dashed #F59E0B;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📎 Subir</button>`
               }
+            </div>
+            <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
+              <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">✏️ Editar</div>
+              <button onclick="abrirEditarNota('${docu.id}','${nota}','${cliente.replace(/'/g, "\\'")}','${estatus.replace(/'/g, "\\'")}','${observaciones.replace(/'/g, "\\'").replace(/\n/g, "\\n")}')" style="background:#8B5CF6;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📝 Editar</button>
             </div>
           </div>
         </div>`;
@@ -3852,6 +3897,50 @@ window.filterDocumentos = function() {
     const nombre = carp.textContent.toLowerCase();
     carp.style.display = nombre.includes(search) ? '' : 'none';
   });
+};
+
+// Abrir modal para editar nota
+window.abrirEditarNota = function(ventaId, nota, cliente, estatus, observaciones) {
+  document.getElementById('editar-nota-id').value = ventaId;
+  document.getElementById('editar-nota-cliente').value = cliente;
+  document.getElementById('editar-nota-observaciones').value = observaciones || '';
+  document.getElementById('editar-nota-estatus').value = estatus || 'Pendiente';
+
+  // Guardar el ventaId en el modal para usar en guardarCambiosNota
+  document.getElementById('modal-editar-nota').dataset.ventaId = ventaId;
+
+  window.openModal('modal-editar-nota');
+};
+
+// Guardar cambios de la nota
+window.guardarCambiosNota = async function() {
+  const modal = document.getElementById('modal-editar-nota');
+  const ventaId = modal.dataset.ventaId;
+  const observaciones = document.getElementById('editar-nota-observaciones').value.trim();
+  const estatus = document.getElementById('editar-nota-estatus').value;
+
+  if (!ventaId) {
+    window.toast('Error: No se pudo identificar la nota', 'error');
+    return;
+  }
+
+  try {
+    window.toast('Guardando cambios...', 'info');
+
+    // Actualizar documento en Firebase
+    await window.updateDoc(window.doc(window.db, 'ventas', ventaId), {
+      observaciones: observaciones,
+      estatus: estatus,
+      updated_at: new Date()
+    });
+
+    window.toast('✅ Nota actualizada correctamente', 'success');
+    window.closeModal('modal-editar-nota');
+    cargarDocumentos(); // Recargar la lista de documentos
+  } catch (error) {
+    console.error('Error al guardar cambios:', error);
+    window.toast('❌ Error al guardar: ' + error.message, 'error');
+  }
 };
 
 // OLD descargarNota function removed - using new descargarNotaPorId instead
