@@ -2050,6 +2050,23 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   </div>
 </div>
 
+<!-- MODAL DETALLES DE VENTA -->
+<div class="modal-overlay" id="modal-detalles-venta">
+  <div class="modal" style="max-width:900px;max-height:90vh;overflow-y:auto">
+    <div class="modal-head">
+      <span class="modal-title">📋 Detalles de Venta</span>
+      <button class="modal-close" onclick="closeModal('modal-detalles-venta')">&times;</button>
+    </div>
+    <div class="modal-body" id="detalles-venta-contenido">
+      <!-- Se llena dinámicamente -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-detalles-venta')">Cerrar</button>
+      <button class="btn btn-primary" onclick="descargarNotaPorId(document.getElementById('detalles-venta-id').value)">⬇️ Descargar Nota PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL EDITAR NOTA -->
 <div class="modal-overlay" id="modal-editar-nota">
   <div class="modal" style="max-width:600px">
@@ -2358,7 +2375,7 @@ function renderVentas() {
         </select>
       </td>
       <td>${fmtDate(v.createdAt)}</td>
-      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button>` : ''}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="abrirDetallesVenta('${v.id}')">👁️ Ver</button> ${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button>` : ''}</td>
     </tr>
   `;
   }).join('');
@@ -3914,7 +3931,7 @@ window.cargarDocumentos = function() {
 
       snap.forEach(docu => {
         const v = docu.data();
-        const nota = v.notaId || 'NV-' + String(contador).padStart(3, '0');
+        const nota = v.notaId || String(contador);
         const cliente = v.clienteNombre || v.cliente || 'Sin nombre';
         const total = v.total || 0;
 
@@ -4005,6 +4022,111 @@ window.filterDocumentos = function() {
     console.log(`✅ Mostrando ${shown} documentos`);
   } catch (error) {
     console.error('❌ Error en filterDocumentos:', error);
+  }
+};
+
+// Abrir modal con detalles de venta
+window.abrirDetallesVenta = async function(ventaId) {
+  try {
+    const ventaSnap = await window.getDoc(window.doc(window.db, 'ventas', ventaId));
+
+    if (!ventaSnap.exists()) {
+      window.toast('❌ Venta no encontrada', 'error');
+      return;
+    }
+
+    const v = ventaSnap.data();
+    const fecha = v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '—';
+
+    // Generar HTML de detalles
+    let html = `
+      <input type="hidden" id="detalles-venta-id" value="${ventaId}">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">📝 Nota</div>
+          <div style="color:#3BBCD4;font-weight:700;font-size:18px">${v.notaId || '—'}</div>
+        </div>
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">👤 Cliente</div>
+          <div style="color:white;font-weight:600">${v.clienteNombre || '—'}</div>
+        </div>
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">🧑 Vendedor</div>
+          <div style="color:white">${v.vendedor || '—'}</div>
+        </div>
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">📅 Fecha</div>
+          <div style="color:white">${fecha}</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <div style="color:#999;font-size:12px;margin-bottom:8px">🔍 Siniestros</div>
+        <code style="color:#3BBCD4;background:var(--surface2);padding:8px;border-radius:4px;display:block">${v.siniestros || 'Sin siniestros'}</code>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <div style="color:#999;font-size:12px;margin-bottom:12px">📦 Piezas</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--surface2);border-bottom:1px solid #3BBCD4">
+              <th style="padding:8px;text-align:left;color:#999">Pedido</th>
+              <th style="padding:8px;text-align:left;color:#999">Siniestro</th>
+              <th style="padding:8px;text-align:right;color:#999">Precio</th>
+              <th style="padding:8px;text-align:right;color:#999">IVA</th>
+              <th style="padding:8px;text-align:right;color:#999">Ajuste</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    if (v.items && v.items.length > 0) {
+      v.items.forEach(item => {
+        html += `
+          <tr style="border-bottom:1px solid rgba(59,188,212,0.1)">
+            <td style="padding:8px">${item.pedido || '—'}</td>
+            <td style="padding:8px"><code style="color:#3BBCD4">${item.numSiniestro || '—'}</code></td>
+            <td style="padding:8px;text-align:right;color:#22C55E">$${(item.precio || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+            <td style="padding:8px;text-align:right">$${(item.iva || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+            <td style="padding:8px;text-align:right">-$${(item.ajuste || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+          </tr>
+        `;
+      });
+    } else {
+      html += '<tr><td colspan="5" style="padding:8px;text-align:center;color:#999">Sin piezas</td></tr>';
+    }
+
+    html += `
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;background:var(--surface2);padding:15px;border-radius:8px">
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">Subtotal</div>
+          <div style="color:#22C55E;font-weight:600;font-size:14px">$${(v.subtotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+        </div>
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">IVA Total</div>
+          <div style="color:#22C55E;font-weight:600;font-size:14px">$${(v.ivaTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+        </div>
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">Ajuste Total</div>
+          <div style="color:#FF6B6B;font-weight:600;font-size:14px">-$${(v.ajusteTotal || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+        </div>
+        <div>
+          <div style="color:#999;font-size:12px;margin-bottom:4px">TOTAL</div>
+          <div style="color:#3BBCD4;font-weight:700;font-size:16px">$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('detalles-venta-contenido').innerHTML = html;
+    window.openModal('modal-detalles-venta');
+  } catch(error) {
+    console.error('Error abriendo detalles:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
   }
 };
 
