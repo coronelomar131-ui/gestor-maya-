@@ -3008,6 +3008,9 @@ window.saveVentaMultiLinea = async function() {
     createdByName = auth.currentUser?.email || 'Usuario';
   }
 
+  // Extraer todos los siniestros de los items para búsqueda fácil
+  const siniestros = items.map(i => i.numSiniestro).filter(s => s).join(' | ');
+
   const venta = {
     notaId,
     fecha: new Date(fecha).getTime(),
@@ -3015,6 +3018,7 @@ window.saveVentaMultiLinea = async function() {
     clienteNombre,
     vendedor,
     items,
+    siniestros, // Campo para búsqueda
     subtotal: parseFloat(subtotal.toFixed(2)),
     ivaTotal: parseFloat(ivaTotal.toFixed(2)),
     ajusteTotal: parseFloat(ajusteTotal.toFixed(2)),
@@ -3909,22 +3913,24 @@ window.cargarDocumentos = function() {
 
       snap.forEach(docu => {
         const v = docu.data();
-        const nota = v.notaNumero || 'NV-' + String(contador).padStart(3, '0');
+        const nota = v.notaId || 'NV-' + String(contador).padStart(3, '0');
         const cliente = v.clienteNombre || v.cliente || 'Sin nombre';
         const total = v.total || 0;
 
         const estatus = v.estatus || 'Pendiente';
         const observaciones = v.observaciones || '';
         const creadoPor = v.createdByName || 'Usuario';
+        const siniestros = v.siniestros || '';
 
         html += `
-        <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
+        <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)" data-cliente="${cliente}" data-siniestros="${siniestros}">
           <div style="color:#3BBCD4;font-weight:700;font-size:16px;margin-bottom:12px">
             📁 ${cliente} — ${nota}
             <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
             <span style="background:#3BBCD4;color:#0D1F2E;padding:4px 10px;border-radius:4px;font-size:11px;margin-left:8px;font-weight:600">${estatus}</span>
           </div>
           <div style="color:#AADDEE;font-size:12px;margin-bottom:12px;font-weight:500">👤 Creado por: <strong>${creadoPor}</strong></div>
+          ${siniestros ? `<div style="color:#999;font-size:11px;margin-bottom:8px">🔍 Siniestros: <code>${siniestros}</code></div>` : ''}
           <div style="display:flex;gap:12px;flex-wrap:wrap">
             <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
               <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
@@ -3967,9 +3973,19 @@ window.filterDocumentos = function() {
   const documentos = document.querySelectorAll('#documentos-lista > div');
 
   documentos.forEach(doc => {
-    const texto = doc.textContent.toLowerCase();
-    // Buscar en todo el texto del documento (cliente, siniestro, nota, etc.)
-    doc.style.display = texto.includes(search) ? '' : 'none';
+    // Buscar en:
+    // 1. Cliente (data-cliente)
+    // 2. Siniestros (data-siniestros)
+    // 3. Todo el texto visible del documento
+    const cliente = doc.getAttribute('data-cliente') || '';
+    const siniestros = doc.getAttribute('data-siniestros') || '';
+    const textoVisible = doc.textContent.toLowerCase();
+
+    const coincide = cliente.toLowerCase().includes(search) ||
+                     siniestros.toLowerCase().includes(search) ||
+                     textoVisible.includes(search);
+
+    doc.style.display = coincide ? '' : 'none';
   });
 };
 
