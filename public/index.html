@@ -2940,14 +2940,18 @@ window.saveVentaMultiLinea = async function() {
 
   // Generar número de nota (busca TODOS los documentos para obtener el último número)
   const notasSnap = await getDocs(collection(db, 'ventas'));
-  const lastNote = notasSnap.docs.reduce((max, d) => {
+  let lastNote = 0;
+  notasSnap.forEach(d => {
     const data = d.data();
     // Busca en notaId o notaNumero (para compatibilidad con datos antiguos)
     const notaStr = data.notaId || data.notaNumero || '';
     const num = parseInt(notaStr.replace('NV-', '') || '0');
-    return num > max ? num : max;
-  }, 0);
+    if (num > lastNote) {
+      lastNote = num;
+    }
+  });
   const notaId = 'NV-' + String(lastNote + 1).padStart(3, '0');
+  console.log(`📝 Generando nota: ${notaId} (último fue: NV-${String(lastNote).padStart(3, '0')})`);
 
   // Preparar documento
   const clienteNombre = document.querySelector('#v-cliente option:checked').textContent;
@@ -3997,6 +4001,50 @@ window.actualizarVentasAntiguas = async function() {
     cargarDocumentos();
   } catch(error) {
     console.error('Error actualizando ventas:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
+  }
+};
+
+// Función para verificar/reparar numeración de notas (ejecutar si hay problemas)
+window.repararNumeracionNotas = async function() {
+  try {
+    window.toast('🔧 Verificando y reparando numeración...', 'info');
+
+    // Obtener todas las ventas ordenadas por fecha
+    const ventasSnap = await window.getDocs(
+      window.query(
+        window.collection(window.db, 'ventas'),
+        window.orderBy('createdAt', 'asc')
+      )
+    );
+
+    const batch = window.writeBatch(window.db);
+    let reparadas = 0;
+    let contador = 1;
+
+    ventasSnap.forEach(doc => {
+      const venta = doc.data();
+      const notaEsperada = 'NV-' + String(contador).padStart(3, '0');
+
+      // Si el notaId no es el esperado, actualizarlo
+      if (venta.notaId !== notaEsperada) {
+        batch.update(window.doc(window.db, 'ventas', doc.id), {
+          notaId: notaEsperada
+        });
+        reparadas++;
+        console.log(`🔧 Reparado: ${venta.clienteNombre || venta.cliente || 'Sin nombre'} -> ${notaEsperada} (era ${venta.notaId})`);
+      }
+
+      contador++;
+    });
+
+    await batch.commit();
+
+    window.toast(`✅ Reparadas ${reparadas} notas. Numeración ahora es secuencial.`, 'success');
+    console.log(`✅ Reparadas ${reparadas} notas`);
+    cargarDocumentos();
+  } catch(error) {
+    console.error('Error reparando numeración:', error);
     window.toast('❌ Error: ' + error.message, 'error');
   }
 };
