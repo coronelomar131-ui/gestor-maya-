@@ -2124,7 +2124,9 @@ async function loadUserProfile(uid) {
       document.getElementById('nav-usuarios').style.display = 'flex';
       document.getElementById('nav-finanzas').style.display = 'flex';
       document.getElementById('nav-configuracion').style.display = 'flex';
-      document.getElementById('nav-configuracion').style.display = 'flex';
+    } else {
+      // No-admin users cannot see Finanzas
+      document.getElementById('nav-finanzas').style.display = 'none';
     }
   } catch(e) {
     currentRole = 'admin';
@@ -4008,7 +4010,18 @@ if (document.readyState === 'loading') {
 // Auto-load when showing mercadolibre module
 const originalShowModule = window.showModule;
 window.showModule = function(name) {
+  // Protección: Solo admin puede acceder a Finanzas
+  if (name === 'finanzas') {
+    const rol = window.currentRole || 'vendedor';
+    if (rol !== 'admin') {
+      window.toast('❌ Solo administradores pueden acceder a Finanzas', 'error');
+      console.warn('⚠️ Intento de acceso no autorizado a Finanzas por:', rol);
+      return;
+    }
+  }
+
   originalShowModule(name);
+
   if (name === 'mercadolibre') {
     // Iniciar tiempo real + notificaciones
     iniciarMLTiempoReal();
