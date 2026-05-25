@@ -3975,30 +3975,37 @@ window.toggleCarpeta = function(id) {
 };
 
 window.filterDocumentos = function() {
-  const searchInput = document.getElementById('doc-search');
-  if (!searchInput) return;
+  try {
+    const searchBox = document.getElementById('doc-search');
+    const listContainer = document.getElementById('documentos-lista');
 
-  const search = searchInput.value.toLowerCase().trim();
-  const contenedor = document.getElementById('documentos-lista');
-  if (!contenedor) return;
-
-  const documentos = contenedor.querySelectorAll(':scope > div');
-  console.log(`🔍 Buscando: "${search}" en ${documentos.length} documentos`);
-
-  let encontrados = 0;
-
-  documentos.forEach(doc => {
-    const textoCompleto = doc.textContent.toLowerCase();
-
-    if (search === '' || textoCompleto.includes(search)) {
-      doc.style.display = '';
-      encontrados++;
-    } else {
-      doc.style.display = 'none';
+    if (!searchBox || !listContainer) {
+      console.error('❌ No se encontró el buscador o contenedor');
+      return;
     }
-  });
 
-  console.log(`📊 Encontrados: ${encontrados} documentos`);
+    const search = searchBox.value.toLowerCase().trim();
+    const documentElements = listContainer.getElementsByTagName('div');
+
+    console.log(`🔍 Buscando: "${search}" en ${documentElements.length} elementos`);
+
+    let shown = 0;
+
+    for (let doc of documentElements) {
+      const text = doc.textContent.toLowerCase();
+
+      if (!search || text.includes(search)) {
+        doc.style.display = 'block';
+        shown++;
+      } else {
+        doc.style.display = 'none';
+      }
+    }
+
+    console.log(`✅ Mostrando ${shown} documentos`);
+  } catch (error) {
+    console.error('❌ Error en filterDocumentos:', error);
+  }
 };
 
 // Abrir modal para editar nota
