@@ -1473,7 +1473,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <!-- DOCUMENTOS MODULE -->
       <div class="module-view" id="mod-documentos">
         <div style="margin-bottom:20px">
-          <input type="text" id="doc-search" placeholder="Buscar cliente..." style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;width:400px" oninput="filterDocumentos()">
+          <input type="text" id="doc-search" placeholder="Buscar por cliente o siniestro..." style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;width:400px" oninput="filterDocumentos()">
         </div>
         <div id="documentos-lista" style="display:flex;flex-direction:column;gap:10px">
         </div>
@@ -1723,9 +1723,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
         <div class="form-group"><label>Cliente</label>
           <div style="display:flex;gap:8px">
-            <select id="v-cliente" style="flex:1;color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
-              <option value="">— Selecciona cliente —</option>
-            </select>
+            <input type="text" id="v-cliente" placeholder="Escribe para buscar cliente..." style="flex:1;color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4;padding:8px;border-radius:4px" list="clientes-list">
+            <datalist id="clientes-list"></datalist>
             <button class="btn btn-sm" style="background:#3BBCD4;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer" onclick="abrirModalNuevoCliente()">+ Nuevo</button>
           </div>
         </div>
@@ -2763,15 +2762,19 @@ window.inicializarFormularioVenta = function() {
   const hoy = new Date().toISOString().split('T')[0];
   document.getElementById('v-fecha').value = hoy;
 
-  // Cargar clientes
-  const clienteSelect = document.getElementById('v-cliente');
-  clienteSelect.innerHTML = '<option value="">— Selecciona cliente —</option>';
+  // Cargar clientes en datalist (autocomplete)
+  const clienteInput = document.getElementById('v-cliente');
+  const clientesList = document.getElementById('clientes-list');
+  clientesList.innerHTML = '';
+  clienteInput.value = '';
+
   if (data.clientes) {
     data.clientes.forEach(c => {
       const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = c.razonSocial || c.nombre || c.id;
-      clienteSelect.appendChild(opt);
+      const nombre = c.razonSocial || c.nombre || c.id;
+      opt.value = `${nombre}|${c.id}`;
+      opt.textContent = nombre;
+      clientesList.appendChild(opt);
     });
   }
 
@@ -2884,13 +2887,18 @@ window.abrirModalNuevoCliente = function() {
 window.saveVentaMultiLinea = async function() {
   console.log('💾 saveVentaMultiLinea() iniciado');
   const fecha = document.getElementById('v-fecha').value;
-  const clienteId = document.getElementById('v-cliente').value;
+  const clienteInput = document.getElementById('v-cliente').value;
   const vendedor = document.getElementById('v-vendedor').value;
   const incluyeDatosFiscales = document.getElementById('v-incluyeDatosFiscales').checked;
 
+  // Parsear cliente (formato: "nombre|id")
+  const clienteParts = clienteInput.split('|');
+  const clienteId = clienteParts[1] || clienteInput; // Usar ID si existe, sino usar el valor
+  const clienteNombre = clienteParts[0] || clienteInput;
+
   console.log('📅 Fecha:', fecha, '👤 Cliente:', clienteId, '🧑 Vendedor:', vendedor);
 
-  if (!fecha || !clienteId || !vendedor) {
+  if (!fecha || !clienteInput || !vendedor) {
     toast('Completa fecha, cliente y vendedor', 'error');
     console.warn('⚠️ Campos requeridos incompletos');
     return;
@@ -2938,23 +2946,35 @@ window.saveVentaMultiLinea = async function() {
   });
   const total = subtotal + ivaTotal - ajusteTotal;
 
-  // Generar número de nota (busca TODOS los documentos para obtener el último número)
+  // Generar número de nota (números simples: 1, 2, 3...)
   const notasSnap = await getDocs(collection(db, 'ventas'));
   let lastNote = 0;
   notasSnap.forEach(d => {
     const data = d.data();
-    // Busca en notaId o notaNumero (para compatibilidad con datos antiguos)
+    // Busca en notaId (nuevo formato) o notaNumero (antiguo)
     const notaStr = data.notaId || data.notaNumero || '';
-    const num = parseInt(notaStr.replace('NV-', '') || '0');
+    const num = parseInt(notaStr.replace('NV-', '').replace(/\D/g, '') || '0');
     if (num > lastNote) {
       lastNote = num;
     }
   });
-  const notaId = 'NV-' + String(lastNote + 1).padStart(3, '0');
-  console.log(`📝 Generando nota: ${notaId} (último fue: NV-${String(lastNote).padStart(3, '0')})`);
+  const notaId = String(lastNote + 1);
+  console.log(`📝 Generando nota: ${notaId} (última fue: ${lastNote})`);
 
-  // Preparar documento
-  const clienteNombre = document.querySelector('#v-cliente option:checked').textContent;
+  // Preparar documento (clienteNombre ya fue parseado del input arriba)
+
+  // Obtener nombre del usuario autenticado (del dropdown de usuarios o displayName)
+  let createdByName = auth.currentUser?.displayName || '';
+  if (!createdByName && data.usuarios) {
+    const usuarioEncontrado = data.usuarios.find(u => u.email === auth.currentUser?.email);
+    if (usuarioEncontrado) {
+      createdByName = usuarioEncontrado.nombre || auth.currentUser?.email;
+    }
+  }
+  if (!createdByName) {
+    createdByName = auth.currentUser?.email || 'Usuario';
+  }
+
   const venta = {
     notaId,
     fecha: new Date(fecha).getTime(),
@@ -2972,7 +2992,7 @@ window.saveVentaMultiLinea = async function() {
     tieneFactura: false,
     createdAt: serverTimestamp(),
     createdBy: auth.currentUser?.uid || '',
-    createdByName: auth.currentUser?.displayName || 'Usuario'
+    createdByName: createdByName
   };
 
   try {
@@ -3910,10 +3930,12 @@ window.toggleCarpeta = function(id) {
 
 window.filterDocumentos = function() {
   const search = document.getElementById('doc-search').value.toLowerCase();
-  const carpetas = document.querySelectorAll('#doc-folders > div');
-  carpetas.forEach(carp => {
-    const nombre = carp.textContent.toLowerCase();
-    carp.style.display = nombre.includes(search) ? '' : 'none';
+  const documentos = document.querySelectorAll('#documentos-lista > div');
+
+  documentos.forEach(doc => {
+    const texto = doc.textContent.toLowerCase();
+    // Buscar en todo el texto del documento (cliente, siniestro, nota, etc.)
+    doc.style.display = texto.includes(search) ? '' : 'none';
   });
 };
 
