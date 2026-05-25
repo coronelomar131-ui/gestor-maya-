@@ -3837,6 +3837,8 @@ window.cargarDocumentos = function() {
   if (!window._ventasAntigasActualizadas) {
     window._ventasAntigasActualizadas = true;
     window.actualizarVentasAntiguas().catch(e => console.error('Error actualizando ventas antiguas:', e));
+    // Corregir latam parts específicamente
+    window.corregirLatamParts().catch(e => console.error('Error corrigiendo latam parts:', e));
   }
 
   // Listener en tiempo real
@@ -4001,6 +4003,39 @@ window.actualizarVentasAntiguas = async function() {
     cargarDocumentos();
   } catch(error) {
     console.error('Error actualizando ventas:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
+  }
+};
+
+// Función para corregir latam parts específicamente a NV-002
+window.corregirLatamParts = async function() {
+  try {
+    window.toast('🔧 Buscando y corrigiendo latam parts...', 'info');
+
+    const ventasSnap = await window.getDocs(window.collection(window.db, 'ventas'));
+    let encontrada = false;
+
+    for (const doc of ventasSnap.docs) {
+      const venta = doc.data();
+      const cliente = (venta.clienteNombre || venta.cliente || '').toLowerCase();
+
+      if (cliente.includes('latam')) {
+        await window.updateDoc(window.doc(window.db, 'ventas', doc.id), {
+          notaId: 'NV-002'
+        });
+        encontrada = true;
+        window.toast('✅ Latam Parts corregida a NV-002', 'success');
+        console.log(`✅ Latam Parts (${cliente}) ahora es NV-002`);
+        cargarDocumentos();
+        break;
+      }
+    }
+
+    if (!encontrada) {
+      window.toast('❌ No se encontró Latam Parts', 'error');
+    }
+  } catch(error) {
+    console.error('Error corrigiendo latam parts:', error);
     window.toast('❌ Error: ' + error.message, 'error');
   }
 };
