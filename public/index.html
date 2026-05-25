@@ -2331,21 +2331,44 @@ function renderVentas() {
     body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin ventas registradas</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.ventas.map(v => `
+  body.innerHTML = data.ventas.map(v => {
+    const estatus = v.estatus || 'Pendiente';
+    return `
     <tr>
       <td><code style="color:#3BBCD4;font-size:12px">${folio('V-', v.id)}</code></td>
-      <td>${v.cliente || '—'}</td>
+      <td>${v.cliente || v.clienteNombre || '—'}</td>
       <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.descripcion || '—'}</td>
       <td style="color:#4ade80;font-weight:600">${fmtMoney(v.total)}</td>
       <td>${v.metodoPago || '—'}</td>
-      <td><span class="badge badge-${v.estatus === 'activo' ? 'active' : v.estatus === 'pending' ? 'pending' : 'cancelled'}">${v.estatus === 'activo' ? 'Pagada' : v.estatus === 'pending' ? 'Pendiente' : 'Cancelada'}</span></td>
+      <td>
+        <select onchange="cambiarEstatusVenta('${v.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white);font-size:12px">
+          <option value="Pendiente" ${estatus === 'Pendiente' ? 'selected' : ''}>⏳ Pendiente</option>
+          <option value="En Proceso" ${estatus === 'En Proceso' ? 'selected' : ''}>🔄 En Proceso</option>
+          <option value="Entregado" ${estatus === 'Entregado' ? 'selected' : ''}>✅ Entregado</option>
+          <option value="Cancelado" ${estatus === 'Cancelado' ? 'selected' : ''}>❌ Cancelado</option>
+        </select>
+      </td>
       <td>${fmtDate(v.createdAt)}</td>
       <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button>` : ''}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
   // Actualizar tabla de notas y facturas
   renderNotasFacturas(data.ventas);
 }
+
+// Cambiar estatus de una venta
+window.cambiarEstatusVenta = async function(ventaId, nuevoEstatus) {
+  try {
+    await window.updateDoc(window.doc(window.db, 'ventas', ventaId), {
+      estatus: nuevoEstatus
+    });
+    window.toast(`✅ Estatus cambiado a ${nuevoEstatus}`, 'success');
+  } catch(error) {
+    console.error('Error cambiando estatus:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
+  }
+};
 
 function renderProductos() {
   const body = document.getElementById('inv-body');
