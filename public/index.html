@@ -1317,20 +1317,41 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <!-- MERCADO LIBRE -->
       <div class="module-view" id="mod-mercadolibre">
         <div class="firebase-notice">🛒 Sincronización en tiempo real con Mercado Libre</div>
-        <div class="table-card">
-          <div class="table-header">
-            <div class="table-title">Productos Mercado Libre</div>
-            <button class="btn btn-primary btn-sm" onclick="loginMercadoLibre()">🔗 Conectar ML</button>
-            <button class="btn btn-secondary btn-sm" onclick="cargarProductosML()">↻ Actualizar</button>
-          </div>
+
+        <!-- RESUMEN DE ÓRDENES ARRIBA -->
+        <div class="table-card" style="background:linear-gradient(135deg, #1E4F7A 0%, #2a5a8a 100%);color:white;margin-bottom:20px">
           <div style="padding:20px">
-            <div id="ml-productos-container">
-              <p style="color:var(--gray)">Cargando productos...</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;margin-bottom:15px">
+              <div style="text-align:center;padding:15px;background:rgba(255,255,255,0.1);border-radius:8px">
+                <div style="font-size:0.9em;opacity:0.9">Total Órdenes</div>
+                <div style="font-size:2.2em;font-weight:700;margin-top:5px" id="ml-total-ordenes">0</div>
+              </div>
+              <div style="text-align:center;padding:15px;background:#10b981;border-radius:8px">
+                <div style="font-size:0.9em;opacity:0.9">✅ Pagadas</div>
+                <div style="font-size:2.2em;font-weight:700;margin-top:5px" id="ml-ordenes-pagadas">0</div>
+              </div>
+              <div style="text-align:center;padding:15px;background:#f59e0b;border-radius:8px">
+                <div style="font-size:0.9em;opacity:0.9">⏳ Pendientes</div>
+                <div style="font-size:2.2em;font-weight:700;margin-top:5px" id="ml-ordenes-pendientes">0</div>
+              </div>
+              <div style="text-align:center;padding:15px;background:#3b82f6;border-radius:8px">
+                <div style="font-size:0.9em;opacity:0.9">🚚 Enviadas</div>
+                <div style="font-size:2.2em;font-weight:700;margin-top:5px" id="ml-ordenes-enviadas">0</div>
+              </div>
+            </div>
+            <div style="padding-top:15px;border-top:1px solid rgba(255,255,255,0.2);display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:0.9em;opacity:0.9">Monto Total</div>
+                <div style="font-size:1.8em;font-weight:700;color:#4ade80" id="ml-monto-total">$0.00</div>
+              </div>
+              <button class="btn btn-light btn-sm" onclick="cargarOrdenesML()">🔄 Actualizar</button>
             </div>
           </div>
         </div>
-        <div class="table-card" style="margin-top:20px">
-          <div class="table-header"><div class="table-title">Órdenes desde Mercado Libre</div></div>
+
+        <!-- TABLA DETALLADA DE ÓRDENES -->
+        <div class="table-card" style="margin-bottom:20px">
+          <div class="table-header"><div class="table-title">📋 Órdenes Detalladas</div></div>
           <div style="overflow-x:auto">
             <table id="ml-ordenes-table">
               <thead>
@@ -1346,6 +1367,20 @@ tr:hover td { background: rgba(59,188,212,0.03); }
                 <tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes sincronizadas</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- PRODUCTOS ABAJO -->
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">📦 Productos Mercado Libre</div>
+            <button class="btn btn-primary btn-sm" onclick="loginMercadoLibre()">🔗 Conectar ML</button>
+            <button class="btn btn-secondary btn-sm" onclick="cargarProductosML()">↻ Actualizar</button>
+          </div>
+          <div style="padding:20px">
+            <div id="ml-productos-container">
+              <p style="color:var(--gray)">Cargando productos...</p>
+            </div>
           </div>
         </div>
       </div>
@@ -3617,6 +3652,12 @@ window.cargarOrdenesML = async function() {
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes disponibles</td></tr>';
       }
+      // Resetear resumen
+      document.getElementById('ml-total-ordenes').textContent = '0';
+      document.getElementById('ml-ordenes-pagadas').textContent = '0';
+      document.getElementById('ml-ordenes-pendientes').textContent = '0';
+      document.getElementById('ml-ordenes-enviadas').textContent = '0';
+      document.getElementById('ml-monto-total').textContent = '$0.00';
       return;
     }
 
@@ -3626,8 +3667,33 @@ window.cargarOrdenesML = async function() {
 
     if (!data.results || data.results.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--gray)">Sin órdenes sincronizadas</td></tr>';
+      // Resetear resumen
+      document.getElementById('ml-total-ordenes').textContent = '0';
+      document.getElementById('ml-ordenes-pagadas').textContent = '0';
+      document.getElementById('ml-ordenes-pendientes').textContent = '0';
+      document.getElementById('ml-ordenes-enviadas').textContent = '0';
+      document.getElementById('ml-monto-total').textContent = '$0.00';
       return;
     }
+
+    // Calcular estadísticas
+    let totalOrdenes = data.results.length;
+    let pagadas = 0, pendientes = 0, enviadas = 0;
+    let montoTotal = 0;
+
+    data.results.forEach(o => {
+      montoTotal += o.total_amount || 0;
+      if (o.status === 'paid') pagadas++;
+      else if (o.status === 'pending') pendientes++;
+      else if (o.status === 'shipped') enviadas++;
+    });
+
+    // Actualizar resumen
+    document.getElementById('ml-total-ordenes').textContent = totalOrdenes;
+    document.getElementById('ml-ordenes-pagadas').textContent = pagadas;
+    document.getElementById('ml-ordenes-pendientes').textContent = pendientes;
+    document.getElementById('ml-ordenes-enviadas').textContent = enviadas;
+    document.getElementById('ml-monto-total').textContent = '$' + montoTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
     tbody.innerHTML = data.results.map(o => {
       // Obtener color y icono según estado
