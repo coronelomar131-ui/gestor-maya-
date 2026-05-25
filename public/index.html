@@ -3921,17 +3921,22 @@ window.cargarDocumentos = function() {
         const estatus = v.estatus || 'Pendiente';
         const observaciones = v.observaciones || '';
         const creadoPor = v.createdByName || 'Usuario';
-        const siniestros = v.siniestros || '';
+
+        // Extraer siniestros de items (funciona con notas viejas y nuevas)
+        let siniestrosTexto = v.siniestros || '';
+        if (!siniestrosTexto && v.items && v.items.length > 0) {
+          siniestrosTexto = v.items.map(i => i.numSiniestro).filter(s => s).join(' | ');
+        }
 
         html += `
-        <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)" data-cliente="${cliente}" data-siniestros="${siniestros}">
+        <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
           <div style="color:#3BBCD4;font-weight:700;font-size:16px;margin-bottom:12px">
             📁 ${cliente} — ${nota}
             <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
             <span style="background:#3BBCD4;color:#0D1F2E;padding:4px 10px;border-radius:4px;font-size:11px;margin-left:8px;font-weight:600">${estatus}</span>
           </div>
           <div style="color:#AADDEE;font-size:12px;margin-bottom:12px;font-weight:500">👤 Creado por: <strong>${creadoPor}</strong></div>
-          ${siniestros ? `<div style="color:#999;font-size:11px;margin-bottom:8px">🔍 Siniestros: <code>${siniestros}</code></div>` : ''}
+          ${siniestrosTexto ? `<div style="color:#999;font-size:11px;margin-bottom:8px">🔍 Siniestros: <code>${siniestrosTexto}</code></div>` : ''}
           <div style="display:flex;gap:12px;flex-wrap:wrap">
             <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
               <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
