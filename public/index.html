@@ -3629,15 +3629,55 @@ window.cargarOrdenesML = async function() {
       return;
     }
 
-    tbody.innerHTML = data.results.map(o => `
-      <tr>
-        <td><code style="color:#3BBCD4">${o.id || 'N/A'}</code></td>
-        <td>${o.total_items || '—'}</td>
-        <td style="color:#4ade80;font-weight:600">$${(o.total_amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
-        <td><span class="badge" style="background:var(--blue)">${o.status || 'pending'}</span></td>
-        <td>${o.date_created ? new Date(o.date_created).toLocaleDateString('es-MX') : '—'}</td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = data.results.map(o => {
+      // Obtener color y icono según estado
+      let statusColor = '#3BBCD4', statusIcon = '⏳', statusText = o.status || 'pending';
+
+      if (o.status === 'paid') {
+        statusColor = '#10b981'; // Verde
+        statusIcon = '✅';
+        statusText = 'Pagado';
+      } else if (o.status === 'pending') {
+        statusColor = '#f59e0b'; // Naranja
+        statusIcon = '⏳';
+        statusText = 'Pendiente';
+      } else if (o.status === 'shipped') {
+        statusColor = '#3b82f6'; // Azul
+        statusIcon = '🚚';
+        statusText = 'Enviado';
+      } else if (o.status === 'delivered') {
+        statusColor = '#8b5cf6'; // Púrpura
+        statusIcon = '📦';
+        statusText = 'Entregado';
+      } else if (o.status === 'cancelled') {
+        statusColor = '#ef4444'; // Rojo
+        statusIcon = '❌';
+        statusText = 'Cancelado';
+      }
+
+      return `
+        <tr>
+          <td><code style="color:#3BBCD4">${o.id || 'N/A'}</code></td>
+          <td style="text-align:center;font-weight:600">${o.total_items || '—'}</td>
+          <td style="color:#4ade80;font-weight:600">$${(o.total_amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+          <td>
+            <span style="
+              background:${statusColor};
+              color:white;
+              padding:8px 14px;
+              border-radius:6px;
+              font-weight:600;
+              font-size:0.95em;
+              display:inline-block;
+              white-space:nowrap;
+            ">
+              ${statusIcon} ${statusText}
+            </span>
+          </td>
+          <td style="text-align:center">${o.date_created ? new Date(o.date_created).toLocaleDateString('es-MX') : '—'}</td>
+        </tr>
+      `;
+    }).join('');
   } catch (error) {
     console.warn('Error cargando órdenes ML:', error.message);
     const tbody = document.getElementById('ml-ordenes-tbody');
