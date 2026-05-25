@@ -2964,7 +2964,8 @@ window.saveVentaMultiLinea = async function() {
     facturaURL: '',
     tieneFactura: false,
     createdAt: serverTimestamp(),
-    createdBy: auth.currentUser?.uid || ''
+    createdBy: auth.currentUser?.uid || '',
+    createdByName: auth.currentUser?.displayName || 'Usuario'
   };
 
   try {
@@ -3845,6 +3846,7 @@ window.cargarDocumentos = function() {
 
         const estatus = v.estatus || 'Pendiente';
         const observaciones = v.observaciones || '';
+        const creadoPor = v.createdByName || 'Usuario';
 
         html += `
         <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
@@ -3853,6 +3855,7 @@ window.cargarDocumentos = function() {
             <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
             <span style="background:#3BBCD4;color:#0D1F2E;padding:4px 10px;border-radius:4px;font-size:11px;margin-left:8px;font-weight:600">${estatus}</span>
           </div>
+          <div style="color:#AADDEE;font-size:12px;margin-bottom:12px;font-weight:500">👤 Creado por: <strong>${creadoPor}</strong></div>
           <div style="display:flex;gap:12px;flex-wrap:wrap">
             <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
               <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
