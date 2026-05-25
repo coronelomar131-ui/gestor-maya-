@@ -1736,12 +1736,21 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <option value="">— Selecciona vendedor —</option>
           </select>
         </div>
-        <div class="form-group" style="display:flex;align-items:flex-end;gap:10px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
-            <input type="checkbox" id="v-incluyeDatosFiscales">
-            <span style="font-size:0.95em">📋 Incluir datos fiscales en la nota PDF</span>
-          </label>
+        <div class="form-group"><label>Estatus Inicial</label>
+          <select id="v-estatus-inicial" style="color:#1E4F7A;background:#ffffff;border:1px solid #3BBCD4">
+            <option value="Pendiente">⏳ Pendiente</option>
+            <option value="En Proceso">🔄 En Proceso</option>
+            <option value="Entregado">✅ Entregado</option>
+            <option value="Cancelado">❌ Cancelado</option>
+          </select>
         </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+          <input type="checkbox" id="v-incluyeDatosFiscales">
+          <span style="font-size:0.95em">📋 Incluir datos fiscales en la nota PDF</span>
+        </label>
       </div>
 
       <!-- TABLA MULTI-LÍNEA -->
@@ -2912,6 +2921,7 @@ window.saveVentaMultiLinea = async function() {
   const fecha = document.getElementById('v-fecha').value;
   const clienteInput = document.getElementById('v-cliente').value;
   const vendedor = document.getElementById('v-vendedor').value;
+  const estatusInicial = document.getElementById('v-estatus-inicial').value;
   const incluyeDatosFiscales = document.getElementById('v-incluyeDatosFiscales').checked;
 
   // Parsear cliente (formato: "nombre|id")
@@ -3011,6 +3021,7 @@ window.saveVentaMultiLinea = async function() {
     total: parseFloat(total.toFixed(2)),
     incluyeDatosFiscales,
     estado: 'pendiente',
+    estatus: estatusInicial,
     facturaURL: '',
     tieneFactura: false,
     createdAt: serverTimestamp(),
