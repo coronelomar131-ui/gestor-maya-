@@ -312,7 +312,25 @@ app.get('/ml/inventory/:mlUserId', async (req, res) => {
 
             const items = detResponse.data
               .filter(r => r.code === 200)
-              .map(r => r.body);
+              .map(r => {
+                const item = r.body;
+                // ✅ NUEVA: Agregar categoría explícitamente
+                return {
+                  id: item.id,
+                  title: item.title,
+                  price: item.price,
+                  available_quantity: item.available_quantity,
+                  status: item.status,
+                  thumbnail: item.thumbnail,
+                  permalink: item.permalink,
+                  category_id: item.category_id,
+                  category: item.category_id || 'Sin categoría',
+                  condition: item.condition,
+                  sold_quantity: item.sold_quantity,
+                  // Incluir el objeto completo también por si necesitas más datos
+                  _full: item
+                };
+              });
 
             todos = [...todos, ...items];
           } catch (e) {

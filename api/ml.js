@@ -107,11 +107,12 @@ module.exports = async function handler(req, res) {
   try {
     const { action, mlUserId, itemId, quantity, price } = req.query;
 
-    // Get user's products from ML
+    // Get user's products from ML (incluye TODAS las categorías y estados)
     if (action === 'productos' && mlUserId) {
       try {
         const accessToken = await getValidMLToken(mlUserId);
 
+        // Obtener TODOS los items (no solo activos) - limit 200
         const response = await axios.get(
           'https://api.mercadolibre.com/users/me/items/search',
           {
@@ -119,31 +120,61 @@ module.exports = async function handler(req, res) {
               'Authorization': `Bearer ${accessToken}`
             },
             params: {
-              status: 'active'
+              limit: 200  // Traer más productos (máximo 200)
             }
           }
         );
 
         console.log('Usuario ML:', mlUserId);
-        console.log('Items encontrados:', response.data.results?.length);
+        console.log('Items encontrados (todos):', response.data.results?.length);
 
         const itemIds = response.data.results || [];
+
+        // Obtener detalles completos de cada producto (incluyendo categoría)
         const productos = await Promise.all(
-          itemIds.slice(0, 50).map(async (id) => {
+          itemIds.slice(0, 200).map(async (id) => {
             try {
               const item = await axios.get(`https://api.mercadolibre.com/items/${id}`, {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
               });
-              return item.data;
+
+              // Extraer datos importantes incluyendo categoría
+              const data = item.data;
+              return {
+                id: data.id,
+                title: data.title,
+                price: data.price,
+                available_quantity: data.available_quantity,
+                status: data.status,
+                thumbnail: data.thumbnail,
+                permalink: data.permalink,
+                category_id: data.category_id,  // ✅ NUEVA: ID de categoría
+                category: data.category_id ? `${data.category_id}` : 'Sin categoría',  // ✅ NUEVA: Categoría
+                condition: data.condition,  // Nuevo: Condición (nuevo/usado)
+                sold_quantity: data.sold_quantity,  // Nuevo: Cantidad vendida
+                official_store_id: data.official_store_id,  // Nuevo: Tienda oficial
+                automatic_relist: data.automatic_relist,  // Nuevo: Relistado automático
+              };
             } catch (e) {
+              console.error(`Error obteniendo detalles del item ${id}:`, e.message);
               return null;
             }
           })
         );
 
+        const productosFiltered = productos.filter(p => p);
+        console.log(`✅ Total productos obtenidos: ${productosFiltered.length}`);
+        console.log(`📊 Activos: ${productosFiltered.filter(p => p.status === 'active').length}`);
+        console.log(`⏸️  Pausados: ${productosFiltered.filter(p => p.status === 'paused').length}`);
+        console.log(`❌ Cerrados: ${productosFiltered.filter(p => p.status === 'closed').length}`);
+
         return res.status(200).json({
           success: true,
-          productos: productos.filter(p => p)
+          total: productosFiltered.length,
+          activos: productosFiltered.filter(p => p.status === 'active').length,
+          pausados: productosFiltered.filter(p => p.status === 'paused').length,
+          cerrados: productosFiltered.filter(p => p.status === 'closed').length,
+          productos: productosFiltered
         });
       } catch (error) {
         if (error.response?.status === 400 || error.response?.status === 401) {
