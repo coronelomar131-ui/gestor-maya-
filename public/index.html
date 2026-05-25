@@ -3829,6 +3829,12 @@ window.cargarDocumentos = function() {
 
   contenedor.innerHTML = 'Cargando...';
 
+  // Actualizar ventas antiguas SOLO la primera vez que se carga este módulo
+  if (!window._ventasAntigasActualizadas) {
+    window._ventasAntigasActualizadas = true;
+    window.actualizarVentasAntiguas().catch(e => console.error('Error actualizando ventas antiguas:', e));
+  }
+
   // Listener en tiempo real
   window.onSnapshot(
     window.collection(window.db, 'ventas'),
@@ -3946,6 +3952,44 @@ window.guardarCambiosNota = async function() {
   } catch (error) {
     console.error('Error al guardar cambios:', error);
     window.toast('❌ Error al guardar: ' + error.message, 'error');
+  }
+};
+
+// Actualizar automáticamente todas las ventas antiguas sin createdByName
+window.actualizarVentasAntiguas = async function() {
+  try {
+    window.toast('⏳ Actualizando ventas antiguas...', 'info');
+
+    // Obtener todas las ventas
+    const ventasSnap = await window.getDocs(window.collection(window.db, 'ventas'));
+    let actualizadas = 0;
+    let procesadas = 0;
+
+    // Actualizar cada venta que no tenga createdByName
+    const batch = window.writeBatch(window.db);
+
+    ventasSnap.forEach(doc => {
+      procesadas++;
+      const venta = doc.data();
+
+      // Si NO tiene createdByName, actualizarla basándose en vendedor
+      if (!venta.createdByName && venta.vendedor) {
+        batch.update(window.doc(window.db, 'ventas', doc.id), {
+          createdByName: venta.vendedor // Usar el nombre del vendedor
+        });
+        actualizadas++;
+      }
+    });
+
+    // Ejecutar todas las actualizaciones
+    await batch.commit();
+
+    window.toast(`✅ Se actualizaron ${actualizadas} de ${procesadas} ventas`, 'success');
+    console.log(`✅ Actualizadas ${actualizadas} ventas de ${procesadas} total`);
+    cargarDocumentos();
+  } catch(error) {
+    console.error('Error actualizando ventas:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
   }
 };
 
