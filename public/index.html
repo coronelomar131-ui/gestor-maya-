@@ -3404,20 +3404,20 @@ window.cargarProductosML = async function() {
         " onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 20px rgba(30,79,122,0.2)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 12px rgba(30,79,122,0.1)'">
 
           ${p.thumbnail ? `
-            <div style="position:relative;overflow:hidden;height:200px;background:#f3f4f6">
+            <div style="position:relative;overflow:hidden;height:200px;background:#f3f4f6;cursor:pointer" onclick="abrirEnML('${p.permalink || '#'}')">
               <img src="${p.thumbnail}" style="width:100%;height:100%;object-fit:cover">
               <div style="position:absolute;top:10px;right:10px;background:${statusColor};color:white;padding:6px 12px;border-radius:6px;font-size:0.85em;font-weight:600">
                 ${statusText}
               </div>
             </div>
           ` : `
-            <div style="height:200px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:var(--gray)">
+            <div style="height:200px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:var(--gray);cursor:pointer" onclick="abrirEnML('${p.permalink || '#'}')">
               Sin imagen
             </div>
           `}
 
           <div style="padding:15px">
-            <div style="color:#1E4F7A;font-weight:700;font-size:1.1em;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <div style="color:#1E4F7A;font-weight:700;font-size:1.1em;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:color 0.2s" onclick="abrirEnML('${p.permalink || '#'}')" onmouseover="this.style.color='#3BBCD4'" onmouseout="this.style.color='#1E4F7A'" title="Click para abrir en Mercado Libre">
               ${p.title}
             </div>
 
@@ -3530,6 +3530,15 @@ window.iniciarMLTiempoReal = function() {
 
   // Activar escucha de cambios en tiempo real
   escucharProductosML();
+};
+
+// Abrir producto en Mercado Libre
+window.abrirEnML = function(permalink) {
+  if (!permalink || permalink === '#') {
+    window.toast('⚠️ No hay link disponible para este producto', 'warning');
+    return;
+  }
+  window.open(permalink, '_blank');
 };
 
 window.abrirSyncML = function(itemId, title, price, quantity) {
