@@ -3964,6 +3964,7 @@ window.actualizarVentasAntiguas = async function() {
     const ventasSnap = await window.getDocs(window.collection(window.db, 'ventas'));
     let actualizadas = 0;
     let procesadas = 0;
+    let sinActualizar = [];
 
     // Actualizar cada venta que no tenga createdByName
     const batch = window.writeBatch(window.db);
@@ -3971,6 +3972,7 @@ window.actualizarVentasAntiguas = async function() {
     ventasSnap.forEach(doc => {
       procesadas++;
       const venta = doc.data();
+      const cliente = venta.clienteNombre || venta.cliente || 'Sin nombre';
 
       // Si NO tiene createdByName, actualizarla basándose en vendedor
       if (!venta.createdByName && venta.vendedor) {
@@ -3978,6 +3980,9 @@ window.actualizarVentasAntiguas = async function() {
           createdByName: venta.vendedor // Usar el nombre del vendedor
         });
         actualizadas++;
+        console.log(`✅ Actualizado: ${cliente} -> createdByName: ${venta.vendedor}`);
+      } else if (!venta.createdByName) {
+        sinActualizar.push(cliente);
       }
     });
 
@@ -3986,6 +3991,9 @@ window.actualizarVentasAntiguas = async function() {
 
     window.toast(`✅ Se actualizaron ${actualizadas} de ${procesadas} ventas`, 'success');
     console.log(`✅ Actualizadas ${actualizadas} ventas de ${procesadas} total`);
+    if (sinActualizar.length > 0) {
+      console.warn('⚠️ Sin actualizar (sin vendedor):', sinActualizar);
+    }
     cargarDocumentos();
   } catch(error) {
     console.error('Error actualizando ventas:', error);
@@ -5493,14 +5501,27 @@ window.generarNotaPDF = async function(venta) {
   }
 };
 
-window.descargarNotaPorId = function(ventaId) {
-  // Buscar la venta en el array de datos
-  const venta = data.ventas?.find(v => v.id === ventaId);
-  if (!venta) {
-    alert('Venta no encontrada');
-    return;
+window.descargarNotaPorId = async function(ventaId) {
+  try {
+    window.toast('⏳ Descargando nota...', 'info');
+
+    // Buscar la venta directamente en Firestore
+    const ventaSnap = await window.getDoc(window.doc(window.db, 'ventas', ventaId));
+
+    if (!ventaSnap.exists()) {
+      window.toast('❌ Venta no encontrada', 'error');
+      return;
+    }
+
+    const venta = ventaSnap.data();
+    venta.id = ventaId; // Agregar el ID
+
+    // Generar y descargar la nota
+    await window.generarNotaPDF(venta);
+  } catch(error) {
+    console.error('Error descargando nota:', error);
+    window.toast('❌ Error: ' + error.message, 'error');
   }
-  window.descargarNota(venta);
 };
 
 window.descargarNota = function(venta) {
