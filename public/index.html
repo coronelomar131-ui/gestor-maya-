@@ -2938,10 +2938,13 @@ window.saveVentaMultiLinea = async function() {
   });
   const total = subtotal + ivaTotal - ajusteTotal;
 
-  // Generar número de nota
-  const notasSnap = await getDocs(query(collection(db, 'ventas'), where('notaId', '!=', null)));
+  // Generar número de nota (busca TODOS los documentos para obtener el último número)
+  const notasSnap = await getDocs(collection(db, 'ventas'));
   const lastNote = notasSnap.docs.reduce((max, d) => {
-    const num = parseInt(d.data().notaId?.replace('NV-', '') || '0');
+    const data = d.data();
+    // Busca en notaId o notaNumero (para compatibilidad con datos antiguos)
+    const notaStr = data.notaId || data.notaNumero || '';
+    const num = parseInt(notaStr.replace('NV-', '') || '0');
     return num > max ? num : max;
   }, 0);
   const notaId = 'NV-' + String(lastNote + 1).padStart(3, '0');
@@ -5334,9 +5337,11 @@ window.generarNotaPDF = async function(venta) {
     // INFO ENCABEZADO
     doc.setTextColor(...textoDark);
     doc.setFontSize(9);
-    doc.text(`Nota: ${venta.notaId || 'N/A'} | Cliente: ${venta.clienteNombre || '—'} | Vendedor: ${venta.vendedor || '—'}`, margin, y);
+    doc.text(`Nota: ${venta.notaId || 'N/A'} | Cliente: ${venta.clienteNombre || '—'}`, margin, y);
     y += 5;
     doc.setFontSize(8);
+    doc.text(`Vendido por: ${venta.vendedor || '—'} | Creado por: ${venta.createdByName || '—'}`, margin, y);
+    y += 4;
     const fecha = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX');
     doc.text(`Fecha: ${fecha}`, margin, y);
     y += 6;
