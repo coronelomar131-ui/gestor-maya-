@@ -3917,12 +3917,17 @@ window.cargarDocumentos = function() {
     window.corregirLatamParts().catch(e => console.error('Error corrigiendo latam parts:', e));
   }
 
+  console.log('📄 Cargando documentos para usuario:', window.auth.currentUser?.email);
+
   // Listener en tiempo real
   window.onSnapshot(
     window.collection(window.db, 'ventas'),
     (snap) => {
+      console.log(`📊 Documentos cargados: ${snap.docs.length}`);
+
       if (snap.empty) {
         contenedor.innerHTML = 'Sin ventas aun';
+        console.warn('⚠️ No se encontraron ventas. Verifica permisos de Firestore.');
         return;
       }
 
