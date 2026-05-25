@@ -3557,14 +3557,39 @@ window.verificarAlertas = function(productos) {
 };
 
 // C. Iniciar tiempo real cuando se abre módulo ML
+// Variable global para controlar auto-actualización
+let mlAutoUpdateInterval = null;
+
 window.iniciarMLTiempoReal = function() {
   // Pedir permisos de notificación
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
 
-  // Activar escucha de cambios en tiempo real
+  // Activar escucha de cambios en tiempo real para PRODUCTOS
   escucharProductosML();
+
+  // Detener auto-actualización anterior si existe
+  if (mlAutoUpdateInterval) {
+    clearInterval(mlAutoUpdateInterval);
+  }
+
+  // AUTO-ACTUALIZAR ÓRDENES cada 3 minutos (180000ms)
+  console.log('🔄 Auto-actualización de órdenes ML iniciada (cada 3 minutos)');
+  cargarOrdenesML(); // Carga inicial
+  mlAutoUpdateInterval = setInterval(async () => {
+    console.log('🔄 Actualizando órdenes ML...');
+    await cargarOrdenesML();
+  }, 180000); // 3 minutos
+};
+
+// Detener auto-actualización cuando se cambia de módulo
+window.detenerMLAutoUpdate = function() {
+  if (mlAutoUpdateInterval) {
+    clearInterval(mlAutoUpdateInterval);
+    mlAutoUpdateInterval = null;
+    console.log('⏹️ Auto-actualización de órdenes ML detenida');
+  }
 };
 
 // Abrir producto en Mercado Libre
@@ -4133,6 +4158,11 @@ window.showModule = function(name) {
       console.warn('⚠️ Intento de acceso no autorizado a Finanzas por:', rol);
       return;
     }
+  }
+
+  // Detener ML auto-update si se cambia de módulo
+  if (name !== 'mercadolibre') {
+    detenerMLAutoUpdate();
   }
 
   originalShowModule(name);
