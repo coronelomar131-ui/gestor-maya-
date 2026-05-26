@@ -3366,7 +3366,7 @@ window.showModule = function(name) {
   // Cargar datos específicos del módulo
   if (name === 'envios') {
     envios_cargar();
-  } else if (name === 'documentos') {
+  } else if (name === 'documentos' || name === 'busqueda-ventas') {
     cargarDocumentos();
   } else if (name === 'configuracion') {
     setTimeout(() => cargarDatosFiscales(), 100);
