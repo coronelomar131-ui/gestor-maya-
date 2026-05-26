@@ -1473,13 +1473,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <!-- DOCUMENTOS MODULE -->
       <div class="module-view" id="mod-documentos">
         <div style="margin-bottom:20px">
-          <input type="text" id="doc-search" placeholder="Buscar por cliente o siniestro..." style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;width:400px" oninput="filterDocumentos()">
+          <input type="text" id="doc-search-input" placeholder="Buscar por cliente o siniestro..." style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;width:100%;max-width:500px" oninput="buscarDocumentos()">
         </div>
-        <div id="documentos-lista" style="display:flex;flex-direction:column;gap:10px">
-        </div>
-        <div id="doc-empty" style="text-align:center;padding:40px;color:var(--gray);display:none">
-          <div style="font-size:3em;margin-bottom:10px">📁</div>
-          <div>Sin documentos registrados</div>
+        <div id="doc-contenedor" style="display:flex;flex-direction:column;gap:10px">
         </div>
       </div>
 
@@ -2354,7 +2350,7 @@ function renderVentas() {
   const body = document.getElementById('ventas-body');
   const rol = window.currentRole || 'vendedor';
   if (!data.ventas.length) {
-    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin ventas registradas</div></div></td></tr>';
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin ventas registradas</div></div></td></tr>';
     return;
   }
   body.innerHTML = data.ventas.map(v => {
@@ -2363,12 +2359,11 @@ function renderVentas() {
     <tr>
       <td><code style="color:#3BBCD4;font-size:12px">${folio('V-', v.id)}</code></td>
       <td>${v.cliente || v.clienteNombre || '—'}</td>
-      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.descripcion || '—'}</td>
       <td style="color:#4ade80;font-weight:600">${fmtMoney(v.total)}</td>
-      <td>${v.metodoPago || '—'}</td>
       <td>
         <select onchange="cambiarEstatusVenta('${v.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white);font-size:12px">
           <option value="Pendiente" ${estatus === 'Pendiente' ? 'selected' : ''}>⏳ Pendiente</option>
+          <option value="Conseguir" ${estatus === 'Conseguir' ? 'selected' : ''}>🔍 Conseguir</option>
           <option value="En Proceso" ${estatus === 'En Proceso' ? 'selected' : ''}>🔄 En Proceso</option>
           <option value="Entregado" ${estatus === 'Entregado' ? 'selected' : ''}>✅ Entregado</option>
           <option value="Cancelado" ${estatus === 'Cancelado' ? 'selected' : ''}>❌ Cancelado</option>
@@ -3902,132 +3897,171 @@ window.cargarOrdenesML = async function() {
 // MÓDULO DOCUMENTOS
 // ═════════════════════════════════════════════════════════════
 
-window.cargarDocumentos = function() {
-  const contenedor = document.getElementById('documentos-lista');
-  if (!contenedor) return;
+// ═══════════════════════════════════════════════════════════════════════════════
+// MÓDULO DOCUMENTOS v2 (COMPLETAMENTE NUEVO)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  contenedor.innerHTML = 'Cargando...';
+let notasData = [];
 
-  // Actualizar ventas antiguas SOLO la primera vez que se carga este módulo
-  if (!window._ventasAntigasActualizadas) {
-    window._ventasAntigasActualizadas = true;
-    window.actualizarVentasAntiguas().catch(e => console.error('Error actualizando ventas antiguas:', e));
-    window.actualizarSiniestrosAntiguas().catch(e => console.error('Error actualizando siniestros:', e));
-    // Corregir latam parts específicamente
-    window.corregirLatamParts().catch(e => console.error('Error corrigiendo latam parts:', e));
-  }
+window.cargarDocumentos = async function() {
+  const box = document.getElementById('doc-contenedor');
+  box.innerHTML = '<div style="text-align:center;padding:40px;color:var(--gray)">⏳ Cargando...</div>';
 
-  console.log('📄 Cargando documentos para usuario:', window.auth.currentUser?.email);
-
-  // Listener en tiempo real
-  window.onSnapshot(
-    window.collection(window.db, 'ventas'),
-    (snap) => {
-      console.log(`📊 Documentos cargados: ${snap.docs.length}`);
-
-      if (snap.empty) {
-        contenedor.innerHTML = 'Sin ventas aun';
-        console.warn('⚠️ No se encontraron ventas. Verifica permisos de Firestore.');
-        return;
-      }
-
-      let contador = 1;
-      let html = '';
-
-      snap.forEach(docu => {
-        const v = docu.data();
-        const nota = v.notaId || String(contador);
-        const cliente = v.clienteNombre || v.cliente || 'Sin nombre';
-        const total = v.total || 0;
-
-        const estatus = v.estatus || 'Pendiente';
-        const observaciones = v.observaciones || '';
-        const creadoPor = v.createdByName || 'Usuario';
-
-        // Extraer siniestros de items (funciona con notas viejas y nuevas)
-        let siniestrosTexto = v.siniestros || '';
-        if (!siniestrosTexto && v.items && v.items.length > 0) {
-          siniestrosTexto = v.items.map(i => i.numSiniestro).filter(s => s).join(' | ');
-        }
-
-        html += `
-        <div style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2)">
-          <div style="color:#3BBCD4;font-weight:700;font-size:16px;margin-bottom:12px">
-            📁 ${cliente} — ${nota}
-            <span style="color:#22C55E;margin-left:12px">${Number(total).toLocaleString('es-MX')}</span>
-            <span style="background:#3BBCD4;color:#0D1F2E;padding:4px 10px;border-radius:4px;font-size:11px;margin-left:8px;font-weight:600">${estatus}</span>
-          </div>
-          <div style="color:#AADDEE;font-size:12px;margin-bottom:12px;font-weight:500">👤 Creado por: <strong>${creadoPor}</strong></div>
-          ${siniestrosTexto ? `<div style="color:#999;font-size:11px;margin-bottom:8px">🔍 Siniestros: <code>${siniestrosTexto}</code></div>` : ''}
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
-              <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">📋 Nota de Venta ${nota}</div>
-              <button onclick="descargarNotaPorId('${docu.id}')" style="background:#3BBCD4;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⬇️ Descargar</button>
-            </div>
-            <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
-              <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">🧾 Factura</div>
-              ${v.facturaURL
-                ? `<button onclick="window.verFactura('${v.facturaURL}')" style="background:#22C55E;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📄 Ver</button>`
-                : `<input type="file" accept=".pdf" id="f-${docu.id}" style="display:none" onchange="subirFactura('${docu.id}','${nota}',this)"><button onclick="document.getElementById('f-${docu.id}').click()" style="background:transparent;color:#F59E0B;border:2px dashed #F59E0B;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📎 Subir</button>`
-              }
-            </div>
-            <div style="background:#0D1F2E;border-radius:8px;padding:12px;flex:1;min-width:180px">
-              <div style="color:#AADDEE;font-size:12px;margin-bottom:8px">✏️ Editar</div>
-              <button onclick="abrirEditarNota('${docu.id}','${nota}','${cliente.replace(/'/g, "\\'")}','${estatus.replace(/'/g, "\\'")}','${observaciones.replace(/'/g, "\\'").replace(/\n/g, "\\n")}')" style="background:#8B5CF6;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📝 Editar</button>
-            </div>
-          </div>
-        </div>`;
-
-        contador++;
-      });
-
-      contenedor.innerHTML = html;
-
-    },
-    (err) => {
-      console.error('Error documentos:', err);
-      contenedor.innerHTML = 'Error: ' + err.message;
-    }
-  );
-};
-
-window.toggleCarpeta = function(id) {
-  const el = document.getElementById('carpeta-' + id);
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-};
-
-window.filterDocumentos = function() {
   try {
-    const searchBox = document.getElementById('doc-search');
-    const listContainer = document.getElementById('documentos-lista');
+    const snap = await window.getDocs(window.collection(window.db, 'ventas'));
 
-    if (!searchBox || !listContainer) {
-      console.error('❌ No se encontró el buscador o contenedor');
-      return;
-    }
+    notasData = snap.docs.map((doc, i) => {
+      const v = doc.data();
+      let sin = '';
 
-    const search = searchBox.value.toLowerCase().trim();
-    const documentElements = listContainer.getElementsByTagName('div');
+      // DEBUG: Ver estructura
+      console.log(`\n📄 VENTA ${i+1}:`);
+      console.log('  Cliente:', v.clienteNombre || v.cliente);
+      console.log('  v.siniestros:', v.siniestros);
+      console.log('  v.items:', v.items);
 
-    console.log(`🔍 Buscando: "${search}" en ${documentElements.length} elementos`);
-
-    let shown = 0;
-
-    for (let doc of documentElements) {
-      const text = doc.textContent.toLowerCase();
-
-      if (!search || text.includes(search)) {
-        doc.style.display = 'block';
-        shown++;
-      } else {
-        doc.style.display = 'none';
+      // Extraer siniestros - intentar TODOS los campos posibles
+      if (v.siniestros && String(v.siniestros).trim()) {
+        sin = String(v.siniestros).trim();
+        console.log('  ✓ Siniestro encontrado en v.siniestros:', sin);
       }
-    }
+      else if (v.numSiniestro && String(v.numSiniestro).trim()) {
+        sin = String(v.numSiniestro).trim();
+        console.log('  ✓ Siniestro encontrado en v.numSiniestro:', sin);
+      }
+      else if (v.siniestro && String(v.siniestro).trim()) {
+        sin = String(v.siniestro).trim();
+        console.log('  ✓ Siniestro encontrado en v.siniestro:', sin);
+      }
+      else if (v.items && Array.isArray(v.items) && v.items.length > 0) {
+        const sinList = [];
+        v.items.forEach((it, idx) => {
+          console.log(`    Item ${idx}:`, { numSiniestro: it.numSiniestro, siniestro: it.siniestro, descripcion: it.descripcion });
+          if (it.numSiniestro) sinList.push(String(it.numSiniestro).trim());
+          else if (it.siniestro) sinList.push(String(it.siniestro).trim());
+          // También buscar en descripción si contiene número que parezca siniestro
+          else if (it.descripcion) {
+            const match = String(it.descripcion).match(/\b\d{3,}\b/);
+            if (match) sinList.push(match[0]);
+          }
+        });
+        sin = sinList.filter(s => s && s.length > 0).join(' | ');
+        if (sin) console.log('  ✓ Siniestro encontrado en items:', sin);
+        else console.log('  ✗ NO hay siniestros en items');
+      }
+      else {
+        console.log('  ✗ NO hay siniestros');
+      }
 
-    console.log(`✅ Mostrando ${shown} documentos`);
-  } catch (error) {
-    console.error('❌ Error en filterDocumentos:', error);
+      return {
+        id: doc.id,
+        n: i + 1,
+        cli: v.clienteNombre || v.cliente || 'Sin nombre',
+        tot: v.total || 0,
+        st: v.estatus || 'Pendiente',
+        por: v.createdByName || 'Usuario',
+        sin: sin,  // Aquí va el siniestro
+        fact: v.facturaURL || '',
+        obs: v.observaciones || '',
+        items: v.items || [],
+        fecha: v.fecha || new Date().toLocaleDateString('es-MX')
+      };
+    });
+
+    console.log('\n✅ DATOS CARGADOS:', notasData);
+    mostrarNotasDocumentos(notasData);
+  } catch (e) {
+    console.error('❌ Error:', e);
+    box.innerHTML = '<div style="text-align:center;padding:40px;color:#ff6b6b">❌ Error: ' + e.message + '</div>';
   }
+};
+
+function mostrarNotasDocumentos(lista) {
+  const box = document.getElementById('doc-contenedor');
+
+  if (!lista.length) {
+    box.innerHTML = '<div style="text-align:center;padding:40px;color:var(--gray)">Sin resultados</div>';
+    return;
+  }
+
+  box.innerHTML = lista.map(n => `
+    <div onclick="docAbrirPreview('${n.id}')" style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2);cursor:pointer;transition:all 0.2s">
+      <div style="color:#3BBCD4;font-weight:700;font-size:15px;margin-bottom:8px">
+        📄 ${n.cli} — Nota ${n.n}
+        <span style="color:#22C55E;margin-left:10px">$${Number(n.tot).toLocaleString('es-MX')}</span>
+        <span style="background:#3BBCD4;color:#0D1F2E;padding:3px 8px;border-radius:4px;font-size:10px;margin-left:8px">${n.st}</span>
+      </div>
+      <div style="color:#AADDEE;font-size:11px;margin-bottom:6px">👤 ${n.por}</div>
+      ${n.sin ? `<div style="color:#999;font-size:10px">🔍 ${n.sin}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+window.docAbrirPreview = async function(id) {
+  const nota = notasData.find(n => n.id === id);
+  if (!nota) return;
+
+  let itemsHTML = '';
+  if (nota.items && nota.items.length > 0) {
+    itemsHTML = '<div style="margin-top:12px;border-top:1px solid rgba(59,188,212,0.2);padding-top:12px">';
+    itemsHTML += '<div style="font-weight:600;color:#3BBCD4;margin-bottom:8px">📦 Items:</div>';
+    itemsHTML += nota.items.map((it, i) => `
+      <div style="background:#0D1F2E;padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
+        <div style="color:#AADDEE">${it.descripcion || it.nombre || 'Producto'}</div>
+        <div style="color:#999;font-size:11px">Cantidad: ${it.cantidad || 1} × $${(it.precio || 0).toLocaleString('es-MX')} = $${((it.cantidad || 1) * (it.precio || 0)).toLocaleString('es-MX')}</div>
+      </div>
+    `).join('');
+    itemsHTML += '</div>';
+  }
+
+  const modal = `
+    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999">
+      <div style="background:#1A2B3C;border-radius:12px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto">
+        <div style="color:#3BBCD4;font-size:18px;font-weight:700;margin-bottom:16px">
+          📄 ${nota.cli} — Nota ${nota.n}
+        </div>
+        <div style="background:#0D1F2E;padding:12px;border-radius:8px;margin-bottom:12px;font-size:12px">
+          <div><strong>Monto:</strong> $${Number(nota.tot).toLocaleString('es-MX')}</div>
+          <div><strong>Estado:</strong> ${nota.st}</div>
+          <div><strong>Creador:</strong> ${nota.por}</div>
+          <div><strong>Fecha:</strong> ${nota.fecha}</div>
+          ${nota.sin ? `<div><strong>Siniestros:</strong> ${nota.sin}</div>` : ''}
+        </div>
+        ${itemsHTML}
+        <div style="display:flex;gap:10px;margin-top:20px">
+          <button onclick="descargarNotaPorId('${id}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#3BBCD4;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600">⬇️ Descargar</button>
+          <button onclick="abrirEditarNota('${id}','${nota.n}','${nota.cli.replace(/'/g,"\\'")}','${nota.st.replace(/'/g,"\\'")}','${nota.obs.replace(/'/g,"\\'").replace(/\n/g,"\\n")}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#8B5CF6;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600">✏️ Editar</button>
+          <button onclick="this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#555;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer">✕ Cerrar</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', modal);
+};
+
+window.buscarDocumentos = function() {
+  const q = (document.getElementById('doc-search-input').value || '').toLowerCase().trim();
+
+  if (!q) {
+    mostrarNotasDocumentos(notasData);
+    return;
+  }
+
+  const encontradas = notasData.filter(n => {
+    // Buscar en múltiples campos: cliente, siniestro, total, observaciones
+    const searchFields = [
+      String(n.cli || '').toLowerCase(),
+      String(n.sin || '').toLowerCase(),
+      String(n.tot || '').toLowerCase(),
+      String(n.obs || '').toLowerCase(),
+      String(n.id || '').toLowerCase()
+    ].join(' ');
+
+    return searchFields.includes(q);
+  });
+
+  mostrarNotasDocumentos(encontradas);
 };
 
 // Abrir modal con detalles de venta
