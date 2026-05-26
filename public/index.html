@@ -6206,17 +6206,18 @@ window.descargarNota = async function(venta) {
 
     // ========== 1) LOGO ==========
     try {
-      const img = new Image();
-      img.src = '/maya-logo.jpg';
+      const res = await fetch('/maya-logo.jpg');
+      const blob = await res.blob();
+      const reader = new FileReader();
       await new Promise((resolve) => {
-        img.onload = () => {
-          doc.addImage(img, 'JPEG', W / 2 - 35, y, 70, 35);
+        reader.onload = () => {
+          doc.addImage(reader.result, 'JPEG', W / 2 - 35, y, 70, 35);
           resolve();
         };
-        img.onerror = () => resolve(); // Sin logo, continuar
+        reader.readAsDataURL(blob);
       });
     } catch(e) {
-      console.warn('Logo no disponible');
+      console.warn('Logo no cargado:', e);
     }
     y += 40;
 
