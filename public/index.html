@@ -4065,14 +4065,17 @@ window.docAbrirPreview = async function(id) {
               </tr>
             </thead>
             <tbody>
-              ${nota.items.map(it => `
+              ${nota.items.map(it => {
+                const nombreProducto = it.pedido || it.descripcion || it.nombre || it.productName || it.product || it.pieza || it.item || it.nombreProducto || 'Sin nombre';
+                return `
                 <tr style="border-top:1px solid rgba(59,188,212,0.1)">
-                  <td style="padding:8px;text-align:left;color:#AADDEE">${it.descripcion || it.nombre || 'Artículo'}</td>
-                  <td style="padding:8px;text-align:center;color:var(--gray)">${it.siniestro || it.numSiniestro || '—'}</td>
+                  <td style="padding:8px;text-align:left;color:#AADDEE;font-weight:500">${nombreProducto}</td>
+                  <td style="padding:8px;text-align:center;color:var(--gray)">${it.numSiniestro || it.siniestro || '—'}</td>
                   <td style="padding:8px;text-align:right;color:#22C55E">$${(it.precio || 0).toLocaleString('es-MX')}</td>
                   <td style="padding:8px;text-align:right;color:var(--white)">${it.cantidad || 1}</td>
                 </tr>
-              `).join('')}
+              `;
+              }).join('')}
             </tbody>
           </table>
         </div>
