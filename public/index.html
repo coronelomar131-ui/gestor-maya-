@@ -6202,9 +6202,9 @@ window.descargarNota = function(venta) {
 
     // ========== ENCABEZADO CON LOGO ==========
     try {
-      doc.addImage('/logo-maya.jpg', 'JPEG', pageWidth / 2 - 25, y, 50, 30);
+      doc.addImage('https://gestor-maya.vercel.app/logo-maya.jpg', 'JPEG', pageWidth / 2 - 25, y, 50, 30);
     } catch(e) {
-      console.warn('Logo no disponible');
+      console.warn('Logo no disponible:', e);
     }
     y += 35;
 
