@@ -6194,7 +6194,15 @@ window.descargarNota = function(venta) {
     const margin = 12;
     let y = margin;
 
-    // 1) DATOS FISCALES (si aplica)
+    // 1) LOGO
+    try {
+      doc.addImage('/logo-maya.jpg', 'JPEG', pageWidth / 2 - 30, y, 60, 35);
+      y += 40;
+    } catch(e) {
+      console.warn('Logo no disponible:', e);
+    }
+
+    // 2) DATOS FISCALES (si aplica)
     if (venta.incluyeDatosFiscales) {
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
@@ -6203,14 +6211,14 @@ window.descargarNota = function(venta) {
       y += 8;
     }
 
-    // 2) TÍTULO
+    // 3) TÍTULO
     doc.setFontSize(18);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(30, 79, 122); // #1E4F7A
     doc.text('MAYA AUTOPART DE COLISION', pageWidth / 2, y, { align: 'center' });
     y += 10;
 
-    // 3) LÍNEA DE INFO
+    // 4) LÍNEA DE INFO
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(0, 0, 0);
@@ -6218,7 +6226,7 @@ window.descargarNota = function(venta) {
     doc.text(`Nota: ${venta.notaId} | Fecha: ${fechaFormato} | Cliente: ${venta.clienteNombre} | Vendedor: ${venta.vendedor}`, margin, y);
     y += 8;
 
-    // 4) TABLA DE ITEMS
+    // 5) TABLA DE ITEMS
     if (window.jspdf && window.jspdf.jsPDF.autoTable) {
       const tableData = [];
       tableData.push(['FECHA', 'PEDIDO', '# SINIESTRO', 'VENDEDOR', 'PRECIO', 'IVA', 'AJUSTE']);
