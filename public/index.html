@@ -4155,24 +4155,47 @@ window.mostrarResultadosBusqueda = function(resultados) {
     <div style="background:rgba(59,188,212,0.1);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--blue);font-weight:600">
       ✅ Se encontraron ${resultados.length} venta${resultados.length !== 1 ? 's' : ''}
     </div>
-  ` + resultados.map(venta => `
-    <div style="background:var(--surface);border-radius:12px;padding:16px;border:1px solid rgba(59,188,212,0.2);transition:0.2s;cursor:pointer;hover:background=var(--surface3)" onclick="docAbrirPreview('${venta.id}')">
-      <div style="display:grid;grid-template-columns:1fr auto;gap:15px;align-items:start">
-        <div>
-          <div style="color:var(--white);font-weight:700;font-size:15px;margin-bottom:8px">👤 ${venta.cli}</div>
-          <div style="color:var(--gray);font-size:12px;margin-bottom:6px">Nota #${venta.n}</div>
-          ${venta.sin ? `<div style="color:#AADDEE;font-size:12px;margin-bottom:6px">🔍 Siniestro: <strong>${venta.sin}</strong></div>` : ''}
-          <div style="color:var(--gray);font-size:11px">📅 ${venta.fecha}</div>
+  ` + resultados.map(venta => {
+    // Generar HTML de los items
+    let itemsHTML = '';
+    if (venta.items && venta.items.length > 0) {
+      itemsHTML = '<div style="margin-top:12px;border-top:1px solid rgba(59,188,212,0.2);padding-top:12px">';
+      itemsHTML += venta.items.map(it => `
+        <div style="background:rgba(59,188,212,0.1);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
+          <div style="color:#AADDEE;font-weight:600">${it.descripcion || it.nombre || 'Producto'}</div>
+          <div style="color:var(--gray);font-size:11px;margin-top:4px">Cantidad: ${it.cantidad || 1} × $${(it.precio || 0).toLocaleString('es-MX')} = <span style="color:#22C55E;font-weight:600">$${((it.cantidad || 1) * (it.precio || 0)).toLocaleString('es-MX')}</span></div>
         </div>
-        <div style="text-align:right">
-          <div style="color:#22C55E;font-weight:700;font-size:18px;margin-bottom:8px">$${Number(venta.tot).toLocaleString('es-MX')}</div>
-          <span style="background:${venta.st === 'Entregado' ? '#22C55E' : venta.st === 'Pendiente' ? '#FF9500' : '#3BBCD4'};color:white;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600">
-            ${venta.st}
-          </span>
+      `).join('');
+      itemsHTML += '</div>';
+    }
+
+    // Generar HTML de observaciones
+    let obsHTML = '';
+    if (venta.obs) {
+      obsHTML = `<div style="margin-top:12px;background:rgba(59,188,212,0.1);padding:10px;border-radius:6px;border-left:3px solid var(--blue);font-size:12px;color:var(--white)"><strong>📝 Notas:</strong><div style="margin-top:6px;color:var(--gray)">${venta.obs}</div></div>`;
+    }
+
+    return `
+      <div style="background:var(--surface);border-radius:12px;padding:16px;border:1px solid rgba(59,188,212,0.2);transition:0.2s;cursor:pointer" onclick="docAbrirPreview('${venta.id}')">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:15px;align-items:start;margin-bottom:12px">
+          <div>
+            <div style="color:var(--white);font-weight:700;font-size:15px;margin-bottom:8px">👤 ${venta.cli}</div>
+            <div style="color:var(--gray);font-size:12px;margin-bottom:6px">Nota #${venta.n}</div>
+            ${venta.sin ? `<div style="color:#AADDEE;font-size:12px;margin-bottom:6px">🔍 Siniestro: <strong>${venta.sin}</strong></div>` : ''}
+            <div style="color:var(--gray);font-size:11px">📅 ${venta.fecha}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="color:#22C55E;font-weight:700;font-size:18px;margin-bottom:8px">$${Number(venta.tot).toLocaleString('es-MX')}</div>
+            <span style="background:${venta.st === 'Entregado' ? '#22C55E' : venta.st === 'Pendiente' ? '#FF9500' : '#3BBCD4'};color:white;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600">
+              ${venta.st}
+            </span>
+          </div>
         </div>
+        ${obsHTML}
+        ${itemsHTML}
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 };
 
 // Permitir búsqueda al presionar Enter en los inputs
