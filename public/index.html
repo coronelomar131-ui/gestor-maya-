@@ -4047,12 +4047,16 @@ window.docAbrirPreview = async function(id) {
 
   let itemsHTML = '';
   if (nota.items && nota.items.length > 0) {
-    itemsHTML = '<div style="margin-top:12px;border-top:1px solid rgba(59,188,212,0.2);padding-top:12px">';
-    itemsHTML += '<div style="font-weight:600;color:#3BBCD4;margin-bottom:8px">📦 Items:</div>';
+    itemsHTML = '<div style="margin-top:16px;border-top:1px solid rgba(59,188,212,0.2);padding-top:12px">';
+    itemsHTML += '<div style="font-weight:600;color:#3BBCD4;margin-bottom:12px;font-size:13px">📦 Items Vendidos:</div>';
     itemsHTML += nota.items.map((it, i) => `
-      <div style="background:#0D1F2E;padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
-        <div style="color:#AADDEE">${it.descripcion || it.nombre || 'Producto'}</div>
-        <div style="color:#999;font-size:11px">Cantidad: ${it.cantidad || 1} × $${(it.precio || 0).toLocaleString('es-MX')} = $${((it.cantidad || 1) * (it.precio || 0)).toLocaleString('es-MX')}</div>
+      <div style="background:linear-gradient(135deg, rgba(59,188,212,0.15) 0%, rgba(59,188,212,0.05) 100%);padding:12px;border-radius:8px;margin-bottom:10px;font-size:12px;border-left:3px solid var(--blue)">
+        <div style="color:#AADDEE;font-weight:600;margin-bottom:6px;font-size:13px">${it.descripcion || it.nombre || 'Artículo'}</div>
+        <div style="color:var(--gray);font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>📊 Cantidad: <strong style="color:var(--white)">${it.cantidad || 1}</strong></div>
+          <div>💰 Precio: <strong style="color:#22C55E">$${(it.precio || 0).toLocaleString('es-MX')}</strong></div>
+        </div>
+        <div style="color:#22C55E;font-weight:600;margin-top:6px;border-top:1px solid rgba(59,188,212,0.2);padding-top:6px">Subtotal: $${((it.cantidad || 1) * (it.precio || 0)).toLocaleString('es-MX')}</div>
       </div>
     `).join('');
     itemsHTML += '</div>';
