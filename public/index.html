@@ -6204,28 +6204,23 @@ window.descargarNota = function(venta) {
     const colorGris = [100, 100, 100];
 
     // ========== ENCABEZADO CON LOGO ==========
-    // Dibujar logo simple (cuadrado rojo y blanco con texto)
-    const logoX = pageWidth / 2 - 20;
-    const logoY = y;
-
-    // Fondo blanco del logo
-    doc.setFillColor(255, 255, 255);
-    doc.rect(logoX - 15, logoY, 30, 30, 'F');
-
-    // Marco del logo
-    doc.setDrawColor(220, 53, 69);
-    doc.setLineWidth(2);
-    doc.rect(logoX - 15, logoY, 30, 30);
-
-    // Texto del logo
-    doc.setFontSize(10);
+    // Texto principal del logo
+    doc.setFontSize(20);
     doc.setFont(undefined, 'bold');
-    doc.setTextColor(220, 53, 69);
-    doc.text('MAYA', logoX - 8, logoY + 12, { align: 'center' });
-    doc.setFontSize(6);
-    doc.text('AUTOPARTES', logoX - 8, logoY + 21, { align: 'center' });
+    doc.setTextColor(220, 53, 69); // Rojo
+    doc.text('MAYA', pageWidth / 2, y + 5, { align: 'center' });
 
-    y += 35;
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(30, 79, 122); // Azul
+    doc.text('AUTOPARTES', pageWidth / 2, y + 12, { align: 'center' });
+
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'italic');
+    doc.setTextColor(100, 100, 100);
+    doc.text('La parte que necesitas', pageWidth / 2, y + 17, { align: 'center' });
+
+    y += 22;
 
     // Línea divisora
     doc.setDrawColor(220, 53, 69);
