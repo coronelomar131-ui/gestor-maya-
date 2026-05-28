@@ -6185,7 +6185,7 @@ window.descargarNotaPorId = async function(ventaId) {
   }
 };
 
-window.descargarNota = async function(venta) {
+window.descargarNota = function(venta) {
   if (!venta || !venta.items || venta.items.length === 0) {
     window.toast('❌ Venta sin items', 'error');
     return;
@@ -6195,39 +6195,48 @@ window.descargarNota = async function(venta) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
 
-    // CONSTANTES
+    // SETUP
     const W = doc.internal.pageSize.getWidth();
     const H = doc.internal.pageSize.getHeight();
-    const M = 15; // Margen
-    const C1 = [30, 79, 122]; // Azul
-    const C2 = [220, 53, 69]; // Rojo
+    const M = 15;
+    const C_AZUL = [30, 79, 122];
+    const C_ROJO = [220, 53, 69];
 
     let y = M;
 
-    // ========== 1) LOGO ==========
-    try {
-      const res = await fetch('/maya-logo.jpg');
-      const blob = await res.blob();
-      const reader = new FileReader();
-      await new Promise((resolve) => {
-        reader.onload = () => {
-          doc.addImage(reader.result, 'JPEG', W / 2 - 35, y, 70, 35);
-          resolve();
-        };
-        reader.readAsDataURL(blob);
-      });
-    } catch(e) {
-      console.warn('Logo no cargado:', e);
-    }
-    y += 40;
+    // ========== 1) ENCABEZADO CON LOGO ==========
+    // Dibujar logo como rectángulo con bordes
+    doc.setFillColor(...C_ROJO);
+    doc.rect(M, y, 25, 25, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text('MAYA', M + 12.5, y + 9, { align: 'center' });
+    doc.setFontSize(7);
+    doc.text('AUTO', M + 12.5, y + 15, { align: 'center' });
+    doc.text('PARTS', M + 12.5, y + 20, { align: 'center' });
+
+    // Nombre de la empresa
+    doc.setTextColor(...C_AZUL);
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('MAYA AUTOPARTES', M + 30, y + 8);
+
+    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'italic');
+    doc.text('La parte que necesitas', M + 30, y + 15);
+
+    y += 30;
 
     // Línea divisora
-    doc.setDrawColor(...C2);
+    doc.setDrawColor(...C_ROJO);
     doc.setLineWidth(1.5);
     doc.line(M, y, W - M, y);
     y += 8;
 
-    // ========== 2) HEADER INFO ==========
+    // ========== 2) DATOS DE LA NOTA ==========
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(0, 0, 0);
@@ -6243,31 +6252,31 @@ window.descargarNota = async function(venta) {
     doc.text(`Vendedor: ${venta.vendedor || '—'}`, col2, y);
     y += 10;
 
-    // ========== 3) TABLA ==========
+    // ========== 3) TABLA DE PIEZAS ==========
     const tabla = [];
     tabla.push(['PEDIDO', 'SINIESTRO', 'CANTIDAD', 'PRECIO', 'TOTAL', 'IVA', 'AJUSTE']);
 
-    let sub = 0, iva_t = 0, aj_t = 0;
+    let subtotal = 0, iva_total = 0, ajuste_total = 0;
 
-    venta.items.forEach(it => {
-      const p = it.precio || 0;
-      const c = it.cantidad || 1;
-      const t = p * c;
-      const i = it.iva || 0;
-      const a = it.ajuste || 0;
+    venta.items.forEach(item => {
+      const precio = item.precio || 0;
+      const cant = item.cantidad || 1;
+      const total_item = precio * cant;
+      const iva = item.iva || 0;
+      const ajuste = item.ajuste || 0;
 
-      sub += t;
-      iva_t += i;
-      aj_t += a;
+      subtotal += total_item;
+      iva_total += iva;
+      ajuste_total += ajuste;
 
       tabla.push([
-        it.pedido || '—',
-        it.numSiniestro || '—',
-        String(c),
-        '$' + p.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
-        '$' + t.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
-        '$' + i.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
-        '-$' + a.toLocaleString('es-MX', { minimumFractionDigits: 2 })
+        item.pedido || '—',
+        item.numSiniestro || '—',
+        String(cant),
+        '$' + precio.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
+        '$' + total_item.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
+        '$' + iva.toLocaleString('es-MX', { minimumFractionDigits: 2 }),
+        '-$' + ajuste.toLocaleString('es-MX', { minimumFractionDigits: 2 })
       ]);
     });
 
@@ -6276,56 +6285,76 @@ window.descargarNota = async function(venta) {
       body: tabla.slice(1),
       startY: y,
       margin: M,
-      headStyles: { fillColor: C1, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-      bodyStyles: { fontSize: 8, textColor: [0, 0, 0] },
-      alternateRowStyles: { fillColor: [248, 248, 248] },
+      headStyles: {
+        fillColor: C_AZUL,
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: [0, 0, 0]
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245]
+      },
       columnStyles: {
-        2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' },
-        5: { halign: 'right' }, 6: { halign: 'right' }
+        2: { halign: 'center' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'right' },
+        6: { halign: 'right' }
       }
     });
 
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 12;
 
-    // ========== 4) TOTALES ==========
-    const xTot = W - M - 50;
+    // ========== 4) RESUMEN TOTALES ==========
+    const xTotales = W - M - 60;
+
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(80, 80, 80);
 
-    doc.text('Subtotal:', xTot, y);
+    doc.text('Subtotal:', xTotales, y);
     doc.setFont(undefined, 'bold');
-    doc.text('$' + sub.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
-    y += 5;
+    doc.setTextColor(0, 0, 0);
+    doc.text('$' + subtotal.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
+    y += 6;
 
     doc.setFont(undefined, 'normal');
-    doc.text('IVA:', xTot, y);
+    doc.setTextColor(80, 80, 80);
+    doc.text('IVA:', xTotales, y);
     doc.setFont(undefined, 'bold');
-    doc.text('$' + iva_t.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
-    y += 5;
+    doc.setTextColor(0, 0, 0);
+    doc.text('$' + iva_total.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
+    y += 6;
 
     doc.setFont(undefined, 'normal');
-    doc.text('Ajuste:', xTot, y);
+    doc.setTextColor(80, 80, 80);
+    doc.text('Ajuste:', xTotales, y);
     doc.setFont(undefined, 'bold');
-    doc.text('-$' + aj_t.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
-    y += 7;
+    doc.setTextColor(0, 0, 0);
+    doc.text('-$' + ajuste_total.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
+    y += 8;
 
-    doc.setDrawColor(...C2);
-    doc.setLineWidth(1);
-    doc.line(xTot - 3, y, W - M, y);
-    y += 5;
+    doc.setDrawColor(...C_ROJO);
+    doc.setLineWidth(1.5);
+    doc.line(xTotales - 5, y, W - M, y);
+    y += 6;
 
-    doc.setFontSize(12);
+    doc.setFontSize(13);
     doc.setFont(undefined, 'bold');
-    doc.setTextColor(...C2);
-    const total = sub + iva_t - aj_t;
-    doc.text('TOTAL:', xTot, y);
-    doc.text('$' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
+    doc.setTextColor(...C_ROJO);
+    const total_final = subtotal + iva_total - ajuste_total;
+    doc.text('TOTAL:', xTotales, y);
+    doc.text('$' + total_final.toLocaleString('es-MX', { minimumFractionDigits: 2 }), W - M - 2, y, { align: 'right' });
 
-    // ========== 5) PIE ==========
+    // ========== 5) PIE DE PÁGINA ==========
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.setTextColor(120, 120, 120);
+    doc.setTextColor(100, 100, 100);
     doc.text('Maya Autopartes — La parte que necesitas', W / 2, H - 8, { align: 'center' });
     doc.text(new Date().toLocaleString('es-MX'), W / 2, H - 4, { align: 'center' });
 
@@ -6333,7 +6362,7 @@ window.descargarNota = async function(venta) {
     window.toast('✅ Nota PDF descargada', 'success');
   } catch (error) {
     console.error('❌ Error PDF:', error);
-    window.toast('❌ Error: ' + error.message, 'error');
+    window.toast('❌ Error al generar PDF', 'error');
   }
 };
 
