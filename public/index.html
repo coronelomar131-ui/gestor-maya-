@@ -6185,7 +6185,7 @@ window.descargarNotaPorId = async function(ventaId) {
   }
 };
 
-window.descargarNota = function(venta) {
+window.descargarNota = async function(venta) {
   if (!venta || !venta.items || venta.items.length === 0) {
     window.toast('❌ Venta sin items', 'error');
     return;
@@ -6204,31 +6204,17 @@ window.descargarNota = function(venta) {
 
     let y = M;
 
-    // ========== 1) ENCABEZADO CON LOGO ==========
-    // Dibujar logo como rectángulo con bordes
-    doc.setFillColor(...C_ROJO);
-    doc.rect(M, y, 25, 25, 'F');
+    // ========== 1) ENCABEZADO CON LOGO SVG ==========
+    try {
+      const svgResponse = await fetch('/maya-logo.svg');
+      const svgText = await svgResponse.text();
+      const svgDataUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
+      doc.addImage(svgDataUri, 'SVG', M, y - 5, 80, 40);
+    } catch(e) {
+      console.warn('Logo SVG no disponible:', e);
+    }
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(11);
-    doc.setFont(undefined, 'bold');
-    doc.text('MAYA', M + 12.5, y + 9, { align: 'center' });
-    doc.setFontSize(7);
-    doc.text('AUTO', M + 12.5, y + 15, { align: 'center' });
-    doc.text('PARTS', M + 12.5, y + 20, { align: 'center' });
-
-    // Nombre de la empresa
-    doc.setTextColor(...C_AZUL);
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('MAYA AUTOPARTES', M + 30, y + 8);
-
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'italic');
-    doc.text('La parte que necesitas', M + 30, y + 15);
-
-    y += 30;
+    y += 40;
 
     // Línea divisora
     doc.setDrawColor(...C_ROJO);
