@@ -1174,10 +1174,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="notasfacturas-table">
               <thead><tr>
-                <th>NOTA</th><th>FACTURA</th><th>CLIENTE</th><th>TOTAL</th><th>ENTREGA</th><th>FECHA</th><th>EST.</th>
+                <th>NOTA</th><th>FACTURA</th><th>CLIENTE</th><th>SINIESTRO</th><th>TOTAL</th><th>ENTREGA</th><th>FECHA</th><th>EST.</th>
               </tr></thead>
               <tbody id="notasfacturas-body">
-                <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -5900,7 +5900,19 @@ async function renderNotasFacturas(ventas) {
 
   // Asignar números automáticos a ventas sin notaNumero
   const ventasConNotas = [];
-  let contador = 1;
+
+  // Encontrar el máximo número actual
+  let maxNum = 0;
+  for (const v of (ventas || [])) {
+    if (v.notaNumero) {
+      const match = v.notaNumero.match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0]);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+  }
+  let contador = maxNum + 1;
 
   for (const v of (ventas || [])) {
     const ventaActual = { ...v };
@@ -5923,11 +5935,28 @@ async function renderNotasFacturas(ventas) {
 
   const conNotas = ventasConNotas.filter(v => v.notaNumero);
   if (!conNotas.length) {
-    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>';
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas registradas</div></div></td></tr>';
     return;
   }
 
-  body.innerHTML = conNotas.map(v => `
+  body.innerHTML = conNotas.map(v => {
+    // Extraer siniestro
+    let siniestro = '';
+    if (v.siniestros && String(v.siniestros).trim()) {
+      siniestro = String(v.siniestros).trim();
+    } else if (v.numSiniestro && String(v.numSiniestro).trim()) {
+      siniestro = String(v.numSiniestro).trim();
+    } else if (v.siniestro && String(v.siniestro).trim()) {
+      siniestro = String(v.siniestro).trim();
+    } else if (v.items && Array.isArray(v.items)) {
+      const sinList = v.items
+        .map(it => it.numSiniestro || it.siniestro)
+        .filter(s => s)
+        .map(s => String(s).trim());
+      siniestro = sinList.length > 0 ? sinList.join(' | ') : '';
+    }
+
+    return `
     <tr>
       <td style="font-weight:600;color:#3BBCD4">
         ${v.notaNumero}
@@ -5936,7 +5965,8 @@ async function renderNotasFacturas(ventas) {
       <td style="text-align:center">
         ${v.facturaURL ? `<button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="descargarFactura('${v.facturaURL}','${v.notaId || 'factura'}.pdf')">📄 Ver Factura</button>` : `<button class="btn btn-sm" style="background:#f39c12;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="abrirUploadFactura('${v.id}','${v.notaId || 'nota'}')">📎 Subir</button>`}
       </td>
-      <td>${v.cliente || '—'}</td>
+      <td>${v.clienteNombre || v.cliente || '—'}</td>
+      <td>${siniestro || '—'}</td>
       <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
       <td style="text-align:center">${v.tipoEntrega === 'local' ? '🏠 Local' : v.tipoEntrega === 'paqueteria' ? '📦 Envío' : '🏪 Recolección'}</td>
       <td>${fmtDate(v.createdAt)}</td>
@@ -5944,7 +5974,8 @@ async function renderNotasFacturas(ventas) {
         ${v.tieneFactura ? '<span class="badge badge-g" style="background:#27AE60;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">✓ Facturada</span>' : '<span class="badge badge-o" style="background:#f39c12;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">Pendiente</span>'}
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 window.filterNotasFacturas = function(tipo) {
