@@ -1355,18 +1355,32 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="padding:20px">
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:20px;align-items:flex-end">
               <div class="form-group" style="margin:0">
-                <label style="font-size:12px;color:var(--gray)">Vendedor</label>
+                <label style="font-size:12px;color:var(--gray);display:block;margin-bottom:5px">Vendedor</label>
                 <select id="rep-vend-select" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
-                  <option value="">Todos los vendedores</option>
+                  <option value="">— Todos —</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0">
-                <label style="font-size:12px;color:var(--gray)">Desde (mes)</label>
-                <input type="month" id="rep-vend-desde" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                <label style="font-size:12px;color:var(--gray);display:block;margin-bottom:5px">Desde</label>
+                <div style="display:flex;gap:5px">
+                  <select id="rep-vend-desde-mes" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)" style="flex:1">
+                    <option value="">Mes</option><option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+                  </select>
+                  <select id="rep-vend-desde-ano" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)" style="flex:1">
+                    <option value="">Año</option><option value="2022">2022</option><option value="2023">2023</option><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
+                  </select>
+                </div>
               </div>
               <div class="form-group" style="margin:0">
-                <label style="font-size:12px;color:var(--gray)">Hasta (mes)</label>
-                <input type="month" id="rep-vend-hasta" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                <label style="font-size:12px;color:var(--gray);display:block;margin-bottom:5px">Hasta</label>
+                <div style="display:flex;gap:5px">
+                  <select id="rep-vend-hasta-mes" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)" style="flex:1">
+                    <option value="">Mes</option><option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+                  </select>
+                  <select id="rep-vend-hasta-ano" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)" style="flex:1">
+                    <option value="">Año</option><option value="2022">2022</option><option value="2023">2023</option><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <button class="btn btn-primary" onclick="filtrarVentasVendedor()" style="width:100%">🔍 Filtrar</button>
@@ -5379,14 +5393,16 @@ function updateReportes() {
 // ═══════════════════════════════════════
 
 function cargarVendedoresSelect() {
+function cargarVendedoresSelect() {
   const sel = document.getElementById("rep-vend-select");
   if (!sel) return;
-  const ventas = data.ventas || [];
   const set = new Set();
-  ventas.forEach(v => { if (v.vendedor) set.add(v.vendedor); });
-  (data.usuarios || []).forEach(u => { if (u.nombre) set.add(u.nombre); });
+  (data.ventas || []).forEach(v => { if (v.vendedor) set.add(v.vendedor); });
+  (data.usuarios || []).forEach(u => {
+    if (u.nombre && (u.rol === "vendedor" || u.rol === "admin" || !u.rol)) set.add(u.nombre);
+  });
   const current = sel.value;
-  sel.innerHTML = "<option value=\"\">Todos los vendedores</option>";
+  sel.innerHTML = "<option value=\"\">— Todos —</option>";
   [...set].sort().forEach(v => {
     const opt = document.createElement("option");
     opt.value = v; opt.textContent = v;
@@ -5394,20 +5410,18 @@ function cargarVendedoresSelect() {
     sel.appendChild(opt);
   });
 }
-
 window._repVendData = [];
 window._repVendFiltro = {};
 
 window.filtrarVentasVendedor = function() {
-  const vendedor = document.getElementById("rep-vend-select").value;
-  const desde    = document.getElementById("rep-vend-desde").value;
-  const hasta    = document.getElementById("rep-vend-hasta").value;
+  const vendedor  = document.getElementById("rep-vend-select").value;
+  const desdeMes  = parseInt(document.getElementById("rep-vend-desde-mes").value) || 0;
+  const desdeAno  = parseInt(document.getElementById("rep-vend-desde-ano").value) || 0;
+  const hastaMes  = parseInt(document.getElementById("rep-vend-hasta-mes").value) || 0;
+  const hastaAno  = parseInt(document.getElementById("rep-vend-hasta-ano").value) || 0;
 
   let ventas = (data.ventas || []).slice();
-
-  if (vendedor) {
-    ventas = ventas.filter(v => (v.vendedor || "") === vendedor);
-  }
+  if (vendedor) ventas = ventas.filter(v => (v.vendedor || "") === vendedor);
 
   const parseFecha = v => {
     if (v.fecha) return new Date(v.fecha);
@@ -5416,22 +5430,28 @@ window.filtrarVentasVendedor = function() {
     return new Date(0);
   };
 
-  if (desde) {
-    const [dy, dm] = desde.split("-").map(Number);
+  if (desdeAno || desdeMes) {
     ventas = ventas.filter(v => {
-      const d = parseFecha(v); return d.getFullYear() > dy || (d.getFullYear() === dy && d.getMonth()+1 >= dm);
+      const d = parseFecha(v); const y = d.getFullYear(); const m = d.getMonth() + 1;
+      if (desdeAno && y < desdeAno) return false;
+      if (desdeAno && y === desdeAno && desdeMes && m < desdeMes) return false;
+      if (!desdeAno && desdeMes && m < desdeMes) return false;
+      return true;
     });
   }
-  if (hasta) {
-    const [hy, hm] = hasta.split("-").map(Number);
+  if (hastaAno || hastaMes) {
     ventas = ventas.filter(v => {
-      const d = parseFecha(v); return d.getFullYear() < hy || (d.getFullYear() === hy && d.getMonth()+1 <= hm);
+      const d = parseFecha(v); const y = d.getFullYear(); const m = d.getMonth() + 1;
+      if (hastaAno && y > hastaAno) return false;
+      if (hastaAno && y === hastaAno && hastaMes && m > hastaMes) return false;
+      if (!hastaAno && hastaMes && m > hastaMes) return false;
+      return true;
     });
   }
 
   ventas.sort((a, b) => parseFecha(a) - parseFecha(b));
   window._repVendData = ventas;
-  window._repVendFiltro = { vendedor, desde, hasta };
+  window._repVendFiltro = { vendedor, desdeMes, desdeAno, hastaMes, hastaAno };
 
   const cont = document.getElementById("rep-vend-resultado");
   const acciones = document.getElementById("rep-vend-acciones");
@@ -5526,9 +5546,9 @@ window.exportarVendedorPDF = function() {
   doc.text("REPORTE DE VENTAS POR VENDEDOR", 36, 12);
   doc.setFontSize(9); doc.setFont(undefined, "normal");
   var subTitle = (f.vendedor || "Todos los vendedores");
-  if (f.desde) subTitle += "  |  Desde: " + f.desde;
-  if (f.hasta) subTitle += "  Hasta: " + f.hasta;
-  doc.text(subTitle, 36, 20);
+  var meses = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  if (f.desdeMes || f.desdeAno) subTitle += "  |  Desde: " + (f.desdeMes ? meses[f.desdeMes] : "") + " " + (f.desdeAno || "");
+  if (f.hastaMes || f.hastaAno) subTitle += "  Hasta: " + (f.hastaMes ? meses[f.hastaMes] : "") + " " + (f.hastaAno || "");
   doc.text("Generado: " + new Date().toLocaleDateString("es-MX"), pageW - 14, 12, { align: "right" });
 
   var parseFecha = function(v) {
