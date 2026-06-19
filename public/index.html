@@ -6264,6 +6264,7 @@ window.guardarDatosFiscales = async function() {
 };
 
 
+
 window.generarNotaPDF = async function(venta) {
   try {
     var jsPDFLib = window.jspdf;
@@ -6271,169 +6272,170 @@ window.generarNotaPDF = async function(venta) {
     var pageW = doc.internal.pageSize.getWidth();
     var pageH = doc.internal.pageSize.getHeight();
     var mg = 14;
-    var azul   = [26, 58, 84];
-    var teal   = [30, 143, 165];
+    var azul   = [26, 58, 84]; var azul2 = [22, 78, 110];
+    var teal   = [30, 143, 165]; var tealCl = [59, 188, 212];
     var rojo   = [178, 50, 40];
-    var blanco = [255, 255, 255];
-    var gris   = [100, 116, 139];
-    var grisCl = [241, 245, 249];
-    var negro  = [15, 23, 42];
-
-    // HEADER
+    var blanco = [255, 255, 255]; var gris = [100, 116, 139];
+    var grisCl = [241, 245, 249]; var negro = [15, 23, 42];
+    // fondo
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageW, pageH, 'F');
+    // header
     doc.setFillColor(azul[0], azul[1], azul[2]);
-    doc.rect(0, 0, pageW, 36, 'F');
-
+    doc.rect(0, 0, pageW, 42, 'F');
+    doc.setFillColor(azul2[0], azul2[1], azul2[2]);
+    doc.rect(pageW * 0.55, 0, pageW * 0.45, 42, 'F');
+    // triangulo decorativo
+    doc.setFillColor(teal[0], teal[1], teal[2]);
+    doc.triangle(pageW - 40, 0, pageW, 0, pageW, 50, 'F');
+    try { doc.setGState(doc.GState({ opacity: 0.2 })); } catch(e3) {}
+    doc.setFillColor(tealCl[0], tealCl[1], tealCl[2]);
+    doc.triangle(pageW - 65, 0, pageW, 0, pageW, 75, 'F');
+    try { doc.setGState(doc.GState({ opacity: 1 })); } catch(e4) {}
+    // logo
     try {
       var logoImg = document.querySelector('.sidebar-logo img');
       if (logoImg && logoImg.src) {
-        doc.setFillColor(0, 0, 0);
-        doc.roundedRect(mg, 4, 30, 28, 2, 2, 'F');
-        doc.addImage(logoImg.src, 'JPEG', mg + 1, 5, 28, 26);
+        doc.setFillColor(0,0,0);
+        doc.roundedRect(mg, 5, 32, 30, 3, 3, 'F');
+        doc.addImage(logoImg.src, 'JPEG', mg+1, 6, 30, 28);
       }
     } catch(e2) {}
-
+    // titulo
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-    doc.setFontSize(22); doc.setFont(undefined, 'bold');
-    doc.text('NOTA DE VENTA', mg + 35, 16);
-    doc.setTextColor(teal[0], teal[1], teal[2]);
+    doc.setFontSize(24); doc.setFont(undefined, 'bold');
+    doc.text('NOTA DE VENTA', mg + 38, 19);
+    doc.setTextColor(tealCl[0], tealCl[1], tealCl[2]);
     doc.setFontSize(8); doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com  -  CDMX, Mexico', mg + 35, 23);
-
+    doc.text('maya-autopartes.myshopify.com  -  CDMX, Mexico', mg + 38, 27);
+    // fecha y numero
+    var fechaStr = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-    doc.setFontSize(9);
-    var fechaStr = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX', {day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX', {day:'numeric',month:'long',year:'numeric'});
-    doc.text('Fecha: ' + fechaStr, pageW - mg, 14, { align: 'right' });
-    doc.setFontSize(8); doc.setTextColor(180, 210, 220);
-    doc.text('Nota: ' + (venta.notaId || '-'), pageW - mg, 20, { align: 'right' });
-
+    doc.setFontSize(9); doc.setFont(undefined,'normal');
+    doc.text('Fecha: ' + fechaStr, pageW - mg - 44, 18);
+    doc.setFontSize(11); doc.setFont(undefined,'bold');
+    doc.text('Nota # ' + (venta.notaId || '-'), pageW - mg - 44, 27);
+    // banda teal
     doc.setFillColor(teal[0], teal[1], teal[2]);
-    doc.rect(0, 33, pageW, 3, 'F');
-
-    // CLIENTE
-    var y = 44;
+    doc.rect(0, 39, pageW, 3, 'F');
+    // CLIENTE badge
+    var y = 50;
     doc.setFillColor(azul[0], azul[1], azul[2]);
-    doc.roundedRect(mg, y, 30, 7, 1.5, 1.5, 'F');
+    doc.roundedRect(mg, y, 32, 7, 1.5, 1.5, 'F');
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-    doc.setFontSize(8); doc.setFont(undefined, 'bold');
-    doc.text('CLIENTE', mg + 4, y + 5);
+    doc.setFontSize(8); doc.setFont(undefined,'bold');
+    doc.text('CLIENTE', mg+4, y+5);
     y += 11;
-
-    doc.setFillColor(grisCl[0], grisCl[1], grisCl[2]);
-    doc.roundedRect(mg, y, pageW - mg * 2, 26, 2, 2, 'F');
+    // tarjeta cliente - sombra
+    doc.setFillColor(225, 230, 235);
+    doc.roundedRect(mg+0.7, y+0.7, pageW - mg*2, 28, 2, 2, 'F');
+    doc.setFillColor(255,255,255);
+    doc.roundedRect(mg, y, pageW - mg*2, 28, 2, 2, 'F');
     doc.setFillColor(teal[0], teal[1], teal[2]);
-    doc.rect(mg, y, 2, 26, 'F');
-
+    doc.roundedRect(mg, y, 2.5, 28, 1, 1, 'F');
     doc.setTextColor(negro[0], negro[1], negro[2]);
-    doc.setFontSize(13); doc.setFont(undefined, 'bold');
-    doc.text(venta.clienteNombre || '-', mg + 6, y + 9);
-    doc.setFontSize(8); doc.setFont(undefined, 'normal');
+    doc.setFontSize(14); doc.setFont(undefined,'bold');
+    doc.text(venta.clienteNombre || '-', mg+7, y+10);
+    doc.setFontSize(8); doc.setFont(undefined,'normal');
     doc.setTextColor(gris[0], gris[1], gris[2]);
-    doc.text('Cliente  -  Venta directa', mg + 6, y + 15);
-    doc.text('Vendedor: ' + (venta.vendedor || '-'), mg + 6, y + 20);
-
-    var sins = venta.siniestros || (venta.items ? venta.items.map(function(i){ return i.numSiniestro||''; }).filter(function(s){ return s; }).join(' | ') : '') || (venta.numSiniestro || '');
+    doc.text('Cliente  -  Venta directa', mg+7, y+17);
+    doc.text('Vendedor: ' + (venta.vendedor || '-') + '   |   Elaboro: ' + (venta.createdByName || '-'), mg+7, y+23);
+    // siniestro badge
+    var sins = venta.siniestros || (venta.items ? venta.items.map(function(i){return i.numSiniestro||'';}).filter(function(s){return s;}).join(' | ') : '') || (venta.numSiniestro||'');
     if (sins) {
+      var bx=pageW-mg-57; var bw=55; var by2=y+4;
       doc.setFillColor(rojo[0], rojo[1], rojo[2]);
-      doc.roundedRect(pageW - mg - 55, y + 3, 53, 20, 2, 2, 'F');
+      doc.roundedRect(bx, by2, bw, 20, 2, 2, 'F');
       doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-      doc.setFontSize(7); doc.setFont(undefined, 'bold');
-      doc.text('SINIESTRO', pageW - mg - 28.5, y + 10, { align: 'center' });
-      doc.setFontSize(10);
-      doc.text('# ' + sins, pageW - mg - 28.5, y + 19, { align: 'center' });
+      doc.setFontSize(7); doc.setFont(undefined,'bold');
+      doc.text('SINIESTRO', bx+bw/2, by2+7, {align:'center'});
+      doc.setFontSize(11);
+      doc.text('# '+sins, bx+bw/2, by2+15, {align:'center'});
     }
-    y += 32;
-
-    // DETALLE
-    doc.setFillColor(azul[0], azul[1], azul[2]);
-    doc.roundedRect(mg, y, 55, 7, 1.5, 1.5, 'F');
-    doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-    doc.setFontSize(8); doc.setFont(undefined, 'bold');
-    doc.text('DETALLE DE VENTA', mg + 4, y + 5);
-    y += 10;
-
-    if (venta.items && venta.items.length > 0 && doc.autoTable) {
-      var tableRows = venta.items.map(function(item, idx) {
-        return [
-          String(idx + 1),
-          item.pedido || '-',
-          item.numSiniestro || '-',
-          '\$' + (item.precio || 0).toLocaleString('es-MX', {minimumFractionDigits:2}),
-          '\$' + (item.iva || 0).toLocaleString('es-MX', {minimumFractionDigits:2}),
-          '-\$' + (item.ajuste || 0).toLocaleString('es-MX', {minimumFractionDigits:2})
-        ];
-      });
-      doc.autoTable({
-        head: [['#', 'DESCRIPCION', 'SINIESTRO', 'PRECIO', 'IVA', 'AJUSTE']],
-        body: tableRows,
-        startY: y,
-        margin: { left: mg, right: mg },
-        headStyles: { fillColor: azul, textColor: blanco, fontStyle: 'bold', fontSize: 8, cellPadding: 4 },
-        bodyStyles: { fontSize: 8, textColor: negro, cellPadding: 4 },
-        alternateRowStyles: { fillColor: grisCl },
-        columnStyles: { 0: { halign: 'center', cellWidth: 8 }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } }
-      });
-      y = doc.lastAutoTable.finalY + 6;
-    } else if (venta.descripcion) {
-      doc.autoTable({
-        head: [['DESCRIPCION', 'SINIESTRO', 'TOTAL']],
-        body: [[venta.descripcion || '-', venta.numSiniestro || '-', '\$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits:2})]],
-        startY: y, margin: { left: mg, right: mg },
-        headStyles: { fillColor: azul, textColor: blanco, fontStyle: 'bold', fontSize: 8, cellPadding: 4 },
-        bodyStyles: { fontSize: 8, textColor: negro, cellPadding: 4 }
-      });
-      y = doc.lastAutoTable.finalY + 6;
-    }
-
-    // TOTALES
-    var boxX = pageW - mg - 75; var boxW = 73;
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(220, 220, 230); doc.setLineWidth(0.3);
-    doc.roundedRect(boxX, y, boxW, 26, 2, 2, 'FD');
-    doc.setTextColor(gris[0], gris[1], gris[2]);
-    doc.setFontSize(8); doc.setFont(undefined, 'normal');
-    doc.text('Subtotal', boxX + 4, y + 7);
-    doc.text('\$' + (venta.subtotal || 0).toLocaleString('es-MX', {minimumFractionDigits:2}), boxX + boxW - 4, y + 7, { align: 'right' });
-    doc.text('IVA', boxX + 4, y + 13);
-    doc.text('\$' + (venta.ivaTotal || 0).toLocaleString('es-MX', {minimumFractionDigits:2}), boxX + boxW - 4, y + 13, { align: 'right' });
-    doc.setDrawColor(200, 200, 210);
-    doc.line(boxX + 2, y + 16, boxX + boxW - 2, y + 16);
-    doc.setFillColor(azul[0], azul[1], azul[2]);
-    doc.roundedRect(boxX, y + 17, boxW, 9, 0, 0, 'F');
-    doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-    doc.setFontSize(10); doc.setFont(undefined, 'bold');
-    doc.text('TOTAL', boxX + 4, y + 23);
-    doc.text('\$' + (venta.total || 0).toLocaleString('es-MX', {minimumFractionDigits:2}), boxX + boxW - 4, y + 23, { align: 'right' });
     y += 34;
-
-    // FIRMAS
-    var firmaY = pageH - 28;
-    doc.setDrawColor(180, 190, 200); doc.setLineWidth(0.3);
-    doc.line(mg, firmaY, mg + 60, firmaY);
-    doc.line(pageW - mg - 60, firmaY, pageW - mg, firmaY);
-    doc.setFontSize(8); doc.setFont(undefined, 'normal');
-    doc.setTextColor(gris[0], gris[1], gris[2]);
-    doc.text('Vendedor / Maya Autopartes', mg + 3, firmaY + 4);
-    doc.text('Recibido / ' + (venta.clienteNombre || 'Cliente'), pageW - mg - 3, firmaY + 4, { align: 'right' });
-
-    // FOOTER
+    // DETALLE badge
     doc.setFillColor(azul[0], azul[1], azul[2]);
-    doc.rect(0, pageH - 10, pageW, 10, 'F');
-    doc.setFillColor(rojo[0], rojo[1], rojo[2]);
-    doc.rect(0, pageH - 3, pageW, 3, 'F');
-    doc.setTextColor(150, 185, 200);
-    doc.setFontSize(6.5); doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com', mg, pageH - 5);
+    doc.roundedRect(mg, y, 58, 7, 1.5, 1.5, 'F');
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-    doc.text('Maya Autopartes  -  La parte que necesitas.  -  Ciudad de Mexico', pageW / 2, pageH - 5, { align: 'center' });
-
-    doc.save((venta.notaId || 'nota') + '.pdf');
-    window.toast('Nota PDF generada', 'success');
+    doc.setFontSize(8); doc.setFont(undefined,'bold');
+    doc.text('DETALLE DE VENTA', mg+4, y+5);
+    y += 10;
+    // tabla
+    if (venta.items && venta.items.length > 0 && doc.autoTable) {
+      var rows = venta.items.map(function(item,idx){
+        return [String(idx+1), item.pedido||'-', item.numSiniestro||'-',
+          '\$'+(item.precio||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
+          '\$'+(item.iva||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
+          '-\$'+(item.ajuste||0).toLocaleString('es-MX',{minimumFractionDigits:2})];
+      });
+      doc.autoTable({
+        head:[['#','DESCRIPCION','SINIESTRO','PRECIO','IVA','AJUSTE']],
+        body:rows, startY:y, margin:{left:mg,right:mg},
+        styles:{font:'helvetica',fontSize:8,cellPadding:4},
+        headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',halign:'center'},
+        bodyStyles:{textColor:negro},
+        alternateRowStyles:{fillColor:[245,248,252]},
+        columnStyles:{0:{halign:'center',cellWidth:8},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else if (venta.descripcion) {
+      doc.autoTable({head:[['DESCRIPCION','TOTAL']],body:[[venta.descripcion||'-','\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})]],startY:y,margin:{left:mg,right:mg},headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',fontSize:8},bodyStyles:{fontSize:8,textColor:negro,cellPadding:4}});
+      y = doc.lastAutoTable.finalY + 8;
+    }
+    // caja totales
+    var boxW=78; var boxX=pageW-mg-boxW; var boxH=32;
+    doc.setFillColor(210,215,220);
+    doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
+    doc.setFillColor(255,255,255);
+    doc.setDrawColor(220,225,235); doc.setLineWidth(0.3);
+    doc.roundedRect(boxX,y,boxW,boxH,2,2,'FD');
+    doc.setFontSize(8.5); doc.setFont(undefined,'normal');
+    doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('Subtotal',boxX+5,y+8);
+    doc.setTextColor(negro[0],negro[1],negro[2]);
+    doc.text('\$'+(venta.subtotal||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+8,{align:'right'});
+    doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('IVA',boxX+5,y+15);
+    doc.setTextColor(negro[0],negro[1],negro[2]);
+    doc.text('\$'+(venta.ivaTotal||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+15,{align:'right'});
+    if (venta.ajusteTotal && venta.ajusteTotal > 0) {
+      doc.setTextColor(gris[0],gris[1],gris[2]); doc.text('Ajuste',boxX+5,y+20);
+      doc.setTextColor(rojo[0],rojo[1],rojo[2]); doc.text('-\$'+(venta.ajusteTotal||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+20,{align:'right'});
+    }
+    doc.setDrawColor(210,220,230); doc.setLineWidth(0.4);
+    doc.line(boxX+3,y+22,boxX+boxW-3,y+22);
+    doc.setFillColor(azul[0],azul[1],azul[2]);
+    doc.roundedRect(boxX,y+23,boxW,9,0,0,'F');
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.setFontSize(10.5); doc.setFont(undefined,'bold');
+    doc.text('TOTAL',boxX+5,y+29);
+    doc.text('\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
+    y += boxH + 14;
+    // firmas
+    var firmaY = pageH - 30;
+    doc.setDrawColor(180,190,200); doc.setLineWidth(0.4);
+    doc.line(mg,firmaY,mg+65,firmaY);
+    doc.line(pageW-mg-65,firmaY,pageW-mg,firmaY);
+    doc.setFontSize(8); doc.setFont(undefined,'normal');
+    doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('Vendedor / Maya Autopartes',mg+3,firmaY+5);
+    doc.text('Recibido / '+(venta.clienteNombre||'Cliente'),pageW-mg-3,firmaY+5,{align:'right'});
+    // footer
+    doc.setFillColor(azul[0],azul[1],azul[2]);
+    doc.rect(0,pageH-12,pageW,12,'F');
+    doc.setFillColor(rojo[0],rojo[1],rojo[2]);
+    doc.rect(0,pageH-3.5,pageW,3.5,'F');
+    doc.setTextColor(150,185,200); doc.setFontSize(6.5); doc.setFont(undefined,'normal');
+    doc.text('maya-autopartes.myshopify.com',mg,pageH-6);
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.text('Maya Autopartes  -  La parte que necesitas.  -  Ciudad de Mexico',pageW/2,pageH-6,{align:'center'});
+    doc.save((venta.notaId||'nota')+'.pdf');
+    window.toast('Nota PDF generada','success');
   } catch(err) {
-    console.error('Error generando nota PDF:', err);
-    window.toast('Error: ' + err.message, 'error');
+    console.error('Error PDF:',err);
+    window.toast('Error: '+err.message,'error');
   }
 };
-
 
 window.descargarNotaPorId = async function(ventaId) {
   try {
