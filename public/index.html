@@ -3531,7 +3531,6 @@ window.deleteItem = async function(col, id) {
 };
 
 window.updateEntregaStatus = async function(id, estatus) {
-window.updateEntregaStatus = async function(id, estatus) {
   try {
     const entrega = data.entregas.find(e => e.id === id);
     await updateDoc(doc(db, "entregas", id), { estatus });
