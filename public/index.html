@@ -1331,6 +1331,21 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <canvas id="ventas-chart" height="200"></canvas>
           </div>
         </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:20px">
+          <div class="table-card">
+            <div class="table-header"><div class="table-title">👑 Top Clientes</div></div>
+            <div id="rep-top-clientes" style="padding:0 16px 16px"></div>
+          </div>
+          <div class="table-card">
+            <div class="table-header"><div class="table-title">🏆 Top Vendedores</div></div>
+            <div id="rep-top-vendedores" style="padding:0 16px 16px"></div>
+          </div>
+          <div class="table-card">
+            <div class="table-header"><div class="table-title">🔧 Piezas mas vendidas</div></div>
+            <div id="rep-top-piezas" style="padding:0 16px 16px"></div>
+          </div>
+        </div>
       </div>
 
       <!-- MERCADO LIBRE -->
@@ -3194,6 +3209,7 @@ window.saveVentaMultiLinea = async function() {
     }, 500);
 
     closeModal('modal-venta');
+    if (typeof enviarNotificacion === "function") enviarNotificacion("Nueva venta registrada", (venta.clienteNombre || venta.clienteId || "Cliente") + " - Nota #" + notaId, "💰");
     toast(`✅ Venta ${notaId} registrada + Nota PDF generada`, 'success');
   } catch(e) {
     console.error('❌ Error en saveVentaMultiLinea:', e);
@@ -3482,29 +3498,69 @@ window.deleteItem = async function(col, id) {
 };
 
 window.updateEntregaStatus = async function(id, estatus) {
+window.updateEntregaStatus = async function(id, estatus) {
   try {
-    await updateDoc(doc(db, 'entregas', id), { estatus });
-    toast('Estatus actualizado ✅', 'success');
-  } catch(e) { toast('Error: ' + e.message, 'error'); }
+    const entrega = data.entregas.find(e => e.id === id);
+    await updateDoc(doc(db, "entregas", id), { estatus });
+    if (estatus === "delivered" && typeof enviarNotificacion === "function") {
+      const cliente = entrega ? (entrega.cliente || entrega.clienteNombre || "Cliente") : "Cliente";
+      enviarNotificacion("Entrega completada", cliente + " - su pedido fue entregado", "🚚");
+    }
+    toast("Estatus actualizado", "success");
+  } catch(e) { toast("Error: " + e.message, "error"); }
 };
 
 window.cotToVenta = async function(id) {
+  if (!confirm("¿Convertir esta cotizacion a venta? Se eliminara la cotizacion.")) return;
   const cot = data.cotizaciones.find(c => c.id === id);
-  if (!cot) return;
+  if (!cot) return toast("Cotizacion no encontrada", "error");
   try {
-    await addDoc(collection(db, 'ventas'), {
-      cliente: cot.cliente,
-      descripcion: cot.descripcion,
-      total: cot.total,
-      metodoPago: 'Pendiente',
-      estatus: 'pending',
-      notas: 'Convertida de cotización ' + folio('COT-', id),
-      creadoPor: currentUser.uid,
-      createdAt: serverTimestamp()
+    // Generar siguiente notaId de ventas
+    const notasSnap = await getDocs(collection(db, "ventas"));
+    let lastNote = 0;
+    notasSnap.forEach(d => {
+      const nd = d.data();
+      const notaStr = nd.notaId || nd.notaNumero || "";
+      const num = parseInt(notaStr.replace("NV-", "").replace(/\D/g, "") || "0");
+      if (num > lastNote) lastNote = num;
     });
-    await deleteDoc(doc(db, 'cotizaciones', id));
-    toast('Cotización convertida a venta ✅', 'success');
-  } catch(e) { toast('Error: ' + e.message, 'error'); }
+    const notaId = String(lastNote + 1);
+
+    let createdByName = auth.currentUser?.displayName || "";
+    if (!createdByName && data.usuarios) {
+      const u = data.usuarios.find(u => u.email === auth.currentUser?.email);
+      if (u) createdByName = u.nombre || auth.currentUser?.email;
+    }
+    if (!createdByName) createdByName = auth.currentUser?.email || "Usuario";
+
+    const venta = {
+      notaId,
+      fecha: cot.fecha || Date.now(),
+      clienteId: cot.clienteId || "",
+      clienteNombre: cot.clienteNombre || cot.cliente || "-",
+      vendedor: cot.vendedor || "",
+      items: cot.items || [],
+      siniestros: cot.siniestros || "",
+      subtotal: cot.subtotal || 0,
+      ivaTotal: cot.ivaTotal || 0,
+      ajusteTotal: cot.ajusteTotal || 0,
+      total: cot.total || 0,
+      incluyeDatosFiscales: false,
+      estado: "pendiente",
+      estatus: "pending",
+      facturaURL: "",
+      tieneFactura: false,
+      notas: "Convertida de cotizacion COT-" + (cot.notaId || id),
+      createdAt: serverTimestamp(),
+      createdBy: auth.currentUser?.uid || "",
+      createdByName
+    };
+
+    await addDoc(collection(db, "ventas"), venta);
+    await deleteDoc(doc(db, "cotizaciones", id));
+    setTimeout(() => window.generarNotaPDF(venta), 500);
+    toast("Convertida a Venta " + notaId + " y PDF generado", "success");
+  } catch(e) { toast("Error: " + e.message, "error"); }
 };
 </script>
 
@@ -4220,16 +4276,16 @@ window.cargarDocumentos = async function() {
 
       return {
         id: doc.id,
-        n: i + 1,
+        n: v.notaId || String(i + 1),
         cli: v.clienteNombre || v.cliente || 'Sin nombre',
         tot: v.total || 0,
         st: v.estatus || 'Pendiente',
-        por: v.createdByName || 'Usuario',
+        por: v.createdByName || v.vendedor || 'Usuario',
         sin: sin,  // Aquí va el siniestro
         fact: v.facturaURL || '',
         obs: v.observaciones || '',
         items: v.items || [],
-        fecha: v.fecha || new Date().toLocaleDateString('es-MX')
+        fecha: v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX')
       };
     });
 
@@ -4371,12 +4427,12 @@ window.buscarDocumentos = function() {
   }
 
   const encontradas = notasData.filter(n => {
-    // Buscar en múltiples campos: cliente, siniestro, total, observaciones
     const searchFields = [
       String(n.cli || '').toLowerCase(),
       String(n.sin || '').toLowerCase(),
       String(n.tot || '').toLowerCase(),
       String(n.obs || '').toLowerCase(),
+      String(n.n || '').toLowerCase(),
       String(n.id || '').toLowerCase()
     ].join(' ');
 
@@ -5197,10 +5253,95 @@ window.showModule = function(name) {
     cargarProductosML().catch(e => console.error('Error cargando productos ML:', e));
     cargarOrdenesML().catch(e => console.error('Error cargando órdenes ML:', e));
   }
-  if (name === 'documentos') {
+  if (name === "documentos") {
     cargarDocumentos();
   }
+  if (name === "reportes") {
+    setTimeout(() => updateReportes(), 200);
+  }
 };
+// ═══════════════════════════════════════
+// REPORTES: Top Clientes / Vendedores / Piezas
+// ═══════════════════════════════════════
+function updateReportes() {
+  const ventas = data.ventas || [];
+
+  // --- Top Clientes ---
+  const cliMap = {};
+  ventas.forEach(v => {
+    const nombre = v.clienteNombre || v.cliente || "Sin nombre";
+    if (!cliMap[nombre]) cliMap[nombre] = { ventas: 0, total: 0 };
+    cliMap[nombre].ventas++;
+    cliMap[nombre].total += parseFloat(v.total) || 0;
+  });
+  const topCli = Object.entries(cliMap).sort((a,b) => b[1].total - a[1].total).slice(0,8);
+  const repCli = document.getElementById("rep-top-clientes");
+  if (repCli) {
+    if (!topCli.length) { repCli.innerHTML = "<p style=\"color:var(--gray);font-size:13px\">Sin datos</p>"; }
+    else {
+      repCli.innerHTML = topCli.map(([nombre,d],i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="width:22px;height:22px;background:${i<3?"#1a3a54":"#374151"};color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nombre}</div><div style="font-size:11px;color:var(--gray)">${d.ventas} venta${d.ventas!==1?"s":""}</div></div>
+          <span style="font-size:13px;font-weight:700;color:#10b981">${d.total.toLocaleString("es-MX",{style:"currency",currency:"MXN"})}</span>
+        </div>`).join("");
+    }
+  }
+
+  // --- Top Vendedores ---
+  const vendMap = {};
+  ventas.forEach(v => {
+    const vend = v.vendedor || v.creadoPor || "Sin asignar";
+    if (!vendMap[vend]) vendMap[vend] = { ventas: 0, total: 0 };
+    vendMap[vend].ventas++;
+    vendMap[vend].total += parseFloat(v.total) || 0;
+  });
+  const topVend = Object.entries(vendMap).sort((a,b) => b[1].total - a[1].total).slice(0,8);
+  const repVend = document.getElementById("rep-top-vendedores");
+  if (repVend) {
+    if (!topVend.length) { repVend.innerHTML = "<p style=\"color:var(--gray);font-size:13px\">Sin datos</p>"; }
+    else {
+      repVend.innerHTML = topVend.map(([nombre,d],i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="width:22px;height:22px;background:${i===0?"#d97706":i===1?"#9ca3af":i===2?"#92400e":"#374151"};color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${nombre}</div><div style="font-size:11px;color:var(--gray)">${d.ventas} venta${d.ventas!==1?"s":""}</div></div>
+          <span style="font-size:13px;font-weight:700;color:#3b82f6">${d.total.toLocaleString("es-MX",{style:"currency",currency:"MXN"})}</span>
+        </div>`).join("");
+    }
+  }
+
+  // --- Top Piezas ---
+  const piezaMap = {};
+  ventas.forEach(v => {
+    if (v.items && Array.isArray(v.items)) {
+      v.items.forEach(item => {
+        const pieza = item.pedido || item.descripcion || "Sin descripcion";
+        if (!piezaMap[pieza]) piezaMap[pieza] = { qty: 0, total: 0 };
+        piezaMap[pieza].qty++;
+        piezaMap[pieza].total += parseFloat(item.precio || 0) + parseFloat(item.iva || 0) - parseFloat(item.ajuste || 0);
+      });
+    } else if (v.descripcion) {
+      const pieza = v.descripcion;
+      if (!piezaMap[pieza]) piezaMap[pieza] = { qty: 0, total: 0 };
+      piezaMap[pieza].qty++;
+      piezaMap[pieza].total += parseFloat(v.total || 0);
+    }
+  });
+  const topPiezas = Object.entries(piezaMap).sort((a,b) => b[1].qty - a[1].qty).slice(0,8);
+  const repPiezas = document.getElementById("rep-top-piezas");
+  if (repPiezas) {
+    if (!topPiezas.length) { repPiezas.innerHTML = "<p style=\"color:var(--gray);font-size:13px\">Sin datos</p>"; }
+    else {
+      repPiezas.innerHTML = topPiezas.map(([pieza,d],i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="width:22px;height:22px;background:#1e3a5f;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pieza}</div><div style="font-size:11px;color:var(--gray)">${d.qty} vez${d.qty!==1?"es":""}</div></div>
+          <span style="font-size:13px;font-weight:700;color:#8b5cf6">${d.total.toLocaleString("es-MX",{style:"currency",currency:"MXN"})}</span>
+        </div>`).join("");
+    }
+  }
+}
+
 
 // ═══════════════════════════════════════
 // EXCEL IMPORT/EXPORT FOR CLIENTS
