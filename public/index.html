@@ -1346,6 +1346,39 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <div id="rep-top-piezas" style="padding:0 16px 16px"></div>
           </div>
         </div>
+
+        <!-- REPORTE POR VENDEDOR -->
+        <div class="table-card" style="margin-top:20px">
+          <div class="table-header">
+            <div class="table-title">👤 Reporte Detallado por Vendedor</div>
+          </div>
+          <div style="padding:20px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:20px;align-items:flex-end">
+              <div class="form-group" style="margin:0">
+                <label style="font-size:12px;color:var(--gray)">Vendedor</label>
+                <select id="rep-vend-select" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+                  <option value="">Todos los vendedores</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label style="font-size:12px;color:var(--gray)">Desde (mes)</label>
+                <input type="month" id="rep-vend-desde" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label style="font-size:12px;color:var(--gray)">Hasta (mes)</label>
+                <input type="month" id="rep-vend-hasta" style="width:100%;padding:8px;background:var(--surface);border:1px solid rgba(59,188,212,0.3);border-radius:6px;color:var(--white)">
+              </div>
+              <div>
+                <button class="btn btn-primary" onclick="filtrarVentasVendedor()" style="width:100%">🔍 Filtrar</button>
+              </div>
+            </div>
+            <div id="rep-vend-resultado"></div>
+            <div id="rep-vend-acciones" style="display:none;gap:10px;margin-top:16px;flex-wrap:wrap">
+              <button class="btn btn-secondary" onclick="exportarVendedorPDF()">📄 Descargar PDF</button>
+              <button class="btn btn-secondary" onclick="exportarVendedorExcel()">📊 Descargar Excel</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- MERCADO LIBRE -->
@@ -5265,7 +5298,7 @@ window.showModule = function(name) {
 // ═══════════════════════════════════════
 function updateReportes() {
   const ventas = data.ventas || [];
-
+  cargarVendedoresSelect();
   // --- Top Clientes ---
   const cliMap = {};
   ventas.forEach(v => {
@@ -5341,6 +5374,264 @@ function updateReportes() {
     }
   }
 }
+
+// ═══════════════════════════════════════
+// REPORTE DETALLADO POR VENDEDOR
+// ═══════════════════════════════════════
+
+function cargarVendedoresSelect() {
+  const sel = document.getElementById("rep-vend-select");
+  if (!sel) return;
+  const ventas = data.ventas || [];
+  const set = new Set();
+  ventas.forEach(v => { if (v.vendedor) set.add(v.vendedor); });
+  (data.usuarios || []).forEach(u => { if (u.nombre) set.add(u.nombre); });
+  const current = sel.value;
+  sel.innerHTML = "<option value=\"\">Todos los vendedores</option>";
+  [...set].sort().forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v; opt.textContent = v;
+    if (v === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+window._repVendData = [];
+window._repVendFiltro = {};
+
+window.filtrarVentasVendedor = function() {
+  const vendedor = document.getElementById("rep-vend-select").value;
+  const desde    = document.getElementById("rep-vend-desde").value;
+  const hasta    = document.getElementById("rep-vend-hasta").value;
+
+  let ventas = (data.ventas || []).slice();
+
+  if (vendedor) {
+    ventas = ventas.filter(v => (v.vendedor || "") === vendedor);
+  }
+
+  const parseFecha = v => {
+    if (v.fecha) return new Date(v.fecha);
+    if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
+    if (v.createdAt) return new Date(v.createdAt);
+    return new Date(0);
+  };
+
+  if (desde) {
+    const [dy, dm] = desde.split("-").map(Number);
+    ventas = ventas.filter(v => {
+      const d = parseFecha(v); return d.getFullYear() > dy || (d.getFullYear() === dy && d.getMonth()+1 >= dm);
+    });
+  }
+  if (hasta) {
+    const [hy, hm] = hasta.split("-").map(Number);
+    ventas = ventas.filter(v => {
+      const d = parseFecha(v); return d.getFullYear() < hy || (d.getFullYear() === hy && d.getMonth()+1 <= hm);
+    });
+  }
+
+  ventas.sort((a, b) => parseFecha(a) - parseFecha(b));
+  window._repVendData = ventas;
+  window._repVendFiltro = { vendedor, desde, hasta };
+
+  const cont = document.getElementById("rep-vend-resultado");
+  const acciones = document.getElementById("rep-vend-acciones");
+
+  if (!ventas.length) {
+    cont.innerHTML = "<p style=\"color:var(--gray);padding:20px 0;text-align:center\">No hay ventas con ese filtro.</p>";
+    acciones.style.display = "none";
+    return;
+  }
+
+  const totalMonto = ventas.reduce((s, v) => s + (parseFloat(v.total) || 0), 0);
+  const fmtMXN = n => n.toLocaleString("es-MX", { style:"currency", currency:"MXN" });
+  const fmtD   = v => { const d = parseFecha(v); return d.toLocaleDateString("es-MX"); };
+
+  const rows = ventas.map((v, i) => {
+    const piezas   = v.items ? v.items.map(it => it.pedido || it.descripcion || "").filter(Boolean).join(", ") : (v.descripcion || "-");
+    const siniestro = v.siniestros || (v.items ? v.items.map(it => it.numSiniestro||"").filter(Boolean).join(" | ") : "") || v.numSiniestro || "-";
+    const subtotal  = v.subtotal != null ? fmtMXN(v.subtotal)  : "-";
+    const iva       = v.ivaTotal  != null ? fmtMXN(v.ivaTotal)  : "-";
+    const ajuste    = v.ajusteTotal != null ? fmtMXN(v.ajusteTotal) : "-";
+    const total     = fmtMXN(parseFloat(v.total) || 0);
+    const bg = i % 2 === 0 ? "" : "background:rgba(59,188,212,0.04)";
+    return `<tr style="border-bottom:1px solid var(--border);${bg}">
+      <td style="padding:7px 10px;font-size:12px;color:var(--gray)">${i+1}</td>
+      <td style="padding:7px 10px;font-size:12px;font-weight:600">${v.notaId || v.notaNumero || "-"}</td>
+      <td style="padding:7px 10px;font-size:12px">${fmtD(v)}</td>
+      <td style="padding:7px 10px;font-size:12px">${v.clienteNombre || v.cliente || "-"}</td>
+      <td style="padding:7px 10px;font-size:11px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${piezas}">${piezas || "-"}</td>
+      <td style="padding:7px 10px;font-size:12px;color:#3bbcd4">${siniestro}</td>
+      <td style="padding:7px 10px;font-size:12px">${v.vendedor || "-"}</td>
+      <td style="padding:7px 10px;font-size:12px;text-align:right">${subtotal}</td>
+      <td style="padding:7px 10px;font-size:12px;text-align:right">${iva}</td>
+      <td style="padding:7px 10px;font-size:12px;text-align:right;color:#ef4444">${ajuste}</td>
+      <td style="padding:7px 10px;font-size:13px;font-weight:700;text-align:right;color:#10b981">${total}</td>
+    </tr>`;
+  }).join("");
+
+  cont.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="background:#1a3a54;color:white">
+            <th style="padding:9px 10px;text-align:left">#</th>
+            <th style="padding:9px 10px;text-align:left">Nota</th>
+            <th style="padding:9px 10px;text-align:left">Fecha</th>
+            <th style="padding:9px 10px;text-align:left">Cliente</th>
+            <th style="padding:9px 10px;text-align:left">Piezas</th>
+            <th style="padding:9px 10px;text-align:left">Siniestro</th>
+            <th style="padding:9px 10px;text-align:left">Vendedor</th>
+            <th style="padding:9px 10px;text-align:right">Subtotal</th>
+            <th style="padding:9px 10px;text-align:right">IVA</th>
+            <th style="padding:9px 10px;text-align:right">Ajuste</th>
+            <th style="padding:9px 10px;text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="background:rgba(26,58,84,0.5);font-weight:700">
+            <td colspan="10" style="padding:10px;font-size:13px">${ventas.length} venta${ventas.length!==1?"s":""} ${vendedor?"de "+vendedor:"(todos los vendedores)"}</td>
+            <td style="padding:10px;text-align:right;color:#10b981;font-size:14px">${fmtMXN(totalMonto)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+
+  acciones.style.display = "flex";
+};
+
+window.exportarVendedorPDF = function() {
+  const ventas = window._repVendData;
+  const f = window._repVendFiltro;
+  if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
+
+  var jsPDFLib = window.jspdf;
+  var doc = new jsPDFLib.jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
+  var pageW = doc.internal.pageSize.getWidth();
+  var azul = [26, 58, 84]; var blanco = [255, 255, 255]; var teal = [30, 143, 165];
+  var negro = [15, 23, 42]; var gris = [100, 116, 139];
+
+  // Header
+  doc.setFillColor(azul[0], azul[1], azul[2]);
+  doc.rect(0, 0, pageW, 28, "F");
+  try {
+    var logoImg = document.querySelector(".sidebar-logo img");
+    if (logoImg && logoImg.src) {
+      doc.setFillColor(0,0,0); doc.roundedRect(8, 3, 22, 20, 2, 2, "F");
+      doc.addImage(logoImg.src, "JPEG", 9, 4, 20, 18);
+    }
+  } catch(e2) {}
+  doc.setTextColor(blanco[0], blanco[1], blanco[2]);
+  doc.setFontSize(16); doc.setFont(undefined, "bold");
+  doc.text("REPORTE DE VENTAS POR VENDEDOR", 36, 12);
+  doc.setFontSize(9); doc.setFont(undefined, "normal");
+  var subTitle = (f.vendedor || "Todos los vendedores");
+  if (f.desde) subTitle += "  |  Desde: " + f.desde;
+  if (f.hasta) subTitle += "  Hasta: " + f.hasta;
+  doc.text(subTitle, 36, 20);
+  doc.text("Generado: " + new Date().toLocaleDateString("es-MX"), pageW - 14, 12, { align: "right" });
+
+  var parseFecha = function(v) {
+    if (v.fecha) return new Date(v.fecha);
+    if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
+    if (v.createdAt) return new Date(v.createdAt);
+    return new Date(0);
+  };
+  var fmtMXN = function(n) { return "$" + (parseFloat(n)||0).toLocaleString("es-MX",{minimumFractionDigits:2}); };
+
+  var rows = ventas.map(function(v, i) {
+    var piezas = v.items ? v.items.map(function(it){return it.pedido||it.descripcion||"";}).filter(Boolean).join(", ") : (v.descripcion||"-");
+    var sin    = v.siniestros || (v.items ? v.items.map(function(it){return it.numSiniestro||"";}).filter(Boolean).join("|") : "") || "-";
+    return [
+      String(i+1),
+      v.notaId || v.notaNumero || "-",
+      parseFecha(v).toLocaleDateString("es-MX"),
+      v.clienteNombre || v.cliente || "-",
+      piezas.length > 50 ? piezas.slice(0,48)+"..." : piezas,
+      sin,
+      v.vendedor || "-",
+      fmtMXN(v.subtotal || 0),
+      fmtMXN(v.ivaTotal || 0),
+      fmtMXN(v.ajusteTotal || 0),
+      fmtMXN(v.total || 0)
+    ];
+  });
+
+  var totalMonto = ventas.reduce(function(s,v){return s+(parseFloat(v.total)||0);},0);
+  rows.push(["","","","","","","TOTAL","","","",fmtMXN(totalMonto)]);
+
+  doc.autoTable({
+    head: [["#","Nota","Fecha","Cliente","Piezas","Siniestro","Vendedor","Subtotal","IVA","Ajuste","Total"]],
+    body: rows,
+    startY: 32,
+    margin: { left: 8, right: 8 },
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: azul, textColor: blanco, fontStyle: "bold" },
+    bodyStyles: { textColor: negro },
+    alternateRowStyles: { fillColor: [241, 246, 252] },
+    didParseCell: function(data) {
+      if (data.row.index === rows.length - 1) {
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fillColor = [210, 228, 245];
+      }
+    },
+    columnStyles: {
+      0:{cellWidth:8,halign:"center"},
+      1:{cellWidth:16},
+      2:{cellWidth:22},
+      7:{halign:"right",cellWidth:24},
+      8:{halign:"right",cellWidth:18},
+      9:{halign:"right",cellWidth:20},
+      10:{halign:"right",cellWidth:26,fontStyle:"bold"}
+    }
+  });
+
+  var vend = f.vendedor ? f.vendedor.replace(/[^a-zA-Z0-9]/g,"_") : "todos";
+  doc.save("reporte_vendedor_" + vend + ".pdf");
+};
+
+window.exportarVendedorExcel = function() {
+  const ventas = window._repVendData;
+  const f = window._repVendFiltro;
+  if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
+  if (typeof XLSX === "undefined") return toast("XLSX no disponible", "error");
+
+  const parseFecha = v => {
+    if (v.fecha) return new Date(v.fecha);
+    if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
+    if (v.createdAt) return new Date(v.createdAt);
+    return new Date(0);
+  };
+
+  const rows = ventas.map((v, i) => {
+    const piezas = v.items ? v.items.map(it => it.pedido || it.descripcion || "").filter(Boolean).join(", ") : (v.descripcion || "");
+    const sin    = v.siniestros || (v.items ? v.items.map(it => it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
+    return {
+      "#": i + 1,
+      "Nota": v.notaId || v.notaNumero || "",
+      "Fecha": parseFecha(v).toLocaleDateString("es-MX"),
+      "Cliente": v.clienteNombre || v.cliente || "",
+      "Piezas": piezas,
+      "Siniestro": sin,
+      "Vendedor": v.vendedor || "",
+      "Subtotal": parseFloat(v.subtotal) || 0,
+      "IVA": parseFloat(v.ivaTotal) || 0,
+      "Ajuste": parseFloat(v.ajusteTotal) || 0,
+      "Total": parseFloat(v.total) || 0
+    };
+  });
+
+  const totalMonto = ventas.reduce((s,v) => s + (parseFloat(v.total)||0), 0);
+  rows.push({ "#":"", "Nota":"", "Fecha":"", "Cliente":"", "Piezas":"", "Siniestro":"", "Vendedor":"TOTAL", "Subtotal":"", "IVA":"", "Ajuste":"", "Total": totalMonto });
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = [{wch:5},{wch:10},{wch:14},{wch:25},{wch:40},{wch:20},{wch:18},{wch:12},{wch:10},{wch:10},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Reporte Vendedor");
+  const vend = f.vendedor ? f.vendedor.replace(/[^a-zA-Z0-9]/g,"_") : "todos";
+  XLSX.writeFile(wb, "reporte_vendedor_" + vend + ".xlsx");
+};
 
 
 // ═══════════════════════════════════════
