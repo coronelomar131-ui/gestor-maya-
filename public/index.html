@@ -6307,7 +6307,7 @@ window.generarNotaPDF = async function(venta) {
     doc.text('NOTA DE VENTA', mg + 38, 19);
     doc.setTextColor(tealCl[0], tealCl[1], tealCl[2]);
     doc.setFontSize(8); doc.setFont(undefined, 'normal');
-    doc.text('maya-autopartes.myshopify.com  -  CDMX, Mexico', mg + 38, 27);
+    doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg + 38, 27);
     // fecha y numero
     var fechaStr = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
@@ -6428,7 +6428,7 @@ window.generarNotaPDF = async function(venta) {
     doc.setTextColor(150,185,200); doc.setFontSize(6.5); doc.setFont(undefined,'normal');
     doc.text('maya-autopartes.myshopify.com',mg,pageH-6);
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
-    doc.text('Maya Autopartes  -  La parte que necesitas.  -  Ciudad de Mexico',pageW/2,pageH-6,{align:'center'});
+    doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México',pageW/2,pageH-6,{align:'center'});
     doc.save((venta.notaId||'nota')+'.pdf');
     window.toast('Nota PDF generada','success');
   } catch(err) {
