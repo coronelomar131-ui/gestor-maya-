@@ -5393,7 +5393,6 @@ function updateReportes() {
 // ═══════════════════════════════════════
 
 function cargarVendedoresSelect() {
-function cargarVendedoresSelect() {
   const sel = document.getElementById("rep-vend-select");
   if (!sel) return;
   const set = new Set();
@@ -6560,7 +6559,7 @@ function actualizarResumenFinanzas(pagos) {
 
 let notasFacturasActuales = [];
 
-async function renderNotasFacturas(ventas) {
+window.renderNotasFacturas = async function(ventas) {
   notasFacturasActuales = ventas || [];
   const body = document.getElementById('notasfacturas-body');
 
