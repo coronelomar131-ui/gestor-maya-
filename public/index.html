@@ -5725,22 +5725,54 @@ window.exportarVendedorPDF = function() {
   // ══════════════════════════════
   var tableY = y1 + 16;
 
-  var rows = ventas.map(function(v, i) {
-    var piezas = v.items ? v.items.map(function(it){return it.pedido||it.descripcion||"";}).filter(Boolean).join(", ") : (v.descripcion||"-");
-    var sin    = v.siniestros || (v.items ? v.items.map(function(it){return it.numSiniestro||"";}).filter(Boolean).join(" | ") : "") || "-";
-    return [
-      String(i+1),
-      v.notaId || v.notaNumero || "-",
-      parseFecha(v).toLocaleDateString("es-MX"),
-      v.clienteNombre || v.cliente || "-",
-      piezas.length > 45 ? piezas.slice(0,43)+"…" : (piezas||"-"),
-      sin.length > 25 ? sin.slice(0,23)+"…" : sin,
-      v.vendedor || "-",
-      fmtMXN(v.subtotal||0),
-      fmtMXN(v.ivaTotal||0),
-      fmtMXN(v.ajusteTotal||0),
-      fmtMXN(v.total||0)
-    ];
+  // Agrupar ventas por vendedor
+  var grupos = {};
+  var ordenVend = [];
+  ventas.forEach(function(v) {
+    var vnd = v.vendedor || "Sin asignar";
+    if (!grupos[vnd]) { grupos[vnd] = []; ordenVend.push(vnd); }
+    grupos[vnd].push(v);
+  });
+
+  // Construir filas con separadores por vendedor
+  var rows = [];
+  var rowMetas = []; // guarda índice → tipo ("header"|"data"|"subtotal")
+  var contadorGlobal = 0;
+
+  ordenVend.forEach(function(vnd) {
+    var gVentas = grupos[vnd];
+    var gTotal    = gVentas.reduce(function(s,v){return s+fmt(v.total||0);},0);
+    var gSubtotal = gVentas.reduce(function(s,v){return s+fmt(v.subtotal||0);},0);
+    var gIVA      = gVentas.reduce(function(s,v){return s+fmt(v.ivaTotal||0);},0);
+    var gAjuste   = gVentas.reduce(function(s,v){return s+fmt(v.ajusteTotal||0);},0);
+
+    // Fila encabezado del vendedor
+    rows.push(["VENDEDOR: " + vnd.toUpperCase() + "   (" + gVentas.length + " venta" + (gVentas.length!==1?"s":"") + ")", "", "", "", "", "", "", "", "", "", ""]);
+    rowMetas.push("header");
+
+    gVentas.forEach(function(v) {
+      contadorGlobal++;
+      var piezas = v.items ? v.items.map(function(it){return it.pedido||it.descripcion||"";}).filter(Boolean).join(", ") : (v.descripcion||"-");
+      var sin    = v.siniestros || (v.items ? v.items.map(function(it){return it.numSiniestro||"";}).filter(Boolean).join(" | ") : "") || "-";
+      rows.push([
+        String(contadorGlobal),
+        v.notaId || v.notaNumero || "-",
+        parseFecha(v).toLocaleDateString("es-MX"),
+        v.clienteNombre || v.cliente || "-",
+        piezas.length > 45 ? piezas.slice(0,43)+"…" : (piezas||"-"),
+        sin.length > 25 ? sin.slice(0,23)+"…" : sin,
+        "",
+        fmtMXN(v.subtotal||0),
+        fmtMXN(v.ivaTotal||0),
+        fmtMXN(v.ajusteTotal||0),
+        fmtMXN(v.total||0)
+      ]);
+      rowMetas.push("data");
+    });
+
+    // Fila subtotal del vendedor
+    rows.push(["", "", "", "", "", "Subtotal " + vnd, "", fmtMXN(gSubtotal), fmtMXN(gIVA), fmtMXN(gAjuste), fmtMXN(gTotal)]);
+    rowMetas.push("subtotal");
   });
 
   doc.autoTable({
@@ -5751,9 +5783,9 @@ window.exportarVendedorPDF = function() {
     styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2.8 },
     headStyles: { fillColor: C_AZUL, textColor: C_BLANCO, fontStyle: "bold", fontSize: 8 },
     bodyStyles: { textColor: [15,23,42] },
-    alternateRowStyles: { fillColor: [245,249,252] },
+    alternateRowStyles: false,
     footStyles: { fillColor: C_AZUL, textColor: C_BLANCO, fontStyle: "bold" },
-    foot: [["","","","","","","TOTALES", fmtMXN(totalSubtotal), fmtMXN(totalIVA), fmtMXN(totalAjuste), fmtMXN(totalMonto)]],
+    foot: [["","","","","","","GRAN TOTAL", fmtMXN(totalSubtotal), fmtMXN(totalIVA), fmtMXN(totalAjuste), fmtMXN(totalMonto)]],
     showFoot: "lastPage",
     columnStyles: {
       0:  { cellWidth: 7,  halign: "center" },
@@ -5762,14 +5794,30 @@ window.exportarVendedorPDF = function() {
       3:  { cellWidth: 32 },
       4:  { cellWidth: 38 },
       5:  { cellWidth: 22 },
-      6:  { cellWidth: 20 },
+      6:  { cellWidth: 18 },
       7:  { cellWidth: 22, halign: "right" },
-      8:  { cellWidth: 18, halign: "right" },
-      9:  { cellWidth: 18, halign: "right" },
-      10: { cellWidth: 24, halign: "right", fontStyle: "bold" }
+      8:  { cellWidth: 16, halign: "right" },
+      9:  { cellWidth: 16, halign: "right" },
+      10: { cellWidth: 22, halign: "right", fontStyle: "bold" }
+    },
+    didParseCell: function(data) {
+      if (data.section !== "body") return;
+      var tipo = rowMetas[data.row.index];
+      if (tipo === "header") {
+        data.cell.styles.fillColor = C_TEAL;
+        data.cell.styles.textColor = C_BLANCO;
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fontSize  = 8;
+        if (data.column.index === 0) data.cell.colSpan = 11;
+      } else if (tipo === "subtotal") {
+        data.cell.styles.fillColor = [210, 228, 245];
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.textColor = C_AZUL;
+      } else {
+        data.cell.styles.fillColor = data.row.index % 2 === 0 ? C_BLANCO : [245,249,252];
+      }
     },
     didDrawPage: function(data) {
-      // Footer por página
       var pn = doc.internal.getCurrentPageInfo().pageNumber;
       var total = doc.internal.getNumberOfPages();
       doc.setFontSize(7); doc.setTextColor(C_GRIS[0], C_GRIS[1], C_GRIS[2]);
@@ -5875,32 +5923,57 @@ window.exportarVendedorExcel = function() {
   // ════════════════════════════
   // HOJA 2 — DETALLE
   // ════════════════════════════
-  const header = ["#","Nota","Fecha","Cliente","Piezas","Siniestro","Vendedor","Subtotal","IVA","Ajuste","Total"];
-  const detalle = ventas.map((v, i) => {
-    const piezas = v.items ? v.items.map(it => it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
-    const sin    = v.siniestros || (v.items ? v.items.map(it => it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
-    return [
-      i+1,
-      v.notaId || v.notaNumero || "",
-      parseFecha(v).toLocaleDateString("es-MX"),
-      v.clienteNombre || v.cliente || "",
-      piezas,
-      sin,
-      v.vendedor || "",
-      fmt(v.subtotal),
-      fmt(v.ivaTotal),
-      fmt(v.ajusteTotal),
-      fmt(v.total)
-    ];
+  // Agrupar por vendedor para el Excel
+  const gruposXls = {};
+  const ordenXls = [];
+  ventas.forEach(v => {
+    const vnd = v.vendedor || "Sin asignar";
+    if (!gruposXls[vnd]) { gruposXls[vnd] = []; ordenXls.push(vnd); }
+    gruposXls[vnd].push(v);
   });
 
-  // Fila de totales
-  detalle.push(["","","","","","","TOTAL", totalSubtotal, totalIVA, totalAjuste, totalMonto]);
+  const header = ["#","Nota","Fecha","Cliente","Piezas","Siniestro","Subtotal","IVA","Ajuste","Total"];
+  const detalleRows = [header];
+  let contXls = 0;
 
-  const wsDetalle = XLSX.utils.aoa_to_sheet([header, ...detalle]);
-  wsDetalle["!cols"] = [{wch:5},{wch:10},{wch:14},{wch:28},{wch:42},{wch:22},{wch:18},{wch:14},{wch:12},{wch:12},{wch:14}];
+  ordenXls.forEach(vnd => {
+    const gV = gruposXls[vnd];
+    const gSub = gV.reduce((s,v)=>s+fmt(v.subtotal),0);
+    const gIVA = gV.reduce((s,v)=>s+fmt(v.ivaTotal),0);
+    const gAjt = gV.reduce((s,v)=>s+fmt(v.ajusteTotal),0);
+    const gTot = gV.reduce((s,v)=>s+fmt(v.total),0);
 
-  // Congelar primera fila del detalle
+    // Fila encabezado vendedor
+    detalleRows.push(["▶ VENDEDOR: " + vnd.toUpperCase() + "  (" + gV.length + " ventas)", "", "", "", "", "", "", "", "", ""]);
+
+    gV.forEach(v => {
+      contXls++;
+      const piezas = v.items ? v.items.map(it=>it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
+      const sin    = v.siniestros || (v.items ? v.items.map(it=>it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
+      detalleRows.push([
+        contXls,
+        v.notaId || v.notaNumero || "",
+        parseFecha(v).toLocaleDateString("es-MX"),
+        v.clienteNombre || v.cliente || "",
+        piezas,
+        sin,
+        fmt(v.subtotal),
+        fmt(v.ivaTotal),
+        fmt(v.ajusteTotal),
+        fmt(v.total)
+      ]);
+    });
+
+    // Subtotal vendedor
+    detalleRows.push(["","","","","","Subtotal " + vnd, gSub, gIVA, gAjt, gTot]);
+    detalleRows.push([""]); // espacio
+  });
+
+  // Gran total
+  detalleRows.push(["","","","","","GRAN TOTAL", totalSubtotal, totalIVA, totalAjuste, totalMonto]);
+
+  const wsDetalle = XLSX.utils.aoa_to_sheet(detalleRows);
+  wsDetalle["!cols"] = [{wch:5},{wch:10},{wch:14},{wch:28},{wch:42},{wch:22},{wch:14},{wch:12},{wch:12},{wch:14}];
   wsDetalle["!freeze"] = { xSplit: 0, ySplit: 1 };
 
   const wb = XLSX.utils.book_new();
