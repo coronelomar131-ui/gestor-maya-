@@ -5600,6 +5600,7 @@ window.exportarVendedorPDF = function() {
   var f = window._repVendFiltro;
   if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
 
+  var fmt = function(n) { return parseFloat(n) || 0; };
   var jsPDFLib = window.jspdf;
   var doc = new jsPDFLib.jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
   var pageW = doc.internal.pageSize.getWidth();
