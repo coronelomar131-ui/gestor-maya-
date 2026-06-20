@@ -884,6 +884,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <script>
@@ -5313,6 +5314,7 @@ window.showModule = function(name) {
 function updateReportes() {
   const data = window.data || {};
   const ventas = data.ventas || [];
+  updateChartVentasPorMes(ventas);
   cargarVendedoresSelect();
   // --- Top Clientes ---
   const cliMap = {};
@@ -5388,6 +5390,76 @@ function updateReportes() {
         </div>`).join("");
     }
   }
+}
+
+// ═══════════════════════════════════════
+// GRÁFICA VENTAS POR MES
+// ═══════════════════════════════════════
+let _ventasChart = null;
+function updateChartVentasPorMes(ventas) {
+  const canvas = document.getElementById("ventas-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+
+  // Últimos 12 meses
+  const now = new Date();
+  const meses = [];
+  const totales = [];
+  const MESES_ES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    meses.push(MESES_ES[d.getMonth()] + " " + String(d.getFullYear()).slice(2));
+    const y = d.getFullYear(), m = d.getMonth();
+    const total = (ventas || []).reduce((sum, v) => {
+      let fecha;
+      if (v.fecha) fecha = new Date(v.fecha);
+      else if (v.createdAt && v.createdAt.toDate) fecha = v.createdAt.toDate();
+      else if (v.createdAt) fecha = new Date(v.createdAt);
+      else return sum;
+      if (fecha.getFullYear() === y && fecha.getMonth() === m)
+        return sum + (parseFloat(v.total) || 0);
+      return sum;
+    }, 0);
+    totales.push(total);
+  }
+
+  if (_ventasChart) _ventasChart.destroy();
+  _ventasChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: meses,
+      datasets: [{
+        label: "Ventas ($)",
+        data: totales,
+        backgroundColor: "rgba(59,188,212,0.25)",
+        borderColor: "rgba(59,188,212,0.9)",
+        borderWidth: 2,
+        borderRadius: 5,
+        hoverBackgroundColor: "rgba(59,188,212,0.5)"
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => "$" + ctx.parsed.y.toLocaleString("es-MX", {minimumFractionDigits:0})
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: "#8a9bb0", font: { size: 11 } }, grid: { color: "rgba(255,255,255,0.05)" } },
+        y: {
+          ticks: {
+            color: "#8a9bb0", font: { size: 11 },
+            callback: v => "$" + (v >= 1000 ? (v/1000).toFixed(0)+"k" : v)
+          },
+          grid: { color: "rgba(255,255,255,0.05)" }
+        }
+      }
+    }
+  });
 }
 
 // ═══════════════════════════════════════
