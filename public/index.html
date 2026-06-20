@@ -5847,138 +5847,209 @@ window.exportarVendedorExcel = function() {
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
   };
-  const fmt = n => parseFloat(n) || 0;
+  const fmt  = n => parseFloat(n) || 0;
+  const fmtP = n => fmt(n).toLocaleString("es-MX", {minimumFractionDigits:2, maximumFractionDigits:2});
 
-  // ── Métricas ──
-  const totalMonto    = ventas.reduce((s,v) => s + fmt(v.total), 0);
-  const totalSubtotal = ventas.reduce((s,v) => s + fmt(v.subtotal), 0);
-  const totalIVA      = ventas.reduce((s,v) => s + fmt(v.ivaTotal), 0);
-  const totalAjuste   = ventas.reduce((s,v) => s + fmt(v.ajusteTotal), 0);
-  const promedio      = ventas.length ? totalMonto / ventas.length : 0;
-  const ventaMax      = Math.max(...ventas.map(v => fmt(v.total)));
+  const totalMonto    = ventas.reduce((s,v)=>s+fmt(v.total),0);
+  const totalSubtotal = ventas.reduce((s,v)=>s+fmt(v.subtotal),0);
+  const totalIVA      = ventas.reduce((s,v)=>s+fmt(v.ivaTotal),0);
+  const totalAjuste   = ventas.reduce((s,v)=>s+fmt(v.ajusteTotal),0);
+  const promedio      = ventas.length ? totalMonto/ventas.length : 0;
 
-  const clientesSet = new Set(ventas.map(v => v.clienteNombre || v.cliente || "?"));
-
-  // Top clientes
-  const cliMap = {};
-  ventas.forEach(v => { const n = v.clienteNombre||v.cliente||"?"; cliMap[n]=(cliMap[n]||0)+fmt(v.total); });
-  const topCli = Object.entries(cliMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-
-  // Top vendedores
-  const vendMap = {};
-  ventas.forEach(v => { const n = v.vendedor||"Sin asignar"; if(!vendMap[n]) vendMap[n]={n:0,t:0}; vendMap[n].n++; vendMap[n].t+=fmt(v.total); });
-  const topVend = Object.entries(vendMap).sort((a,b)=>b[1].t-a[1].t).slice(0,5);
-
-  // Ventas por mes
-  const mesMapa = {};
-  ventas.forEach(v => {
-    const d = parseFecha(v);
-    const k = MESES[d.getMonth()+1] + " " + d.getFullYear();
-    if (!mesMapa[k]) mesMapa[k] = { n:0, t:0 };
-    mesMapa[k].n++; mesMapa[k].t += fmt(v.total);
-  });
-
-  // Período texto
   let periodoStr = "";
-  if (f.desdeMes||f.desdeAno) periodoStr += "Desde: " + (f.desdeMes?MESES[f.desdeMes]+" ":"") + (f.desdeAno||"");
-  if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?" / ":"") + "Hasta: " + (f.hastaMes?MESES[f.hastaMes]+" ":"") + (f.hastaAno||"");
+  if (f.desdeMes||f.desdeAno) periodoStr += "Desde: "+(f.desdeMes?MESES[f.desdeMes]+" ":"")+(f.desdeAno||"");
+  if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?" / ")+"Hasta: "+(f.hastaMes?MESES[f.hastaMes]+" ":"")+(f.hastaAno||"");
   if (!periodoStr) periodoStr = "Período completo";
 
-  // ════════════════════════════
-  // HOJA 1 — RESUMEN
-  // ════════════════════════════
-  const resumenData = [
-    ["REPORTE DE VENTAS — MAYA AUTOPARTES"],
-    [""],
-    ["Vendedor:", f.vendedor || "Todos"],
-    ["Período:", periodoStr],
-    ["Generado:", new Date().toLocaleString("es-MX")],
-    [""],
-    ["── MÉTRICAS GENERALES ──"],
-    ["Total de ventas",       ventas.length],
-    ["Clientes únicos",       clientesSet.size],
-    ["Monto total",           totalMonto],
-    ["Subtotal acumulado",    totalSubtotal],
-    ["IVA acumulado",         totalIVA],
-    ["Ajuste acumulado",      totalAjuste],
-    ["Promedio por venta",    promedio],
-    ["Venta más alta",        ventaMax],
-    [""],
-    ["── TOP 5 CLIENTES ──"],
-    ["Cliente", "Total"],
-    ...topCli.map(([n,t]) => [n, t]),
-    [""],
-    ["── TOP 5 VENDEDORES ──"],
-    ["Vendedor", "# Ventas", "Total"],
-    ...topVend.map(([n,d]) => [n, d.n, d.t]),
-    [""],
-    ["── VENTAS POR MES ──"],
-    ["Mes", "# Ventas", "Total"],
-    ...Object.entries(mesMapa).map(([mes,d]) => [mes, d.n, d.t])
-  ];
+  // Estilos reutilizables
+  const S = {
+    titulo:    { font:{bold:true,sz:14,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"0D2A4A"}}, alignment:{horizontal:"left",vertical:"center"} },
+    info:      { font:{sz:10,color:{rgb:"334155"}}, fill:{fgColor:{rgb:"F1F5F9"}}, alignment:{horizontal:"left"} },
+    infoLabel: { font:{bold:true,sz:10,color:{rgb:"0D2A4A"}}, fill:{fgColor:{rgb:"F1F5F9"}}, alignment:{horizontal:"left"} },
+    colHead:   { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"1E8FA5"}}, alignment:{horizontal:"center",vertical:"center"}, border:{bottom:{style:"medium",color:{rgb:"0D2A4A"}}} },
+    vendHead:  { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"0D2A4A"}}, alignment:{horizontal:"left"} },
+    dataEven:  { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"FFFFFF"}}, alignment:{wrapText:true,vertical:"top"} },
+    dataOdd:   { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"F0F7FA"}}, alignment:{wrapText:true,vertical:"top"} },
+    numEven:   { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"FFFFFF"}}, numFmt:'"$"#,##0.00', alignment:{horizontal:"right"} },
+    numOdd:    { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"F0F7FA"}}, numFmt:'"$"#,##0.00', alignment:{horizontal:"right"} },
+    subHead:   { font:{bold:true,sz:9,color:{rgb:"0D2A4A"}}, fill:{fgColor:{rgb:"D2E4F5"}}, alignment:{horizontal:"right"} },
+    subLabel:  { font:{bold:true,sz:9,color:{rgb:"0D2A4A"}}, fill:{fgColor:{rgb:"D2E4F5"}}, alignment:{horizontal:"left"} },
+    grandHead: { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"10B981"}}, alignment:{horizontal:"right"} },
+    grandLbl:  { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"10B981"}}, alignment:{horizontal:"left"} },
+    kpiLabel:  { font:{bold:true,sz:9,color:{rgb:"475569"}}, fill:{fgColor:{rgb:"EFF6FF"}}, alignment:{horizontal:"left"} },
+    kpiVal:    { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"EFF6FF"}}, numFmt:'"$"#,##0.00', alignment:{horizontal:"right"} },
+    kpiValN:   { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"EFF6FF"}}, alignment:{horizontal:"right"} },
+    secHead:   { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"1E8FA5"}}, alignment:{horizontal:"left"} },
+    blank:     { fill:{fgColor:{rgb:"FFFFFF"}} }
+  };
 
-  const wsRes = XLSX.utils.aoa_to_sheet(resumenData);
-  wsRes["!cols"] = [{wch:28},{wch:18},{wch:16}];
+  // Helper: crear celda con estilo
+  const c = (v, s) => ({ v, s, t: typeof v === "number" ? "n" : "s" });
+  const cN = (v, s) => ({ v: fmt(v), s, t: "n" });
 
   // ════════════════════════════
-  // HOJA 2 — DETALLE
+  // HOJA 1 — VENTAS DETALLE (principal)
   // ════════════════════════════
-  // Agrupar por vendedor para el Excel
   const gruposXls = {};
-  const ordenXls = [];
+  const ordenXls  = [];
   ventas.forEach(v => {
     const vnd = v.vendedor || "Sin asignar";
-    if (!gruposXls[vnd]) { gruposXls[vnd] = []; ordenXls.push(vnd); }
+    if (!gruposXls[vnd]) { gruposXls[vnd]=[]; ordenXls.push(vnd); }
     gruposXls[vnd].push(v);
   });
 
-  const header = ["#","Nota","Fecha","Cliente","Piezas","Siniestro","Subtotal","IVA","Ajuste","Total"];
-  const detalleRows = [header];
+  const COLS = 10;
+  const ws = {};
+  const merges = [];
+  let r = 0;
+
+  const addRow = (cells) => {
+    cells.forEach((cell, ci) => {
+      const ref = XLSX.utils.encode_cell({r, c: ci});
+      ws[ref] = cell || c("", S.blank);
+    });
+    r++;
+  };
+  const addMerge = (r1,c1,r2,c2) => merges.push({s:{r:r1,c:c1},e:{r:r2,c:c2}});
+  const blank = (s) => c("", s||S.blank);
+
+  // Fila título
+  addRow([c("MAYA AUTOPARTES  •  REPORTE DE VENTAS", S.titulo), ...Array(COLS-1).fill(blank(S.titulo))]);
+  addMerge(r-1,0,r-1,COLS-1);
+
+  // Info header
+  addRow([c("Vendedor:", S.infoLabel), c(f.vendedor||"Todos los vendedores", S.info), blank(S.info), c("Período:", S.infoLabel), c(periodoStr, S.info), ...Array(COLS-5).fill(blank(S.info))]);
+  addRow([c("Generado:", S.infoLabel), c(new Date().toLocaleString("es-MX"), S.info), blank(S.info), c("Total ventas:", S.infoLabel), c(ventas.length, {...S.info, t:"n"}), blank(S.info), c("Monto total:", S.infoLabel), c("$"+fmtP(totalMonto), S.info), ...Array(COLS-8).fill(blank(S.info))]);
+  addRow([c("Promedio/venta:", S.infoLabel), c("$"+fmtP(promedio), S.info), blank(S.info), c("Subtotal:", S.infoLabel), c("$"+fmtP(totalSubtotal), S.info), blank(S.info), c("IVA:", S.infoLabel), c("$"+fmtP(totalIVA), S.info), ...Array(COLS-8).fill(blank(S.info))]);
+
+  // Fila vacía separadora
+  addRow(Array(COLS).fill(blank()));
+  r++; // espacio extra
+
   let contXls = 0;
 
   ordenXls.forEach(vnd => {
-    const gV = gruposXls[vnd];
+    const gV   = gruposXls[vnd];
     const gSub = gV.reduce((s,v)=>s+fmt(v.subtotal),0);
     const gIVA = gV.reduce((s,v)=>s+fmt(v.ivaTotal),0);
     const gAjt = gV.reduce((s,v)=>s+fmt(v.ajusteTotal),0);
     const gTot = gV.reduce((s,v)=>s+fmt(v.total),0);
 
-    // Fila encabezado vendedor
-    detalleRows.push(["▶ VENDEDOR: " + vnd.toUpperCase() + "  (" + gV.length + " ventas)", "", "", "", "", "", "", "", "", ""]);
+    // Encabezado vendedor
+    const vendLabel = "  " + vnd.toUpperCase() + "   —   " + gV.length + " venta" + (gV.length!==1?"s":"") + "   |   Total: $" + fmtP(gTot);
+    addRow([c(vendLabel, S.vendHead), ...Array(COLS-1).fill(blank(S.vendHead))]);
+    addMerge(r-1,0,r-1,COLS-1);
 
-    gV.forEach(v => {
+    // Encabezados columnas
+    addRow([
+      c("#",         S.colHead), c("Nota",     S.colHead), c("Fecha",    S.colHead),
+      c("Cliente",   S.colHead), c("Piezas",   S.colHead), c("Siniestro",S.colHead),
+      c("Subtotal",  S.colHead), c("IVA",      S.colHead), c("Ajuste",   S.colHead),
+      c("Total",     S.colHead)
+    ]);
+
+    gV.forEach((v, idx) => {
       contXls++;
       const piezas = v.items ? v.items.map(it=>it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
       const sin    = v.siniestros || (v.items ? v.items.map(it=>it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
-      detalleRows.push([
-        contXls,
-        v.notaId || v.notaNumero || "",
-        parseFecha(v).toLocaleDateString("es-MX"),
-        v.clienteNombre || v.cliente || "",
-        piezas,
-        sin,
-        fmt(v.subtotal),
-        fmt(v.ivaTotal),
-        fmt(v.ajusteTotal),
-        fmt(v.total)
+      const es     = idx%2===0 ? S.dataEven : S.dataOdd;
+      const en     = idx%2===0 ? S.numEven  : S.numOdd;
+      addRow([
+        c(contXls,                              {...es,alignment:{horizontal:"center"}}),
+        c(v.notaId||v.notaNumero||"",           es),
+        c(parseFecha(v).toLocaleDateString("es-MX"), es),
+        c(v.clienteNombre||v.cliente||"",       es),
+        c(piezas,                               es),
+        c(sin,                                  es),
+        cN(v.subtotal||0,                       en),
+        cN(v.ivaTotal||0,                       en),
+        cN(v.ajusteTotal||0,                    en),
+        cN(v.total||0,                          {...en,font:{bold:true,sz:9,color:{rgb:"0F172A"}}})
       ]);
     });
 
     // Subtotal vendedor
-    detalleRows.push(["","","","","","Subtotal " + vnd, gSub, gIVA, gAjt, gTot]);
-    detalleRows.push([""]); // espacio
+    addRow([
+      blank(S.subHead), blank(S.subHead), blank(S.subHead), blank(S.subHead),
+      c("Subtotal " + vnd, {...S.subLabel, alignment:{horizontal:"right"}}),
+      blank(S.subHead),
+      cN(gSub, S.subHead), cN(gIVA, S.subHead), cN(gAjt, S.subHead),
+      cN(gTot, {...S.subHead, font:{bold:true,sz:10,color:{rgb:"0D2A4A"}}})
+    ]);
+    addMerge(r-1,0,r-1,5);
+
+    addRow(Array(COLS).fill(blank())); // espacio
   });
 
   // Gran total
-  detalleRows.push(["","","","","","GRAN TOTAL", totalSubtotal, totalIVA, totalAjuste, totalMonto]);
+  addRow([
+    blank(S.grandLbl), blank(S.grandLbl), blank(S.grandLbl), blank(S.grandLbl),
+    c("GRAN TOTAL", {...S.grandLbl, alignment:{horizontal:"right"}}),
+    blank(S.grandLbl),
+    cN(totalSubtotal, S.grandHead), cN(totalIVA, S.grandHead), cN(totalAjuste, S.grandHead),
+    cN(totalMonto, {...S.grandHead, font:{bold:true,sz:11,color:{rgb:"FFFFFF"}}})
+  ]);
+  addMerge(r-1,0,r-1,5);
 
-  const wsDetalle = XLSX.utils.aoa_to_sheet(detalleRows);
-  wsDetalle["!cols"] = [{wch:5},{wch:10},{wch:14},{wch:28},{wch:42},{wch:22},{wch:14},{wch:12},{wch:12},{wch:14}];
-  wsDetalle["!freeze"] = { xSplit: 0, ySplit: 1 };
+  ws["!ref"]  = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:r,c:COLS-1}});
+  ws["!merges"] = merges;
+  ws["!cols"] = [{wch:5},{wch:11},{wch:14},{wch:30},{wch:44},{wch:22},{wch:14},{wch:12},{wch:12},{wch:14}];
+  ws["!rows"] = [{hpt:22}]; // fila título más alta
+  ws["!freeze"] = {xSplit:0, ySplit:5};
+
+  // ════════════════════════════
+  // HOJA 2 — RESUMEN EJECUTIVO
+  // ════════════════════════════
+  const cliMap = {};
+  ventas.forEach(v=>{const n=v.clienteNombre||v.cliente||"?"; cliMap[n]=(cliMap[n]||0)+fmt(v.total);});
+  const topCli = Object.entries(cliMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  const mesMapa = {};
+  ventas.forEach(v=>{
+    const d=parseFecha(v);
+    const k=MESES[d.getMonth()+1]+" "+d.getFullYear();
+    if(!mesMapa[k]) mesMapa[k]={n:0,t:0};
+    mesMapa[k].n++; mesMapa[k].t+=fmt(v.total);
+  });
+
+  const ws2 = {};
+  const m2  = [];
+  let r2 = 0;
+  const add2 = (cells) => { cells.forEach((cell,ci)=>{ ws2[XLSX.utils.encode_cell({r:r2,c:ci})] = cell||c("",S.blank); }); r2++; };
+  const mg2  = (r1,c1,r2e,c2) => m2.push({s:{r:r1,c:c1},e:{r:r2e,c:c2}});
+
+  add2([c("RESUMEN EJECUTIVO  •  MAYA AUTOPARTES", S.titulo), ...Array(2).fill(blank(S.titulo))]);
+  mg2(0,0,0,2);
+  add2([c("Vendedor:",S.infoLabel),c(f.vendedor||"Todos",S.info),blank(S.info)]);
+  add2([c("Período:",S.infoLabel),c(periodoStr,S.info),blank(S.info)]);
+  add2([c("Generado:",S.infoLabel),c(new Date().toLocaleString("es-MX"),S.info),blank(S.info)]);
+  r2++;
+
+  add2([c("MÉTRICAS", S.secHead), ...Array(2).fill(blank(S.secHead))]); mg2(r2-1,0,r2-1,2);
+  const kpis = [["Total ventas",ventas.length,false],["Monto total",totalMonto,true],["Subtotal",totalSubtotal,true],["IVA acumulado",totalIVA,true],["Ajuste",totalAjuste,true],["Promedio/venta",promedio,true]];
+  kpis.forEach(([l,v,money])=>add2([c(l,S.kpiLabel), money?cN(v,S.kpiVal):c(v,{...S.kpiValN,t:"n"}), blank(S.kpiLabel)]));
+  r2++;
+
+  add2([c("TOP CLIENTES", S.secHead), c("Total", {...S.secHead,alignment:{horizontal:"right"}}), blank(S.secHead)]);
+  topCli.forEach(([n,t])=>add2([c(n,S.kpiLabel), cN(t,S.kpiVal), blank(S.kpiLabel)]));
+  r2++;
+
+  add2([c("VENTAS POR MES", S.secHead), c("# Ventas",{...S.secHead,alignment:{horizontal:"right"}}), c("Total",{...S.secHead,alignment:{horizontal:"right"}})]);
+  Object.entries(mesMapa).forEach(([mes,d])=>add2([c(mes,S.kpiLabel), c(d.n,{...S.kpiValN,t:"n"}), cN(d.t,S.kpiVal)]));
+
+  add2([c("VENDEDORES", S.secHead), c("# Ventas",{...S.secHead,alignment:{horizontal:"right"}}), c("Total",{...S.secHead,alignment:{horizontal:"right"}})]);
+  ordenXls.forEach(vnd=>{
+    const gV=gruposXls[vnd]; const gT=gV.reduce((s,v)=>s+fmt(v.total),0);
+    add2([c(vnd,S.kpiLabel), c(gV.length,{...S.kpiValN,t:"n"}), cN(gT,S.kpiVal)]);
+  });
+
+  ws2["!ref"]   = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:r2,c:2}});
+  ws2["!merges"]= m2;
+  ws2["!cols"]  = [{wch:26},{wch:16},{wch:16}];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, wsRes,     "Resumen");
-  XLSX.utils.book_append_sheet(wb, wsDetalle, "Ventas Detalle");
+  XLSX.utils.book_append_sheet(wb, ws,  "Ventas Detalle");
+  XLSX.utils.book_append_sheet(wb, ws2, "Resumen");
 
   const vend = f.vendedor ? f.vendedor.replace(/[^a-zA-Z0-9]/g,"_") : "todos";
   XLSX.writeFile(wb, "reporte_ventas_" + vend + "_" + new Date().toISOString().slice(0,10) + ".xlsx");
