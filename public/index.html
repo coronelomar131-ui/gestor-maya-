@@ -5858,7 +5858,7 @@ window.exportarVendedorExcel = function() {
 
   let periodoStr = "";
   if (f.desdeMes||f.desdeAno) periodoStr += "Desde: "+(f.desdeMes?MESES[f.desdeMes]+" ":"")+(f.desdeAno||"");
-  if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?" / ")+"Hasta: "+(f.hastaMes?MESES[f.hastaMes]+" ":"")+(f.hastaAno||"");
+  if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?" / ":"")+"Hasta: "+(f.hastaMes?MESES[f.hastaMes]+" ":"")+(f.hastaAno||"");
   if (!periodoStr) periodoStr = "Período completo";
 
   // Estilos reutilizables
