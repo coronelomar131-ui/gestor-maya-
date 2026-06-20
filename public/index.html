@@ -7198,6 +7198,227 @@ window.descargarFactura = function(base64, nombreArchivo) {
   }
 };
 
+// ═══════════════════════════════════════
+// CHATBOT GEMINI
+// ═══════════════════════════════════════
+(function() {
+  // ── HTML del widget ──
+  const css = `
+#maya-chat-btn {
+  position:fixed;bottom:24px;right:24px;width:54px;height:54px;border-radius:50%;
+  background:linear-gradient(135deg,#1a3a54,#3BBCD4);border:none;cursor:pointer;
+  box-shadow:0 4px 18px rgba(59,188,212,0.4);z-index:9999;font-size:24px;
+  display:flex;align-items:center;justify-content:center;transition:transform .2s;
+}
+#maya-chat-btn:hover{transform:scale(1.1);}
+#maya-chat-box {
+  position:fixed;bottom:90px;right:24px;width:360px;max-height:520px;
+  background:#0d1f2d;border:1px solid rgba(59,188,212,0.3);border-radius:16px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.5);z-index:9998;display:none;flex-direction:column;overflow:hidden;
+}
+#maya-chat-box.open{display:flex;}
+#maya-chat-header {
+  background:linear-gradient(135deg,#1a3a54,#0d2b3e);padding:14px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(59,188,212,0.2);
+}
+#maya-chat-header span{font-weight:700;font-size:14px;color:#3BBCD4;}
+#maya-chat-header button{background:none;border:none;color:#8a9bb0;cursor:pointer;font-size:18px;padding:0;}
+#maya-chat-key-bar {
+  padding:10px 14px;background:rgba(59,188,212,0.05);
+  border-bottom:1px solid rgba(59,188,212,0.15);display:flex;gap:8px;align-items:center;
+}
+#maya-chat-key-bar input {
+  flex:1;background:#0a1929;border:1px solid rgba(59,188,212,0.3);border-radius:6px;
+  padding:6px 10px;color:#fff;font-size:12px;outline:none;
+}
+#maya-chat-key-bar button {
+  background:#1a3a54;border:1px solid rgba(59,188,212,0.4);color:#3BBCD4;
+  border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;
+}
+#maya-chat-msgs {
+  flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;
+  scrollbar-width:thin;scrollbar-color:#1a3a54 transparent;
+}
+.mchat-msg { display:flex;gap:8px;align-items:flex-start;max-width:100%; }
+.mchat-msg.user { flex-direction:row-reverse; }
+.mchat-bubble {
+  padding:9px 13px;border-radius:12px;font-size:13px;line-height:1.5;
+  max-width:80%;white-space:pre-wrap;word-break:break-word;
+}
+.mchat-msg.bot .mchat-bubble { background:#1a3a54;color:#e2eaf2;border-radius:4px 12px 12px 12px; }
+.mchat-msg.user .mchat-bubble { background:#3BBCD4;color:#0a1929;border-radius:12px 4px 12px 12px; }
+.mchat-avatar { width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:2px; }
+.mchat-msg.bot .mchat-avatar { background:#1a3a54; }
+.mchat-msg.user .mchat-avatar { background:#3BBCD4; }
+#maya-chat-input-area {
+  padding:12px 14px;border-top:1px solid rgba(59,188,212,0.2);display:flex;gap:8px;
+}
+#maya-chat-input {
+  flex:1;background:#0a1929;border:1px solid rgba(59,188,212,0.3);border-radius:8px;
+  padding:8px 12px;color:#fff;font-size:13px;outline:none;resize:none;height:38px;
+  font-family:inherit;
+}
+#maya-chat-input:focus{border-color:#3BBCD4;}
+#maya-chat-send {
+  background:#3BBCD4;border:none;border-radius:8px;padding:0 14px;cursor:pointer;
+  color:#0a1929;font-size:18px;font-weight:700;transition:background .2s;
+}
+#maya-chat-send:hover{background:#2ea8be;}
+#maya-chat-send:disabled{background:#374151;cursor:not-allowed;}
+`;
+  const styleEl = document.createElement("style");
+  styleEl.textContent = css;
+  document.head.appendChild(styleEl);
+
+  document.body.insertAdjacentHTML("beforeend", `
+<button id="maya-chat-btn" title="Asistente Maya IA">🤖</button>
+<div id="maya-chat-box">
+  <div id="maya-chat-header">
+    <span>🤖 Maya IA</span>
+    <button onclick="document.getElementById('maya-chat-box').classList.remove('open')">×</button>
+  </div>
+  <div id="maya-chat-key-bar">
+    <input id="maya-gemini-key" type="password" placeholder="Pega tu API Key de Gemini..." />
+    <button onclick="guardarKeyGemini()">Guardar</button>
+  </div>
+  <div id="maya-chat-msgs"></div>
+  <div id="maya-chat-input-area">
+    <textarea id="maya-chat-input" placeholder="Pregúntame algo sobre las ventas..." rows="1"></textarea>
+    <button id="maya-chat-send" onclick="enviarMensajeGemini()">➤</button>
+  </div>
+</div>
+`);
+
+  // ── Toggle ──
+  document.getElementById("maya-chat-btn").onclick = () => {
+    const box = document.getElementById("maya-chat-box");
+    box.classList.toggle("open");
+    if (box.classList.contains("open")) {
+      const key = localStorage.getItem("gemini_key") || "";
+      document.getElementById("maya-gemini-key").value = key ? "••••••••••••••••" : "";
+      if (!document.getElementById("maya-chat-msgs").children.length) {
+        agregarMensaje("bot", "¡Hola! Soy Maya IA 👋 Puedo ayudarte con información de ventas, clientes y reportes. ¿En qué te ayudo?");
+      }
+      setTimeout(() => document.getElementById("maya-chat-input").focus(), 100);
+    }
+  };
+
+  // ── Enter para enviar ──
+  document.getElementById("maya-chat-input").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarMensajeGemini(); }
+  });
+
+  window.guardarKeyGemini = function() {
+    const val = document.getElementById("maya-gemini-key").value.trim();
+    if (val && val !== "••••••••••••••••") {
+      localStorage.setItem("gemini_key", val);
+      document.getElementById("maya-gemini-key").value = "••••••••••••••••";
+      toast("API Key guardada ✓", "success");
+    }
+  };
+
+  function agregarMensaje(rol, texto) {
+    const msgs = document.getElementById("maya-chat-msgs");
+    const div = document.createElement("div");
+    div.className = "mchat-msg " + rol;
+    div.innerHTML = `<div class="mchat-avatar">${rol==="bot"?"🤖":"👤"}</div><div class="mchat-bubble">${texto}</div>`;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+    return div;
+  }
+
+  function getContexto() {
+    const d = window.data || {};
+    const now = new Date();
+    const mes = now.getMonth(); const ano = now.getFullYear();
+    const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+    const ventasMes = (d.ventas||[]).filter(v => {
+      const f = v.fecha ? new Date(v.fecha) : (v.createdAt?.toDate ? v.createdAt.toDate() : null);
+      return f && f.getMonth()===mes && f.getFullYear()===ano;
+    });
+    const totalMes = ventasMes.reduce((s,v)=>s+(parseFloat(v.total)||0),0);
+
+    const ventasPorVendedor = {};
+    (d.ventas||[]).forEach(v=>{
+      const vend = v.vendedor||"Sin asignar";
+      if (!ventasPorVendedor[vend]) ventasPorVendedor[vend]={n:0,total:0};
+      ventasPorVendedor[vend].n++;
+      ventasPorVendedor[vend].total+=parseFloat(v.total)||0;
+    });
+    const topVend = Object.entries(ventasPorVendedor).sort((a,b)=>b[1].total-a[1].total).slice(0,5)
+      .map(([n,v])=>`${n}: ${v.n} ventas, $${v.total.toLocaleString("es-MX")}`).join("\n");
+
+    const topCli = Object.entries(
+      (d.ventas||[]).reduce((acc,v)=>{
+        const n=v.clienteNombre||"Sin nombre";
+        if(!acc[n]) acc[n]=0; acc[n]+=parseFloat(v.total)||0; return acc;
+      },{})).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n,t])=>`${n}: $${t.toLocaleString("es-MX")}`).join("\n");
+
+    return `Eres el asistente de Maya Autopartes, una empresa de autopartes en CDMX.
+Fecha actual: ${now.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+
+RESUMEN DEL NEGOCIO:
+- Total ventas históricas: ${(d.ventas||[]).length} ventas
+- Ventas de ${MESES[mes]} ${ano}: ${ventasMes.length} ventas por $${totalMes.toLocaleString("es-MX")}
+- Clientes registrados: ${(d.clientes||[]).length}
+- Productos en catálogo: ${(d.productos||[]).length}
+- Cotizaciones abiertas: ${(d.cotizaciones||[]).length}
+- Entregas pendientes: ${(d.entregas||[]).filter(e=>e.estatus==="pending").length}
+
+TOP 5 VENDEDORES (histórico):
+${topVend||"Sin datos"}
+
+TOP 5 CLIENTES (histórico):
+${topCli||"Sin datos"}
+
+Responde siempre en español, de forma concisa y útil. Si no tienes el dato exacto, dilo claramente.`;
+  }
+
+  window.enviarMensajeGemini = async function() {
+    const input = document.getElementById("maya-chat-input");
+    const send = document.getElementById("maya-chat-send");
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    const key = localStorage.getItem("gemini_key");
+    if (!key) {
+      agregarMensaje("bot", "⚠️ Primero pega tu API Key de Gemini arriba y presiona Guardar.");
+      return;
+    }
+
+    agregarMensaje("user", texto);
+    input.value = "";
+    send.disabled = true;
+
+    const loadingDiv = agregarMensaje("bot", "⏳ Pensando...");
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: getContexto() + "\n\nPregunta del usuario: " + texto }]
+            }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 512 }
+          })
+        }
+      );
+      const json = await res.json();
+      const respuesta = json?.candidates?.[0]?.content?.parts?.[0]?.text || "No pude obtener respuesta.";
+      loadingDiv.querySelector(".mchat-bubble").textContent = respuesta;
+    } catch(e) {
+      loadingDiv.querySelector(".mchat-bubble").textContent = "❌ Error al conectar con Gemini: " + e.message;
+    }
+    send.disabled = false;
+    document.getElementById("maya-chat-msgs").scrollTop = 99999;
+  };
+})();
+
 </script>
 
 </body>
