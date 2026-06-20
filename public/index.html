@@ -5596,35 +5596,23 @@ window.filtrarVentasVendedor = function() {
 };
 
 window.exportarVendedorPDF = function() {
-  const ventas = window._repVendData;
-  const f = window._repVendFiltro;
+  var ventas = window._repVendData;
+  var f = window._repVendFiltro;
   if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
 
   var jsPDFLib = window.jspdf;
   var doc = new jsPDFLib.jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
   var pageW = doc.internal.pageSize.getWidth();
-  var azul = [26, 58, 84]; var blanco = [255, 255, 255]; var teal = [30, 143, 165];
-  var negro = [15, 23, 42]; var gris = [100, 116, 139];
+  var pageH = doc.internal.pageSize.getHeight();
 
-  // Header
-  doc.setFillColor(azul[0], azul[1], azul[2]);
-  doc.rect(0, 0, pageW, 28, "F");
-  try {
-    var logoImg = document.querySelector(".sidebar-logo img");
-    if (logoImg && logoImg.src) {
-      doc.setFillColor(0,0,0); doc.roundedRect(8, 3, 22, 20, 2, 2, "F");
-      doc.addImage(logoImg.src, "JPEG", 9, 4, 20, 18);
-    }
-  } catch(e2) {}
-  doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-  doc.setFontSize(16); doc.setFont(undefined, "bold");
-  doc.text("REPORTE DE VENTAS POR VENDEDOR", 36, 12);
-  doc.setFontSize(9); doc.setFont(undefined, "normal");
-  var subTitle = (f.vendedor || "Todos los vendedores");
-  var meses = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-  if (f.desdeMes || f.desdeAno) subTitle += "  |  Desde: " + (f.desdeMes ? meses[f.desdeMes] : "") + " " + (f.desdeAno || "");
-  if (f.hastaMes || f.hastaAno) subTitle += "  Hasta: " + (f.hastaMes ? meses[f.hastaMes] : "") + " " + (f.hastaAno || "");
-  doc.text("Generado: " + new Date().toLocaleDateString("es-MX"), pageW - 14, 12, { align: "right" });
+  // Paleta
+  var C_AZUL   = [13, 42, 74];
+  var C_TEAL   = [30, 143, 165];
+  var C_BLANCO = [255, 255, 255];
+  var C_GRIS   = [100, 116, 139];
+  var C_VERDE  = [16, 185, 129];
+  var C_FONDO  = [245, 249, 252];
+  var C_BORDE  = [214, 228, 240];
 
   var parseFecha = function(v) {
     if (v.fecha) return new Date(v.fecha);
@@ -5632,57 +5620,170 @@ window.exportarVendedorPDF = function() {
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
   };
-  var fmtMXN = function(n) { return "$" + (parseFloat(n)||0).toLocaleString("es-MX",{minimumFractionDigits:2}); };
+  var fmtMXN = function(n) { return "$" + (parseFloat(n)||0).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var MESES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  // ── Métricas ──
+  var totalMonto    = ventas.reduce(function(s,v){return s+(parseFloat(v.total)||0);},0);
+  var totalSubtotal = ventas.reduce(function(s,v){return s+(parseFloat(v.subtotal)||0);},0);
+  var totalIVA      = ventas.reduce(function(s,v){return s+(parseFloat(v.ivaTotal)||0);},0);
+  var totalAjuste   = ventas.reduce(function(s,v){return s+(parseFloat(v.ajusteTotal)||0);},0);
+  var promedio      = ventas.length ? totalMonto / ventas.length : 0;
+  var ventaMax      = ventas.reduce(function(mx,v){return (parseFloat(v.total)||0)>mx?parseFloat(v.total):mx;},0);
+
+  // Clientes únicos
+  var clientesSet = {};
+  ventas.forEach(function(v){ clientesSet[v.clienteNombre||v.cliente||"?"] = true; });
+  var numClientes = Object.keys(clientesSet).length;
+
+  // Top cliente
+  var cliMap = {};
+  ventas.forEach(function(v){ var n=v.clienteNombre||v.cliente||"?"; cliMap[n]=(cliMap[n]||0)+(parseFloat(v.total)||0); });
+  var topCliente = Object.entries(cliMap).sort(function(a,b){return b[1]-a[1];})[0] || ["—",0];
+
+  // Período
+  var periodoStr = "";
+  if (f.desdeMes||f.desdeAno) periodoStr += "Desde: " + (f.desdeMes?MESES[f.desdeMes]+" ":"") + (f.desdeAno||"");
+  if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?"  /  ":"") + "Hasta: " + (f.hastaMes?MESES[f.hastaMes]+" ":"") + (f.hastaAno||"");
+  if (!periodoStr) periodoStr = "Período completo";
+
+  // ══════════════════════════════
+  // HEADER
+  // ══════════════════════════════
+  doc.setFillColor(C_AZUL[0], C_AZUL[1], C_AZUL[2]);
+  doc.rect(0, 0, pageW, 32, "F");
+  doc.setFillColor(C_TEAL[0], C_TEAL[1], C_TEAL[2]);
+  doc.rect(0, 29, pageW, 3, "F");
+
+  try {
+    var logoImg = document.querySelector(".sidebar-logo img");
+    if (logoImg && logoImg.src) {
+      doc.setFillColor(255,255,255); doc.roundedRect(7, 4, 22, 22, 2, 2, "F");
+      doc.addImage(logoImg.src, "JPEG", 8, 5, 20, 20);
+    }
+  } catch(e2) {}
+
+  doc.setTextColor(C_BLANCO[0], C_BLANCO[1], C_BLANCO[2]);
+  doc.setFontSize(15); doc.setFont(undefined, "bold");
+  doc.text("REPORTE DE VENTAS", 35, 13);
+  doc.setFontSize(9); doc.setFont(undefined, "normal");
+  doc.text("Maya Autopartes  •  " + (f.vendedor || "Todos los vendedores") + "  •  " + periodoStr, 35, 20);
+
+  doc.setFontSize(8);
+  doc.text("Generado: " + new Date().toLocaleString("es-MX"), pageW - 10, 13, { align: "right" });
+  doc.text("Total de ventas: " + ventas.length, pageW - 10, 20, { align: "right" });
+
+  // ══════════════════════════════
+  // TARJETAS KPI
+  // ══════════════════════════════
+  var y0 = 36; var cardH = 20; var cols = 5;
+  var cardW = (pageW - 16) / cols; var mx = 8;
+
+  var kpis = [
+    { label: "TOTAL VENTAS",      valor: fmtMXN(totalMonto),    color: C_VERDE },
+    { label: "SUBTOTAL",          valor: fmtMXN(totalSubtotal), color: C_TEAL },
+    { label: "IVA ACUMULADO",     valor: fmtMXN(totalIVA),      color: [99,102,241] },
+    { label: "AJUSTE TOTAL",      valor: fmtMXN(totalAjuste),   color: [239,68,68] },
+    { label: "PROMEDIO X VENTA",  valor: fmtMXN(promedio),      color: [245,158,11] }
+  ];
+
+  kpis.forEach(function(k, i) {
+    var x = mx + i * cardW;
+    doc.setFillColor(C_FONDO[0], C_FONDO[1], C_FONDO[2]);
+    doc.roundedRect(x, y0, cardW - 2, cardH, 2, 2, "F");
+    doc.setFillColor(k.color[0], k.color[1], k.color[2]);
+    doc.roundedRect(x, y0, 3, cardH, 1, 1, "F");
+    doc.setTextColor(C_GRIS[0], C_GRIS[1], C_GRIS[2]);
+    doc.setFontSize(6.5); doc.setFont(undefined, "normal");
+    doc.text(k.label, x + 6, y0 + 7);
+    doc.setTextColor(k.color[0], k.color[1], k.color[2]);
+    doc.setFontSize(10); doc.setFont(undefined, "bold");
+    doc.text(k.valor, x + 6, y0 + 15);
+  });
+
+  // Fila secundaria: clientes únicos, top cliente, venta máxima
+  var y1 = y0 + cardH + 3; var cardW2 = (pageW - 16) / 3;
+  var kpis2 = [
+    { label: "CLIENTES ÚNICOS",  valor: String(numClientes) },
+    { label: "TOP CLIENTE",      valor: topCliente[0].length>28 ? topCliente[0].slice(0,26)+"…" : topCliente[0] },
+    { label: "VENTA MÁS ALTA",   valor: fmtMXN(ventaMax) }
+  ];
+  kpis2.forEach(function(k, i) {
+    var x = mx + i * cardW2;
+    doc.setFillColor(C_AZUL[0], C_AZUL[1], C_AZUL[2]);
+    doc.roundedRect(x, y1, cardW2 - 2, 12, 2, 2, "F");
+    doc.setTextColor(C_GRIS[0]+60, C_GRIS[1]+60, C_GRIS[2]+60);
+    doc.setFontSize(6); doc.setFont(undefined, "normal");
+    doc.text(k.label, x + 4, y1 + 4.5);
+    doc.setTextColor(C_BLANCO[0], C_BLANCO[1], C_BLANCO[2]);
+    doc.setFontSize(8.5); doc.setFont(undefined, "bold");
+    doc.text(k.valor, x + 4, y1 + 10);
+  });
+
+  // ══════════════════════════════
+  // TABLA DE DETALLE
+  // ══════════════════════════════
+  var tableY = y1 + 16;
 
   var rows = ventas.map(function(v, i) {
     var piezas = v.items ? v.items.map(function(it){return it.pedido||it.descripcion||"";}).filter(Boolean).join(", ") : (v.descripcion||"-");
-    var sin    = v.siniestros || (v.items ? v.items.map(function(it){return it.numSiniestro||"";}).filter(Boolean).join("|") : "") || "-";
+    var sin    = v.siniestros || (v.items ? v.items.map(function(it){return it.numSiniestro||"";}).filter(Boolean).join(" | ") : "") || "-";
     return [
       String(i+1),
       v.notaId || v.notaNumero || "-",
       parseFecha(v).toLocaleDateString("es-MX"),
       v.clienteNombre || v.cliente || "-",
-      piezas.length > 50 ? piezas.slice(0,48)+"..." : piezas,
-      sin,
+      piezas.length > 45 ? piezas.slice(0,43)+"…" : (piezas||"-"),
+      sin.length > 25 ? sin.slice(0,23)+"…" : sin,
       v.vendedor || "-",
-      fmtMXN(v.subtotal || 0),
-      fmtMXN(v.ivaTotal || 0),
-      fmtMXN(v.ajusteTotal || 0),
-      fmtMXN(v.total || 0)
+      fmtMXN(v.subtotal||0),
+      fmtMXN(v.ivaTotal||0),
+      fmtMXN(v.ajusteTotal||0),
+      fmtMXN(v.total||0)
     ];
   });
-
-  var totalMonto = ventas.reduce(function(s,v){return s+(parseFloat(v.total)||0);},0);
-  rows.push(["","","","","","","TOTAL","","","",fmtMXN(totalMonto)]);
 
   doc.autoTable({
     head: [["#","Nota","Fecha","Cliente","Piezas","Siniestro","Vendedor","Subtotal","IVA","Ajuste","Total"]],
     body: rows,
-    startY: 32,
+    startY: tableY,
     margin: { left: 8, right: 8 },
-    styles: { font: "helvetica", fontSize: 8, cellPadding: 3 },
-    headStyles: { fillColor: azul, textColor: blanco, fontStyle: "bold" },
-    bodyStyles: { textColor: negro },
-    alternateRowStyles: { fillColor: [241, 246, 252] },
-    didParseCell: function(data) {
-      if (data.row.index === rows.length - 1) {
-        data.cell.styles.fontStyle = "bold";
-        data.cell.styles.fillColor = [210, 228, 245];
-      }
-    },
+    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2.8 },
+    headStyles: { fillColor: C_AZUL, textColor: C_BLANCO, fontStyle: "bold", fontSize: 8 },
+    bodyStyles: { textColor: [15,23,42] },
+    alternateRowStyles: { fillColor: [245,249,252] },
+    footStyles: { fillColor: C_AZUL, textColor: C_BLANCO, fontStyle: "bold" },
+    foot: [["","","","","","","TOTALES", fmtMXN(totalSubtotal), fmtMXN(totalIVA), fmtMXN(totalAjuste), fmtMXN(totalMonto)]],
+    showFoot: "lastPage",
     columnStyles: {
-      0:{cellWidth:8,halign:"center"},
-      1:{cellWidth:16},
-      2:{cellWidth:22},
-      7:{halign:"right",cellWidth:24},
-      8:{halign:"right",cellWidth:18},
-      9:{halign:"right",cellWidth:20},
-      10:{halign:"right",cellWidth:26,fontStyle:"bold"}
+      0:  { cellWidth: 7,  halign: "center" },
+      1:  { cellWidth: 14 },
+      2:  { cellWidth: 20 },
+      3:  { cellWidth: 32 },
+      4:  { cellWidth: 38 },
+      5:  { cellWidth: 22 },
+      6:  { cellWidth: 20 },
+      7:  { cellWidth: 22, halign: "right" },
+      8:  { cellWidth: 18, halign: "right" },
+      9:  { cellWidth: 18, halign: "right" },
+      10: { cellWidth: 24, halign: "right", fontStyle: "bold" }
+    },
+    didDrawPage: function(data) {
+      // Footer por página
+      var pn = doc.internal.getCurrentPageInfo().pageNumber;
+      var total = doc.internal.getNumberOfPages();
+      doc.setFontSize(7); doc.setTextColor(C_GRIS[0], C_GRIS[1], C_GRIS[2]);
+      doc.setFont(undefined, "normal");
+      doc.text("Maya Autopartes  •  Reporte confidencial", 10, pageH - 4);
+      doc.text("Pág. " + pn + " / " + total, pageW - 10, pageH - 4, { align: "right" });
+      doc.setDrawColor(C_TEAL[0], C_TEAL[1], C_TEAL[2]);
+      doc.setLineWidth(0.4);
+      doc.line(8, pageH - 7, pageW - 8, pageH - 7);
     }
   });
 
   var vend = f.vendedor ? f.vendedor.replace(/[^a-zA-Z0-9]/g,"_") : "todos";
-  doc.save("reporte_vendedor_" + vend + ".pdf");
+  doc.save("reporte_ventas_" + vend + "_" + new Date().toISOString().slice(0,10) + ".pdf");
 };
 
 window.exportarVendedorExcel = function() {
@@ -5691,40 +5792,123 @@ window.exportarVendedorExcel = function() {
   if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
   if (typeof XLSX === "undefined") return toast("XLSX no disponible", "error");
 
+  const MESES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
   const parseFecha = v => {
     if (v.fecha) return new Date(v.fecha);
     if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
   };
+  const fmt = n => parseFloat(n) || 0;
 
-  const rows = ventas.map((v, i) => {
-    const piezas = v.items ? v.items.map(it => it.pedido || it.descripcion || "").filter(Boolean).join(", ") : (v.descripcion || "");
-    const sin    = v.siniestros || (v.items ? v.items.map(it => it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
-    return {
-      "#": i + 1,
-      "Nota": v.notaId || v.notaNumero || "",
-      "Fecha": parseFecha(v).toLocaleDateString("es-MX"),
-      "Cliente": v.clienteNombre || v.cliente || "",
-      "Piezas": piezas,
-      "Siniestro": sin,
-      "Vendedor": v.vendedor || "",
-      "Subtotal": parseFloat(v.subtotal) || 0,
-      "IVA": parseFloat(v.ivaTotal) || 0,
-      "Ajuste": parseFloat(v.ajusteTotal) || 0,
-      "Total": parseFloat(v.total) || 0
-    };
+  // ── Métricas ──
+  const totalMonto    = ventas.reduce((s,v) => s + fmt(v.total), 0);
+  const totalSubtotal = ventas.reduce((s,v) => s + fmt(v.subtotal), 0);
+  const totalIVA      = ventas.reduce((s,v) => s + fmt(v.ivaTotal), 0);
+  const totalAjuste   = ventas.reduce((s,v) => s + fmt(v.ajusteTotal), 0);
+  const promedio      = ventas.length ? totalMonto / ventas.length : 0;
+  const ventaMax      = Math.max(...ventas.map(v => fmt(v.total)));
+
+  const clientesSet = new Set(ventas.map(v => v.clienteNombre || v.cliente || "?"));
+
+  // Top clientes
+  const cliMap = {};
+  ventas.forEach(v => { const n = v.clienteNombre||v.cliente||"?"; cliMap[n]=(cliMap[n]||0)+fmt(v.total); });
+  const topCli = Object.entries(cliMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Top vendedores
+  const vendMap = {};
+  ventas.forEach(v => { const n = v.vendedor||"Sin asignar"; if(!vendMap[n]) vendMap[n]={n:0,t:0}; vendMap[n].n++; vendMap[n].t+=fmt(v.total); });
+  const topVend = Object.entries(vendMap).sort((a,b)=>b[1].t-a[1].t).slice(0,5);
+
+  // Ventas por mes
+  const mesMapa = {};
+  ventas.forEach(v => {
+    const d = parseFecha(v);
+    const k = MESES[d.getMonth()+1] + " " + d.getFullYear();
+    if (!mesMapa[k]) mesMapa[k] = { n:0, t:0 };
+    mesMapa[k].n++; mesMapa[k].t += fmt(v.total);
   });
 
-  const totalMonto = ventas.reduce((s,v) => s + (parseFloat(v.total)||0), 0);
-  rows.push({ "#":"", "Nota":"", "Fecha":"", "Cliente":"", "Piezas":"", "Siniestro":"", "Vendedor":"TOTAL", "Subtotal":"", "IVA":"", "Ajuste":"", "Total": totalMonto });
+  // Período texto
+  let periodoStr = "";
+  if (f.desdeMes||f.desdeAno) periodoStr += "Desde: " + (f.desdeMes?MESES[f.desdeMes]+" ":"") + (f.desdeAno||"");
+  if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?" / ":"") + "Hasta: " + (f.hastaMes?MESES[f.hastaMes]+" ":"") + (f.hastaAno||"");
+  if (!periodoStr) periodoStr = "Período completo";
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{wch:5},{wch:10},{wch:14},{wch:25},{wch:40},{wch:20},{wch:18},{wch:12},{wch:10},{wch:10},{wch:12}];
+  // ════════════════════════════
+  // HOJA 1 — RESUMEN
+  // ════════════════════════════
+  const resumenData = [
+    ["REPORTE DE VENTAS — MAYA AUTOPARTES"],
+    [""],
+    ["Vendedor:", f.vendedor || "Todos"],
+    ["Período:", periodoStr],
+    ["Generado:", new Date().toLocaleString("es-MX")],
+    [""],
+    ["── MÉTRICAS GENERALES ──"],
+    ["Total de ventas",       ventas.length],
+    ["Clientes únicos",       clientesSet.size],
+    ["Monto total",           totalMonto],
+    ["Subtotal acumulado",    totalSubtotal],
+    ["IVA acumulado",         totalIVA],
+    ["Ajuste acumulado",      totalAjuste],
+    ["Promedio por venta",    promedio],
+    ["Venta más alta",        ventaMax],
+    [""],
+    ["── TOP 5 CLIENTES ──"],
+    ["Cliente", "Total"],
+    ...topCli.map(([n,t]) => [n, t]),
+    [""],
+    ["── TOP 5 VENDEDORES ──"],
+    ["Vendedor", "# Ventas", "Total"],
+    ...topVend.map(([n,d]) => [n, d.n, d.t]),
+    [""],
+    ["── VENTAS POR MES ──"],
+    ["Mes", "# Ventas", "Total"],
+    ...Object.entries(mesMapa).map(([mes,d]) => [mes, d.n, d.t])
+  ];
+
+  const wsRes = XLSX.utils.aoa_to_sheet(resumenData);
+  wsRes["!cols"] = [{wch:28},{wch:18},{wch:16}];
+
+  // ════════════════════════════
+  // HOJA 2 — DETALLE
+  // ════════════════════════════
+  const header = ["#","Nota","Fecha","Cliente","Piezas","Siniestro","Vendedor","Subtotal","IVA","Ajuste","Total"];
+  const detalle = ventas.map((v, i) => {
+    const piezas = v.items ? v.items.map(it => it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
+    const sin    = v.siniestros || (v.items ? v.items.map(it => it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
+    return [
+      i+1,
+      v.notaId || v.notaNumero || "",
+      parseFecha(v).toLocaleDateString("es-MX"),
+      v.clienteNombre || v.cliente || "",
+      piezas,
+      sin,
+      v.vendedor || "",
+      fmt(v.subtotal),
+      fmt(v.ivaTotal),
+      fmt(v.ajusteTotal),
+      fmt(v.total)
+    ];
+  });
+
+  // Fila de totales
+  detalle.push(["","","","","","","TOTAL", totalSubtotal, totalIVA, totalAjuste, totalMonto]);
+
+  const wsDetalle = XLSX.utils.aoa_to_sheet([header, ...detalle]);
+  wsDetalle["!cols"] = [{wch:5},{wch:10},{wch:14},{wch:28},{wch:42},{wch:22},{wch:18},{wch:14},{wch:12},{wch:12},{wch:14}];
+
+  // Congelar primera fila del detalle
+  wsDetalle["!freeze"] = { xSplit: 0, ySplit: 1 };
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Reporte Vendedor");
+  XLSX.utils.book_append_sheet(wb, wsRes,     "Resumen");
+  XLSX.utils.book_append_sheet(wb, wsDetalle, "Ventas Detalle");
+
   const vend = f.vendedor ? f.vendedor.replace(/[^a-zA-Z0-9]/g,"_") : "todos";
-  XLSX.writeFile(wb, "reporte_vendedor_" + vend + ".xlsx");
+  XLSX.writeFile(wb, "reporte_ventas_" + vend + "_" + new Date().toISOString().slice(0,10) + ".xlsx");
 };
 
 
