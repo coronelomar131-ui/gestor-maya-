@@ -7739,6 +7739,16 @@ window.initNotaEntrega = function() {
   document.getElementById('ne-vendedor').value = '';
   document.getElementById('ne-iva').checked = false;
   document.getElementById('ne-items-body').innerHTML = '';
+  var dl = document.getElementById('ne-clientes-list');
+  if (dl) {
+    dl.innerHTML = '';
+    var clientes = (window.data && window.data.clientes) || [];
+    clientes.forEach(function(c) {
+      var opt = document.createElement('option');
+      opt.value = c.razonSocial || c.nombre || c.id;
+      dl.appendChild(opt);
+    });
+  }
   window.agregarItemNE();
   window.calcTotalesNE();
 };
@@ -7996,7 +8006,8 @@ window.generarNotaEntregaPDFById = function(id) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div class="form-group">
           <label class="form-label">Cliente *</label>
-          <input type="text" id="ne-cliente" class="form-control" placeholder="Nombre del cliente">
+          <input type="text" id="ne-cliente" class="form-control" placeholder="Nombre del cliente" list="ne-clientes-list">
+          <datalist id="ne-clientes-list"></datalist>
         </div>
         <div class="form-group">
           <label class="form-label">Siniestro</label>
