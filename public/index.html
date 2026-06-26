@@ -7732,9 +7732,18 @@ window.eliminarNotaEntrega = async function(id) {
   } catch(e) { window.toast('Error: ' + e.message, 'error'); }
 };
 
+window.agregarSiniestroNE = function() {
+  var list = document.getElementById('ne-siniestros-list');
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+  div.innerHTML = '<input type="text" class="form-control ne-siniestro-input" placeholder="# Siniestro" style="flex:1"><button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>';
+  list.appendChild(div);
+};
+
 window.initNotaEntrega = function() {
   document.getElementById('ne-cliente').value = '';
-  document.getElementById('ne-siniestro').value = '';
+  document.getElementById('ne-siniestros-list').innerHTML = '';
+  window.agregarSiniestroNE();
   document.getElementById('ne-fecha').value = new Date().toISOString().slice(0,10);
   document.getElementById('ne-vendedor').value = '';
   document.getElementById('ne-iva').checked = false;
@@ -7784,7 +7793,7 @@ window.calcTotalesNE = function() {
 window.saveNotaEntrega = async function() {
   try {
     var cliente = document.getElementById('ne-cliente').value.trim();
-    var siniestro = document.getElementById('ne-siniestro').value.trim();
+    var siniestro = Array.from(document.querySelectorAll('.ne-siniestro-input')).map(function(i){return i.value.trim();}).filter(Boolean).join(' | ');
     var fecha = document.getElementById('ne-fecha').value;
     var vendedor = document.getElementById('ne-vendedor').value.trim();
     var conIva = document.getElementById('ne-iva').checked;
@@ -7896,14 +7905,15 @@ window.generarNotaEntregaPDF = function(nota) {
     doc.setTextColor(gris[0], gris[1], gris[2]);
     doc.text('Vendedor: ' + (nota.vendedor || '-'), mg+7, y+19);
     if (nota.siniestro) {
+      var sins = nota.siniestro.split(' | ').filter(Boolean);
       var bx = pageW-mg-57; var bw = 55;
       doc.setFillColor(30,143,165);
       doc.roundedRect(bx, y+3, bw, 18, 2, 2, 'F');
       doc.setTextColor(blanco[0], blanco[1], blanco[2]);
       doc.setFontSize(7); doc.setFont(undefined,'bold');
-      doc.text('SINIESTRO', bx+bw/2, y+10, {align:'center'});
-      doc.setFontSize(11);
-      doc.text('# ' + nota.siniestro, bx+bw/2, y+18, {align:'center'});
+      doc.text(sins.length > 1 ? 'SINIESTROS' : 'SINIESTRO', bx+bw/2, y+10, {align:'center'});
+      doc.setFontSize(sins.length > 2 ? 7 : 10);
+      doc.text(sins.map(function(s){return '# '+s;}).join('  '), bx+bw/2, y+18, {align:'center'});
     }
     y += 34;
     // badge detalle
@@ -8009,9 +8019,10 @@ window.generarNotaEntregaPDFById = function(id) {
           <input type="text" id="ne-cliente" class="form-control" placeholder="Nombre del cliente" list="ne-clientes-list">
           <datalist id="ne-clientes-list"></datalist>
         </div>
-        <div class="form-group">
-          <label class="form-label">Siniestro</label>
-          <input type="text" id="ne-siniestro" class="form-control" placeholder="# Siniestro">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Siniestros</label>
+          <div id="ne-siniestros-list"></div>
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="window.agregarSiniestroNE()">+ Agregar siniestro</button>
         </div>
         <div class="form-group">
           <label class="form-label">Fecha</label>
