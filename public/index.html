@@ -7717,7 +7717,8 @@ function renderNotasEntrega() {
       '<td>' + (n.vendedor || '-') + '</td>' +
       '<td>' + total + '</td>' +
       '<td style="white-space:nowrap">' +
-        '<button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + n.id + '\')">📄 PDF</button>' +
+        '<button class="btn btn-secondary btn-sm" onclick="window.previewNotaEntregaPDFById(\'' + n.id + '\')">👁 Ver</button>' +
+        ' <button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + n.id + '\')">📄 PDF</button>' +
         (isAdmin ? ' <button class="btn btn-danger btn-sm" onclick="eliminarNotaEntrega(\'' + n.id + '\')">🗑</button>' : '') +
       '</td>' +
     '</tr>';
@@ -7840,7 +7841,7 @@ window.saveNotaEntrega = async function() {
   } catch(e) { window.toast('Error: ' + e.message, 'error'); }
 };
 
-window.generarNotaEntregaPDF = function(nota) {
+window.generarNotaEntregaPDF = function(nota, previewOnly) {
   try {
     var jsPDFLib = window.jspdf;
     var doc = new jsPDFLib.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
@@ -8016,6 +8017,7 @@ window.generarNotaEntregaPDF = function(nota) {
     doc.text('maya-autopartes.myshopify.com', mg, pageH-6);
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México', pageW/2, pageH-6, {align:'center'});
+    if (previewOnly) return doc;
     doc.save('nota-entrega-' + (nota.notaId || 'NE') + '.pdf');
     window.toast('PDF generado', 'success');
   } catch(err) {
@@ -8029,6 +8031,20 @@ window.generarNotaEntregaPDFById = function(id) {
   var nota = notas.find(function(n) { return n.id === id; });
   if (!nota) { window.toast('Nota no encontrada', 'error'); return; }
   window.generarNotaEntregaPDF(nota);
+};
+
+window.previewNotaEntregaPDFById = function(id) {
+  var notas = window.data.notasEntrega || [];
+  var nota = notas.find(function(n) { return n.id === id; });
+  if (!nota) { window.toast('Nota no encontrada', 'error'); return; }
+  var doc = window.generarNotaEntregaPDF(nota, true);
+  if (!doc) return;
+  var url = doc.output('bloburl');
+  var iframe = document.getElementById('ne-preview-iframe');
+  var dlBtn = document.getElementById('ne-preview-dl');
+  iframe.src = url;
+  dlBtn.onclick = function() { doc.save('NE-' + (nota.notaId || nota.id) + '.pdf'); };
+  openModal('modal-ne-preview');
 };
 
 </script>
@@ -8103,6 +8119,23 @@ window.generarNotaEntregaPDFById = function(id) {
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px">
       <button class="btn btn-secondary" onclick="closeModal('modal-nota-entrega')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveNotaEntrega()">💾 Guardar + PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PREVIEW NOTA DE ENTREGA -->
+<div class="modal-overlay" id="modal-ne-preview" onclick="if(event.target===this)closeModal('modal-ne-preview')">
+  <div class="modal" style="max-width:860px;width:97%;height:90vh;display:flex;flex-direction:column">
+    <div class="modal-head">
+      <h3>👁 Vista previa</h3>
+      <button class="modal-close" onclick="closeModal('modal-ne-preview')">&times;</button>
+    </div>
+    <div style="flex:1;overflow:hidden;padding:0">
+      <iframe id="ne-preview-iframe" style="width:100%;height:100%;border:none"></iframe>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 20px">
+      <button class="btn btn-secondary" onclick="closeModal('modal-ne-preview')">Cerrar</button>
+      <button class="btn btn-primary" id="ne-preview-dl">📄 Descargar PDF</button>
     </div>
   </div>
 </div>
