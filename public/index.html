@@ -7527,6 +7527,143 @@ window.descargarFactura = function(base64, nombreArchivo) {
   }
 };
 
+// ═══════════════════════════════════════
+// PDF COTIZACIÓN
+// ═══════════════════════════════════════
+window.generarCotizacionPDFById = function(id) {
+  const data = window.data || {};
+  const cot = (data.cotizaciones || []).find(function(c){ return c.id === id; });
+  if (!cot) return toast('Cotización no encontrada', 'error');
+  try {
+    var jsPDFLib = window.jspdf;
+    var doc = new jsPDFLib.jsPDF({ orientation:'portrait', unit:'mm', format:'letter' });
+    var pageW = doc.internal.pageSize.getWidth();
+    var pageH = doc.internal.pageSize.getHeight();
+    var mg = 14;
+    var azul    = [13,42,74], azul2=[22,78,110], tealCl=[59,188,212];
+    var naranja = [217,119,6], blanco=[255,255,255], gris=[100,116,139], negro=[15,23,42];
+
+    doc.setFillColor(248,250,252); doc.rect(0,0,pageW,pageH,'F');
+    doc.setFillColor(azul[0],azul[1],azul[2]); doc.rect(0,0,pageW,42,'F');
+    doc.setFillColor(azul2[0],azul2[1],azul2[2]); doc.rect(pageW*0.55,0,pageW*0.45,42,'F');
+    doc.setFillColor(naranja[0],naranja[1],naranja[2]); doc.triangle(pageW-40,0,pageW,0,pageW,50,'F');
+    try{doc.setGState(doc.GState({opacity:0.2}));}catch(e){}
+    doc.setFillColor(tealCl[0],tealCl[1],tealCl[2]); doc.triangle(pageW-65,0,pageW,0,pageW,75,'F');
+    try{doc.setGState(doc.GState({opacity:1}));}catch(e){}
+
+    try {
+      var logoImg = document.querySelector('.sidebar-logo img');
+      if (logoImg && logoImg.src) {
+        doc.setFillColor(0,0,0); doc.roundedRect(mg,5,32,30,3,3,'F');
+        doc.addImage(logoImg.src,'JPEG',mg+1,6,30,28);
+      }
+    } catch(e) {}
+
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.setFontSize(22); doc.setFont(undefined,'bold');
+    doc.text('COTIZACIÓN', mg+38, 19);
+    doc.setTextColor(tealCl[0],tealCl[1],tealCl[2]);
+    doc.setFontSize(8); doc.setFont(undefined,'normal');
+    doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg+38, 27);
+    var fechaStr = cot.fecha ? new Date(cot.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.setFontSize(9); doc.setFont(undefined,'normal');
+    doc.text('Fecha: '+fechaStr, pageW-mg-44, 18);
+    doc.setFontSize(11); doc.setFont(undefined,'bold');
+    doc.text('COT # '+(cot.notaId||id.slice(-6)), pageW-mg-44, 27);
+    doc.setFillColor(naranja[0],naranja[1],naranja[2]); doc.rect(0,39,pageW,3,'F');
+
+    var y=50;
+    doc.setFillColor(azul[0],azul[1],azul[2]); doc.roundedRect(mg,y,32,7,1.5,1.5,'F');
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]); doc.setFontSize(8); doc.setFont(undefined,'bold');
+    doc.text('CLIENTE',mg+4,y+5); y+=11;
+
+    doc.setFillColor(225,230,235); doc.roundedRect(mg+0.7,y+0.7,pageW-mg*2,28,2,2,'F');
+    doc.setFillColor(255,255,255); doc.roundedRect(mg,y,pageW-mg*2,28,2,2,'F');
+    doc.setFillColor(naranja[0],naranja[1],naranja[2]); doc.roundedRect(mg,y,2.5,28,1,1,'F');
+    doc.setTextColor(negro[0],negro[1],negro[2]);
+    doc.setFontSize(14); doc.setFont(undefined,'bold');
+    doc.text(cot.clienteNombre||cot.cliente||'-', mg+7, y+10);
+    doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('Cotización vigente  •  Sujeta a cambio sin previo aviso', mg+7, y+17);
+    doc.text('Vendedor: '+(cot.vendedor||'-'), mg+7, y+23);
+
+    var sins = cot.siniestros||(cot.items?cot.items.map(function(i){return i.numSiniestro||'';}).filter(Boolean).join(' | '):'')||'';
+    if (sins) {
+      var bx=pageW-mg-57,bw=55,by2=y+4;
+      doc.setFillColor(naranja[0],naranja[1],naranja[2]); doc.roundedRect(bx,by2,bw,20,2,2,'F');
+      doc.setTextColor(blanco[0],blanco[1],blanco[2]); doc.setFontSize(7); doc.setFont(undefined,'bold');
+      doc.text('SINIESTRO',bx+bw/2,by2+7,{align:'center'});
+      doc.setFontSize(11); doc.text('# '+sins,bx+bw/2,by2+15,{align:'center'});
+    }
+    y+=34;
+
+    doc.setFillColor(azul[0],azul[1],azul[2]); doc.roundedRect(mg,y,68,7,1.5,1.5,'F');
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]); doc.setFontSize(8); doc.setFont(undefined,'bold');
+    doc.text('DETALLE DE COTIZACIÓN',mg+4,y+5); y+=10;
+
+    if (cot.items && cot.items.length > 0 && doc.autoTable) {
+      var rows = cot.items.map(function(item,idx){
+        return [String(idx+1), item.pedido||item.descripcion||'-', item.numSiniestro||'-',
+          '$'+(parseFloat(item.precio)||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
+          '$'+(parseFloat(item.iva)||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
+          '-$'+(parseFloat(item.ajuste)||0).toLocaleString('es-MX',{minimumFractionDigits:2})];
+      });
+      doc.autoTable({
+        head:[['#','DESCRIPCIÓN','SINIESTRO','PRECIO','IVA','AJUSTE']],
+        body:rows, startY:y, margin:{left:mg,right:mg},
+        styles:{font:'helvetica',fontSize:8,cellPadding:4},
+        headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',halign:'center'},
+        bodyStyles:{textColor:negro}, alternateRowStyles:{fillColor:[245,248,252]},
+        columnStyles:{0:{halign:'center',cellWidth:8},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    var boxW=78,boxX=pageW-mg-boxW,boxH=32;
+    doc.setFillColor(210,215,220); doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
+    doc.setFillColor(255,255,255); doc.setDrawColor(220,225,235); doc.setLineWidth(0.3);
+    doc.roundedRect(boxX,y,boxW,boxH,2,2,'FD');
+    doc.setFontSize(8.5); doc.setFont(undefined,'normal');
+    doc.setTextColor(gris[0],gris[1],gris[2]); doc.text('Subtotal',boxX+5,y+8);
+    doc.setTextColor(negro[0],negro[1],negro[2]); doc.text('$'+(parseFloat(cot.subtotal)||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+8,{align:'right'});
+    doc.setTextColor(gris[0],gris[1],gris[2]); doc.text('IVA',boxX+5,y+15);
+    doc.setTextColor(negro[0],negro[1],negro[2]); doc.text('$'+(parseFloat(cot.ivaTotal)||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+15,{align:'right'});
+    if (cot.ajusteTotal && cot.ajusteTotal>0) {
+      doc.setTextColor(gris[0],gris[1],gris[2]); doc.text('Ajuste',boxX+5,y+20);
+      doc.setTextColor(naranja[0],naranja[1],naranja[2]); doc.text('-$'+(parseFloat(cot.ajusteTotal)||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+20,{align:'right'});
+    }
+    doc.setDrawColor(210,220,230); doc.setLineWidth(0.4); doc.line(boxX+3,y+22,boxX+boxW-3,y+22);
+    doc.setFillColor(naranja[0],naranja[1],naranja[2]); doc.roundedRect(boxX,y+23,boxW,9,0,0,'F');
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]); doc.setFontSize(10.5); doc.setFont(undefined,'bold');
+    doc.text('TOTAL',boxX+5,y+29);
+    doc.text('$'+(parseFloat(cot.total)||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
+
+    y+=boxH+8;
+    doc.setFontSize(8); doc.setFont(undefined,'italic'); doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('* Esta cotización tiene una vigencia de 15 días a partir de la fecha de emisión.',mg,y);
+
+    var firmaY=pageH-30;
+    doc.setDrawColor(180,190,200); doc.setLineWidth(0.4);
+    doc.line(mg,firmaY,mg+65,firmaY); doc.line(pageW-mg-65,firmaY,pageW-mg,firmaY);
+    doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('Vendedor / Maya Autopartes',mg+3,firmaY+5);
+    doc.text('Autorización / '+(cot.clienteNombre||'Cliente'),pageW-mg-3,firmaY+5,{align:'right'});
+
+    doc.setFillColor(azul[0],azul[1],azul[2]); doc.rect(0,pageH-12,pageW,12,'F');
+    doc.setFillColor(naranja[0],naranja[1],naranja[2]); doc.rect(0,pageH-3.5,pageW,3.5,'F');
+    doc.setTextColor(150,185,200); doc.setFontSize(6.5); doc.setFont(undefined,'normal');
+    doc.text('maya-autopartes.myshopify.com',mg,pageH-6);
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México',pageW/2,pageH-6,{align:'center'});
+
+    doc.save('cotizacion-'+(cot.notaId||id.slice(-6))+'.pdf');
+    toast('PDF de cotización generado','success');
+  } catch(err) {
+    console.error('Error PDF cotización:',err);
+    toast('Error: '+err.message,'error');
+  }
+};
 
 </script>
 
