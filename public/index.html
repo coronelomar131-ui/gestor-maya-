@@ -7744,8 +7744,6 @@ window.agregarSiniestroNE = function() {
 
 window.initNotaEntrega = function() {
   document.getElementById('ne-cliente').value = '';
-  document.getElementById('ne-siniestros-body').innerHTML = '';
-  window.agregarSiniestroNE();
   document.getElementById('ne-fecha').value = new Date().toISOString().slice(0,10);
   document.getElementById('ne-vendedor').value = '';
   document.getElementById('ne-iva').checked = false;
@@ -7767,10 +7765,11 @@ window.initNotaEntrega = function() {
 window.agregarItemNE = function() {
   var tbody = document.getElementById('ne-items-body');
   var tr = document.createElement('tr');
-  tr.innerHTML = '<td><input type="text" class="form-control" placeholder="Descripción" style="min-width:150px" oninput="calcTotalesNE()"></td>' +
-    '<td><input type="text" class="form-control" placeholder="Año" style="width:70px" oninput="calcTotalesNE()"></td>' +
-    '<td><input type="number" class="form-control" placeholder="1" min="1" value="1" style="width:65px" oninput="calcTotalesNE()"></td>' +
-    '<td><input type="number" class="form-control" placeholder="0.00" min="0" step="0.01" value="0" style="width:90px" oninput="calcTotalesNE()"></td>' +
+  tr.innerHTML = '<td><input type="text" class="ne-desc form-control" placeholder="Descripción" style="min-width:130px" oninput="calcTotalesNE()"></td>' +
+    '<td><input type="text" class="ne-sin form-control" placeholder="Siniestro" style="width:100px"></td>' +
+    '<td><input type="text" class="ne-anio form-control" placeholder="Año" style="width:65px"></td>' +
+    '<td><input type="number" class="ne-cant form-control" placeholder="1" min="1" value="1" style="width:60px" oninput="calcTotalesNE()"></td>' +
+    '<td><input type="number" class="ne-precio form-control" placeholder="0.00" min="0" step="0.01" value="0" style="width:85px" oninput="calcTotalesNE()"></td>' +
     '<td><button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove();calcTotalesNE()">✕</button></td>';
   tbody.appendChild(tr);
 };
@@ -7779,9 +7778,8 @@ window.calcTotalesNE = function() {
   var rows = document.querySelectorAll('#ne-items-body tr');
   var subtotal = 0;
   rows.forEach(function(tr) {
-    var inputs = tr.querySelectorAll('input');
-    var cant = parseFloat(inputs[2] ? inputs[2].value : 1) || 1;
-    var precio = parseFloat(inputs[3] ? inputs[3].value : 0) || 0;
+    var cant = parseFloat((tr.querySelector('.ne-cant')||{}).value || 1) || 1;
+    var precio = parseFloat((tr.querySelector('.ne-precio')||{}).value || 0) || 0;
     subtotal += cant * precio;
   });
   var conIva = document.getElementById('ne-iva').checked;
@@ -7795,13 +7793,6 @@ window.calcTotalesNE = function() {
 window.saveNotaEntrega = async function() {
   try {
     var cliente = document.getElementById('ne-cliente').value.trim();
-    var siniestrosArr = [];
-    document.querySelectorAll('#ne-siniestros-body tr').forEach(function(tr) {
-      var num = tr.querySelector('.ne-siniestro-input') ? tr.querySelector('.ne-siniestro-input').value.trim() : '';
-      var anio = tr.querySelector('.ne-siniestro-anio') ? tr.querySelector('.ne-siniestro-anio').value.trim() : '';
-      if (num) siniestrosArr.push({num: num, anio: anio});
-    });
-    var siniestro = siniestrosArr.map(function(s){ return s.num + (s.anio ? ' (' + s.anio + ')' : ''); }).join(' | ');
     var fecha = document.getElementById('ne-fecha').value;
     var vendedor = document.getElementById('ne-vendedor').value.trim();
     var conIva = document.getElementById('ne-iva').checked;
@@ -7809,13 +7800,15 @@ window.saveNotaEntrega = async function() {
     var rows = document.querySelectorAll('#ne-items-body tr');
     var items = [];
     rows.forEach(function(tr) {
-      var inputs = tr.querySelectorAll('input');
-      var desc = inputs[0] ? inputs[0].value.trim() : '';
-      var anio = inputs[1] ? inputs[1].value.trim() : '';
-      var cant = parseFloat(inputs[2] ? inputs[2].value : 1) || 1;
-      var precio = parseFloat(inputs[3] ? inputs[3].value : 0) || 0;
-      if (desc) items.push({descripcion: desc, anio: anio, cantidad: cant, precioUnit: precio});
+      var desc = (tr.querySelector('.ne-desc')||{value:''}).value.trim();
+      var sin  = (tr.querySelector('.ne-sin')||{value:''}).value.trim();
+      var anio = (tr.querySelector('.ne-anio')||{value:''}).value.trim();
+      var cant = parseFloat((tr.querySelector('.ne-cant')||{value:1}).value) || 1;
+      var precio = parseFloat((tr.querySelector('.ne-precio')||{value:0}).value) || 0;
+      if (desc) items.push({descripcion: desc, siniestro: sin, anio: anio, cantidad: cant, precioUnit: precio});
     });
+    var siniestro = items.map(function(it){ return it.siniestro; }).filter(Boolean).join(' | ');
+    var siniestrosArr = items.filter(function(it){ return it.siniestro; }).map(function(it){ return {num: it.siniestro, anio: it.anio}; });
     if (!items.length) { window.toast('Agrega al menos un item', 'error'); return; }
     var subtotal = items.reduce(function(s, it) { return s + it.cantidad * it.precioUnit; }, 0);
     var ivaTotal = conIva ? subtotal * 0.16 : 0;
@@ -7937,19 +7930,20 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
         return [
           String(idx+1),
           it.descripcion || '-',
+          it.siniestro || '-',
           it.anio || '-',
           String(it.cantidad || 1),
           '\$' + (it.precioUnit || 0).toLocaleString('es-MX', {minimumFractionDigits:2})
         ];
       });
       doc.autoTable({
-        head: [['#','DESCRIPCIÓN','AÑO','CANT.','PRECIO UNIT.']],
+        head: [['#','DESCRIPCIÓN','SINIESTRO','AÑO','CANT.','PRECIO UNIT.']],
         body: rows, startY: y, margin: {left:mg, right:mg},
         styles: {font:'helvetica', fontSize:8, cellPadding:4},
         headStyles: {fillColor:azul, textColor:blanco, fontStyle:'bold', halign:'center'},
         bodyStyles: {textColor:negro},
         alternateRowStyles: {fillColor:[245,248,252]},
-        columnStyles: {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:18},3:{halign:'center',cellWidth:16},4:{halign:'right',cellWidth:28}}
+        columnStyles: {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:28},3:{halign:'center',cellWidth:16},4:{halign:'center',cellWidth:14},5:{halign:'right',cellWidth:26}}
       });
       y = doc.lastAutoTable.finalY + 8;
     }
@@ -8081,28 +8075,13 @@ window.previewNotaEntregaPDFById = function(id) {
           <table style="width:100%;border-collapse:collapse">
             <thead><tr style="background:var(--bg-secondary,#f1f5f9);font-size:12px">
               <th style="padding:6px 8px;text-align:left">Descripción</th>
+              <th style="padding:6px 8px;text-align:left">Siniestro</th>
               <th style="padding:6px 8px;text-align:left">Año auto</th>
               <th style="padding:6px 8px;text-align:left">Cant.</th>
               <th style="padding:6px 8px;text-align:left">Precio Unit.</th>
               <th style="padding:6px 4px"></th>
             </tr></thead>
             <tbody id="ne-items-body"></tbody>
-          </table>
-        </div>
-      </div>
-      <div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong>Siniestros</strong>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="window.agregarSiniestroNE()">+ Agregar siniestro</button>
-        </div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse">
-            <thead><tr style="background:var(--bg-secondary,#f1f5f9);font-size:12px">
-              <th style="padding:6px 8px;text-align:left"># Siniestro</th>
-              <th style="padding:6px 8px;text-align:left">Año auto</th>
-              <th style="padding:6px 4px"></th>
-            </tr></thead>
-            <tbody id="ne-siniestros-body"></tbody>
           </table>
         </div>
       </div>
