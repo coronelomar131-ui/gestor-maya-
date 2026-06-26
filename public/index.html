@@ -7879,7 +7879,7 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: ' + fechaStr, pageW - mg - 44, 18);
-    doc.setFontSize(11); doc.setFont(undefined,'bold');
+    doc.setFontSize(9); doc.setFont(undefined,'bold');
     doc.text('Nota # ' + (nota.notaId || '-'), pageW - mg - 44, 27);
     // banda teal
     doc.setFillColor(teal[0], teal[1], teal[2]);
@@ -7944,27 +7944,6 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
         bodyStyles: {textColor:negro},
         alternateRowStyles: {fillColor:[245,248,252]},
         columnStyles: {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:28},3:{halign:'center',cellWidth:16},4:{halign:'center',cellWidth:14},5:{halign:'right',cellWidth:26}}
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    }
-    // tabla siniestros
-    var sins = nota.siniestros && nota.siniestros.length ? nota.siniestros : (nota.siniestro ? nota.siniestro.split(' | ').map(function(s){ return {num:s, anio:''}; }) : []);
-    if (sins.length && doc.autoTable) {
-      doc.setFillColor(teal[0], teal[1], teal[2]);
-      doc.roundedRect(mg, y, 42, 7, 1.5, 1.5, 'F');
-      doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-      doc.setFontSize(8); doc.setFont(undefined,'bold');
-      doc.text('SINIESTROS', mg+4, y+5);
-      y += 10;
-      doc.autoTable({
-        head: [['#','SINIESTRO','AÑO AUTO']],
-        body: sins.map(function(s, i){ return [String(i+1), s.num||s, s.anio||'-']; }),
-        startY: y, margin: {left:mg, right:mg},
-        styles: {font:'helvetica', fontSize:8, cellPadding:4},
-        headStyles: {fillColor:teal, textColor:blanco, fontStyle:'bold', halign:'center'},
-        bodyStyles: {textColor:negro},
-        alternateRowStyles: {fillColor:[240,250,252]},
-        columnStyles: {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:28}}
       });
       y = doc.lastAutoTable.finalY + 8;
     }
