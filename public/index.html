@@ -7905,17 +7905,6 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.setFontSize(8); doc.setFont(undefined,'normal');
     doc.setTextColor(gris[0], gris[1], gris[2]);
     doc.text('Vendedor: ' + (nota.vendedor || '-'), mg+7, y+19);
-    if (nota.siniestro) {
-      var sins = nota.siniestro.split(' | ').filter(Boolean);
-      var bx = pageW-mg-57; var bw = 55;
-      doc.setFillColor(30,143,165);
-      doc.roundedRect(bx, y+3, bw, 18, 2, 2, 'F');
-      doc.setTextColor(blanco[0], blanco[1], blanco[2]);
-      doc.setFontSize(7); doc.setFont(undefined,'bold');
-      doc.text(sins.length > 1 ? 'SINIESTROS' : 'SINIESTRO', bx+bw/2, y+10, {align:'center'});
-      doc.setFontSize(sins.length > 2 ? 7 : 10);
-      doc.text(sins.map(function(s){return '# '+s;}).join('  '), bx+bw/2, y+18, {align:'center'});
-    }
     y += 34;
     // badge detalle
     doc.setFillColor(azul[0], azul[1], azul[2]);
