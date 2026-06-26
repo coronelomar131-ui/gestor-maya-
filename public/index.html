@@ -1007,6 +1007,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" onclick="showModule('proveedores')">
         <span class="nav-icon">🏭</span> Proveedores
       </div>
+      <div class="nav-item" onclick="showModule('notas-entrega')">
+        <span class="nav-icon">📝</span> Notas de Entrega
+      </div>
       <div class="nav-section">Logística</div>
       <div class="nav-item" onclick="showModule('entregas')">
         <span class="nav-icon">🚚</span> Entregas
@@ -1293,6 +1296,29 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               </tr></thead>
               <tbody id="prov-body">
                 <tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-title">Sin proveedores</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTAS DE ENTREGA -->
+      <div class="module-view" id="mod-notas-entrega">
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">📝 Notas de Entrega</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <input class="search-box" placeholder="🔍 Buscar nota..." oninput="filterTable('ne-table',this.value)">
+              <button class="btn btn-primary btn-sm" onclick="openModal('modal-nota-entrega');initNotaEntrega()">+ Nueva Nota</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table id="ne-table">
+              <thead><tr>
+                <th>#</th><th>Nota</th><th>Fecha</th><th>Cliente</th><th>Siniestro</th><th>Vendedor</th><th>Total</th><th>Acciones</th>
+              </tr></thead>
+              <tbody id="ne-body">
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -2442,6 +2468,7 @@ function startListeners() {
   listenCollection('clientes', 'cli-body', renderClientes);
   listenCollection('cotizaciones', 'cot-body', renderCotizaciones);
   listenCollection('proveedores', 'prov-body', renderProveedores);
+  listenCollection('notasEntrega', 'ne-body', renderNotasEntrega);
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('usuarios', 'users-body', renderUsuarios);
   // startEnviosListener(); // Comentado - usa cargarEnvios() en su lugar
@@ -7665,7 +7692,358 @@ window.generarCotizacionPDFById = function(id) {
   }
 };
 
+
+// ── NOTAS DE ENTREGA ──
+
+function renderNotasEntrega() {
+  var notas = window.data.notasEntrega || [];
+  var tbody = document.getElementById('ne-body');
+  if (!tbody) return;
+  var isAdmin = window.currentUserRole === 'admin';
+  if (!notas.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = notas.map(function(n, i) {
+    var total = '\$' + (n.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2});
+    var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00').toLocaleDateString('es-MX') : '-';
+    return '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td><strong>' + (n.notaId || '-') + '</strong></td>' +
+      '<td>' + fecha + '</td>' +
+      '<td>' + (n.cliente || '-') + '</td>' +
+      '<td>' + (n.siniestro || '-') + '</td>' +
+      '<td>' + (n.vendedor || '-') + '</td>' +
+      '<td>' + total + '</td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + n.id + '\')">📄 PDF</button>' +
+        (isAdmin ? ' <button class="btn btn-danger btn-sm" onclick="eliminarNotaEntrega(\'' + n.id + '\')">🗑</button>' : '') +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+window.eliminarNotaEntrega = async function(id) {
+  if (!confirm('¿Eliminar esta nota de entrega?')) return;
+  try {
+    await window.deleteDoc(window.doc(window.db, 'notasEntrega', id));
+    window.toast('Nota eliminada', 'success');
+  } catch(e) { window.toast('Error: ' + e.message, 'error'); }
+};
+
+window.initNotaEntrega = function() {
+  document.getElementById('ne-cliente').value = '';
+  document.getElementById('ne-siniestro').value = '';
+  document.getElementById('ne-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('ne-vendedor').value = '';
+  document.getElementById('ne-iva').checked = false;
+  document.getElementById('ne-items-body').innerHTML = '';
+  window.agregarItemNE();
+  window.calcTotalesNE();
+};
+
+window.agregarItemNE = function() {
+  var tbody = document.getElementById('ne-items-body');
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td><input type="text" class="form-control" placeholder="Descripción" style="min-width:150px" oninput="calcTotalesNE()"></td>' +
+    '<td><input type="text" class="form-control" placeholder="Año" style="width:70px" oninput="calcTotalesNE()"></td>' +
+    '<td><input type="number" class="form-control" placeholder="1" min="1" value="1" style="width:65px" oninput="calcTotalesNE()"></td>' +
+    '<td><input type="number" class="form-control" placeholder="0.00" min="0" step="0.01" value="0" style="width:90px" oninput="calcTotalesNE()"></td>' +
+    '<td><button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove();calcTotalesNE()">✕</button></td>';
+  tbody.appendChild(tr);
+};
+
+window.calcTotalesNE = function() {
+  var rows = document.querySelectorAll('#ne-items-body tr');
+  var subtotal = 0;
+  rows.forEach(function(tr) {
+    var inputs = tr.querySelectorAll('input');
+    var cant = parseFloat(inputs[2] ? inputs[2].value : 1) || 1;
+    var precio = parseFloat(inputs[3] ? inputs[3].value : 0) || 0;
+    subtotal += cant * precio;
+  });
+  var conIva = document.getElementById('ne-iva').checked;
+  var ivaMonto = conIva ? subtotal * 0.16 : 0;
+  var total = subtotal + ivaMonto;
+  document.getElementById('ne-subtotal').textContent = '\$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits:2});
+  document.getElementById('ne-iva-monto').textContent = '\$' + ivaMonto.toLocaleString('es-MX', {minimumFractionDigits:2});
+  document.getElementById('ne-total').textContent = '\$' + total.toLocaleString('es-MX', {minimumFractionDigits:2});
+};
+
+window.saveNotaEntrega = async function() {
+  try {
+    var cliente = document.getElementById('ne-cliente').value.trim();
+    var siniestro = document.getElementById('ne-siniestro').value.trim();
+    var fecha = document.getElementById('ne-fecha').value;
+    var vendedor = document.getElementById('ne-vendedor').value.trim();
+    var conIva = document.getElementById('ne-iva').checked;
+    if (!cliente) { window.toast('Ingresa el cliente', 'error'); return; }
+    var rows = document.querySelectorAll('#ne-items-body tr');
+    var items = [];
+    rows.forEach(function(tr) {
+      var inputs = tr.querySelectorAll('input');
+      var desc = inputs[0] ? inputs[0].value.trim() : '';
+      var anio = inputs[1] ? inputs[1].value.trim() : '';
+      var cant = parseFloat(inputs[2] ? inputs[2].value : 1) || 1;
+      var precio = parseFloat(inputs[3] ? inputs[3].value : 0) || 0;
+      if (desc) items.push({descripcion: desc, anio: anio, cantidad: cant, precioUnit: precio});
+    });
+    if (!items.length) { window.toast('Agrega al menos un item', 'error'); return; }
+    var subtotal = items.reduce(function(s, it) { return s + it.cantidad * it.precioUnit; }, 0);
+    var ivaTotal = conIva ? subtotal * 0.16 : 0;
+    var total = subtotal + ivaTotal;
+    // auto-incremental NE-XXX
+    var existentes = window.data.notasEntrega || [];
+    var maxNum = 0;
+    existentes.forEach(function(n) {
+      var m = n.notaId ? parseInt(n.notaId.replace('NE-','')) : 0;
+      if (m > maxNum) maxNum = m;
+    });
+    var notaId = 'NE-' + String(maxNum + 1).padStart(3, '0');
+    var payload = {
+      notaId: notaId, fecha: fecha, cliente: cliente, siniestro: siniestro,
+      vendedor: vendedor, items: items, subtotal: subtotal, ivaTotal: ivaTotal,
+      total: total, createdAt: new Date().toISOString()
+    };
+    var ref = await window.addDoc(window.collection(window.db, 'notasEntrega'), payload);
+    window.toast('Nota de entrega guardada', 'success');
+    closeModal('modal-nota-entrega');
+    payload.id = ref.id;
+    window.generarNotaEntregaPDF(payload);
+  } catch(e) { window.toast('Error: ' + e.message, 'error'); }
+};
+
+window.generarNotaEntregaPDF = function(nota) {
+  try {
+    var jsPDFLib = window.jspdf;
+    var doc = new jsPDFLib.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+    var pageW = doc.internal.pageSize.getWidth();
+    var pageH = doc.internal.pageSize.getHeight();
+    var mg = 14;
+    var azul = [26, 58, 84]; var azul2 = [22, 78, 110];
+    var teal = [30, 143, 165]; var tealCl = [59, 188, 212];
+    var blanco = [255, 255, 255]; var gris = [100, 116, 139];
+    var negro = [15, 23, 42];
+    // fondo
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageW, pageH, 'F');
+    // header
+    doc.setFillColor(azul[0], azul[1], azul[2]);
+    doc.rect(0, 0, pageW, 42, 'F');
+    doc.setFillColor(azul2[0], azul2[1], azul2[2]);
+    doc.rect(pageW * 0.55, 0, pageW * 0.45, 42, 'F');
+    doc.setFillColor(teal[0], teal[1], teal[2]);
+    doc.triangle(pageW - 40, 0, pageW, 0, pageW, 50, 'F');
+    try { doc.setGState(doc.GState({ opacity: 0.2 })); } catch(e3) {}
+    doc.setFillColor(tealCl[0], tealCl[1], tealCl[2]);
+    doc.triangle(pageW - 65, 0, pageW, 0, pageW, 75, 'F');
+    try { doc.setGState(doc.GState({ opacity: 1 })); } catch(e4) {}
+    // logo
+    try {
+      var logoImg = document.querySelector('.sidebar-logo img');
+      if (logoImg && logoImg.src) {
+        doc.setFillColor(0,0,0);
+        doc.roundedRect(mg, 5, 32, 30, 3, 3, 'F');
+        doc.addImage(logoImg.src, 'JPEG', mg+1, 6, 30, 28);
+      }
+    } catch(e2) {}
+    // titulo
+    doc.setTextColor(blanco[0], blanco[1], blanco[2]);
+    doc.setFontSize(22); doc.setFont(undefined, 'bold');
+    doc.text('NOTA DE ENTREGA', mg + 38, 19);
+    doc.setTextColor(tealCl[0], tealCl[1], tealCl[2]);
+    doc.setFontSize(8); doc.setFont(undefined, 'normal');
+    doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg + 38, 27);
+    var fechaStr = nota.fecha ? new Date(nota.fecha + 'T12:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    doc.setTextColor(blanco[0], blanco[1], blanco[2]);
+    doc.setFontSize(9); doc.setFont(undefined,'normal');
+    doc.text('Fecha: ' + fechaStr, pageW - mg - 44, 18);
+    doc.setFontSize(11); doc.setFont(undefined,'bold');
+    doc.text('Nota # ' + (nota.notaId || '-'), pageW - mg - 44, 27);
+    // banda teal
+    doc.setFillColor(teal[0], teal[1], teal[2]);
+    doc.rect(0, 39, pageW, 3, 'F');
+    var y = 50;
+    // badge cliente
+    doc.setFillColor(azul[0], azul[1], azul[2]);
+    doc.roundedRect(mg, y, 32, 7, 1.5, 1.5, 'F');
+    doc.setTextColor(blanco[0], blanco[1], blanco[2]);
+    doc.setFontSize(8); doc.setFont(undefined,'bold');
+    doc.text('CLIENTE', mg+4, y+5);
+    y += 11;
+    // tarjeta cliente
+    doc.setFillColor(225, 230, 235);
+    doc.roundedRect(mg+0.7, y+0.7, pageW - mg*2, 26, 2, 2, 'F');
+    doc.setFillColor(255,255,255);
+    doc.roundedRect(mg, y, pageW - mg*2, 26, 2, 2, 'F');
+    doc.setFillColor(teal[0], teal[1], teal[2]);
+    doc.roundedRect(mg, y, 2.5, 26, 1, 1, 'F');
+    doc.setTextColor(negro[0], negro[1], negro[2]);
+    doc.setFontSize(14); doc.setFont(undefined,'bold');
+    doc.text(nota.cliente || '-', mg+7, y+10);
+    doc.setFontSize(8); doc.setFont(undefined,'normal');
+    doc.setTextColor(gris[0], gris[1], gris[2]);
+    doc.text('Vendedor: ' + (nota.vendedor || '-'), mg+7, y+19);
+    if (nota.siniestro) {
+      var bx = pageW-mg-57; var bw = 55;
+      doc.setFillColor(30,143,165);
+      doc.roundedRect(bx, y+3, bw, 18, 2, 2, 'F');
+      doc.setTextColor(blanco[0], blanco[1], blanco[2]);
+      doc.setFontSize(7); doc.setFont(undefined,'bold');
+      doc.text('SINIESTRO', bx+bw/2, y+10, {align:'center'});
+      doc.setFontSize(11);
+      doc.text('# ' + nota.siniestro, bx+bw/2, y+18, {align:'center'});
+    }
+    y += 34;
+    // badge detalle
+    doc.setFillColor(azul[0], azul[1], azul[2]);
+    doc.roundedRect(mg, y, 58, 7, 1.5, 1.5, 'F');
+    doc.setTextColor(blanco[0], blanco[1], blanco[2]);
+    doc.setFontSize(8); doc.setFont(undefined,'bold');
+    doc.text('DETALLE DE ENTREGA', mg+4, y+5);
+    y += 10;
+    // tabla items
+    if (nota.items && nota.items.length && doc.autoTable) {
+      var rows = nota.items.map(function(it, idx) {
+        return [
+          String(idx+1),
+          it.descripcion || '-',
+          it.anio || '-',
+          String(it.cantidad || 1),
+          '\$' + (it.precioUnit || 0).toLocaleString('es-MX', {minimumFractionDigits:2})
+        ];
+      });
+      doc.autoTable({
+        head: [['#','DESCRIPCIÓN','AÑO','CANT.','PRECIO UNIT.']],
+        body: rows, startY: y, margin: {left:mg, right:mg},
+        styles: {font:'helvetica', fontSize:8, cellPadding:4},
+        headStyles: {fillColor:azul, textColor:blanco, fontStyle:'bold', halign:'center'},
+        bodyStyles: {textColor:negro},
+        alternateRowStyles: {fillColor:[245,248,252]},
+        columnStyles: {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:18},3:{halign:'center',cellWidth:16},4:{halign:'right',cellWidth:28}}
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+    // caja totales
+    var boxW=78; var boxX=pageW-mg-boxW; var boxH=32;
+    doc.setFillColor(210,215,220);
+    doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
+    doc.setFillColor(255,255,255);
+    doc.setDrawColor(220,225,235); doc.setLineWidth(0.3);
+    doc.roundedRect(boxX,y,boxW,boxH,2,2,'FD');
+    doc.setFontSize(8.5); doc.setFont(undefined,'normal');
+    doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('Subtotal',boxX+5,y+8);
+    doc.setTextColor(negro[0],negro[1],negro[2]);
+    doc.text('\$'+(nota.subtotal||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+8,{align:'right'});
+    doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('IVA (16%)',boxX+5,y+15);
+    doc.setTextColor(negro[0],negro[1],negro[2]);
+    doc.text('\$'+(nota.ivaTotal||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+15,{align:'right'});
+    doc.setDrawColor(210,220,230); doc.setLineWidth(0.4);
+    doc.line(boxX+3,y+22,boxX+boxW-3,y+22);
+    doc.setFillColor(azul[0],azul[1],azul[2]);
+    doc.roundedRect(boxX,y+23,boxW,9,0,0,'F');
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.setFontSize(10.5); doc.setFont(undefined,'bold');
+    doc.text('TOTAL',boxX+5,y+29);
+    doc.text('\$'+(nota.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
+    y += boxH + 14;
+    // firmas
+    var firmaY = pageH - 30;
+    doc.setDrawColor(180,190,200); doc.setLineWidth(0.4);
+    doc.line(mg,firmaY,mg+65,firmaY);
+    doc.line(pageW-mg-65,firmaY,pageW-mg,firmaY);
+    doc.setFontSize(8); doc.setFont(undefined,'normal');
+    doc.setTextColor(gris[0],gris[1],gris[2]);
+    doc.text('Vendedor / Maya Autopartes',mg+3,firmaY+5);
+    doc.text('Recibido / '+(nota.cliente||'Cliente'),pageW-mg-3,firmaY+5,{align:'right'});
+    // footer
+    doc.setFillColor(azul[0],azul[1],azul[2]);
+    doc.rect(0, pageH-14, pageW, 14, 'F');
+    doc.setFillColor(teal[0],teal[1],teal[2]);
+    doc.rect(0, pageH-14, pageW, 2, 'F');
+    doc.setTextColor(150,185,200); doc.setFontSize(6.5); doc.setFont(undefined,'normal');
+    doc.text('maya-autopartes.myshopify.com', mg, pageH-6);
+    doc.setTextColor(blanco[0],blanco[1],blanco[2]);
+    doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México', pageW/2, pageH-6, {align:'center'});
+    doc.save('nota-entrega-' + (nota.notaId || 'NE') + '.pdf');
+    window.toast('PDF generado', 'success');
+  } catch(err) {
+    console.error('Error PDF nota entrega:', err);
+    window.toast('Error: ' + err.message, 'error');
+  }
+};
+
+window.generarNotaEntregaPDFById = function(id) {
+  var notas = window.data.notasEntrega || [];
+  var nota = notas.find(function(n) { return n.id === id; });
+  if (!nota) { window.toast('Nota no encontrada', 'error'); return; }
+  window.generarNotaEntregaPDF(nota);
+};
+
 </script>
+
+<!-- MODAL NOTA DE ENTREGA -->
+<div class="modal-overlay" id="modal-nota-entrega" style="display:none" onclick="if(event.target===this)closeModal('modal-nota-entrega')">
+  <div class="modal" style="max-width:700px;width:95%">
+    <div class="modal-header">
+      <div class="modal-title">📝 Nueva Nota de Entrega</div>
+      <button class="modal-close" onclick="closeModal('modal-nota-entrega')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div class="form-group">
+          <label class="form-label">Cliente *</label>
+          <input type="text" id="ne-cliente" class="form-control" placeholder="Nombre del cliente">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Siniestro</label>
+          <input type="text" id="ne-siniestro" class="form-control" placeholder="# Siniestro">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha</label>
+          <input type="date" id="ne-fecha" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vendedor</label>
+          <input type="text" id="ne-vendedor" class="form-control" placeholder="Nombre del vendedor">
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong>Artículos</strong>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="agregarItemNE()">+ Agregar item</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="background:var(--bg-secondary,#f1f5f9);font-size:12px">
+              <th style="padding:6px 8px;text-align:left">Descripción</th>
+              <th style="padding:6px 8px;text-align:left">Año auto</th>
+              <th style="padding:6px 8px;text-align:left">Cant.</th>
+              <th style="padding:6px 8px;text-align:left">Precio Unit.</th>
+              <th style="padding:6px 4px"></th>
+            </tr></thead>
+            <tbody id="ne-items-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <input type="checkbox" id="ne-iva" onchange="calcTotalesNE()">
+        <label for="ne-iva" style="cursor:pointer;user-select:none">Incluye IVA 16%</label>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:14px">
+        <div>Subtotal: <strong id="ne-subtotal">$0.00</strong></div>
+        <div>IVA: <strong id="ne-iva-monto">$0.00</strong></div>
+        <div style="font-size:16px;font-weight:700">Total: <span id="ne-total">$0.00</span></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-nota-entrega')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveNotaEntrega()">💾 Guardar + PDF</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
