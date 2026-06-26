@@ -7700,7 +7700,7 @@ function renderNotasEntrega() {
   var notas = window.data.notasEntrega || [];
   var tbody = document.getElementById('ne-body');
   if (!tbody) return;
-  var isAdmin = window.currentUserRole === 'admin';
+  var isAdmin = window.currentRole === 'admin';
   if (!notas.length) {
     tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>';
     return;
@@ -7986,10 +7986,10 @@ window.generarNotaEntregaPDFById = function(id) {
 </script>
 
 <!-- MODAL NOTA DE ENTREGA -->
-<div class="modal-overlay" id="modal-nota-entrega" style="display:none" onclick="if(event.target===this)closeModal('modal-nota-entrega')">
+<div class="modal-overlay" id="modal-nota-entrega" onclick="if(event.target===this)closeModal('modal-nota-entrega')">
   <div class="modal" style="max-width:700px;width:95%">
-    <div class="modal-header">
-      <div class="modal-title">📝 Nueva Nota de Entrega</div>
+    <div class="modal-head">
+      <h3>📝 Nueva Nota de Entrega</h3>
       <button class="modal-close" onclick="closeModal('modal-nota-entrega')">&times;</button>
     </div>
     <div class="modal-body">
@@ -8039,7 +8039,7 @@ window.generarNotaEntregaPDFById = function(id) {
         <div style="font-size:16px;font-weight:700">Total: <span id="ne-total">$0.00</span></div>
       </div>
     </div>
-    <div class="modal-footer">
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px">
       <button class="btn btn-secondary" onclick="closeModal('modal-nota-entrega')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveNotaEntrega()">💾 Guardar + PDF</button>
     </div>
