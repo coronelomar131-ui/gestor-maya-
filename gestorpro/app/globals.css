@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════
+   GestorPro Design System
+   Inspired by: Linear.app, Vercel Dashboard, Stripe
+   Philosophy: Dieter Rams — "Less, but better"
+   ═══════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Dark theme — the only theme. Premium products are dark. */
+    --background: 220 15% 5%;          /* #0A0C0F */
+    --foreground: 210 20% 92%;         /* #E8ECF0 */
+
+    --surface: 220 15% 8%;             /* #101419 */
+    --surface-raised: 220 14% 11%;     /* #161B21 */
+    --surface-overlay: 220 13% 14%;    /* #1C2229 */
+
+    --border: 220 12% 18%;             /* #262D35 */
+    --border-subtle: 220 10% 13%;      /* #1A1F26 */
+
+    --muted: 220 12% 14%;
+    --muted-foreground: 215 16% 47%;   /* #657489 */
+
+    /* Cyan-Turquoise accent — Brand identity */
+    --accent: 189 100% 42%;            /* #00C4D4 */
+    --accent-foreground: 220 15% 5%;
+    --accent-muted: 189 60% 12%;       /* #091F21 */
+
+    --primary: 189 100% 42%;
+    --primary-foreground: 220 15% 5%;
+
+    --success: 142 76% 48%;            /* #22C55E */
+    --success-muted: 142 40% 10%;
+
+    --warning: 38 92% 50%;             /* #F59E0B */
+    --warning-muted: 38 50% 10%;
+
+    --destructive: 0 84% 60%;          /* #EF4444 */
+    --destructive-muted: 0 50% 10%;
+
+    --sidebar: 220 17% 6%;             /* #0D1014 */
+    --sidebar-border: 220 12% 15%;
+    --sidebar-hover: 220 14% 10%;
+    --sidebar-active: 189 50% 10%;
+
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Custom scrollbar — Linear style */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+
+  /* Selection */
+  ::selection {
+    background: hsl(var(--accent) / 0.25);
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  /* Glass morphism — used in modals and cards */
+  .glass {
+    background: hsl(var(--surface) / 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border));
+  }
+
+  /* Gradient text — for headlines */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(189 100% 70%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Subtle glow for active elements */
+  .glow-accent {
+    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.3), 0 0 20px hsl(var(--accent) / 0.1);
+  }
+
+  /* Noise texture overlay — adds depth */
+  .noise::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: 0.3;
+  }
+
+  /* Table row hover */
+  .table-row-hover {
+    @apply transition-colors hover:bg-surface-raised cursor-pointer;
+  }
+
+  /* Truncate with title for long text */
+  .truncate-cell {
+    @apply truncate max-w-[200px];
+  }
+}
+
+/* ─── Animations ────────────────────────────────────────────────────────────── */
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--surface)) 25%,
+    hsl(var(--surface-raised)) 50%,
+    hsl(var(--surface)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* Focus visible — accessibility */
+.focus-ring {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+}
