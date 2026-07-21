@@ -3891,7 +3891,7 @@ window.cargarProductosML = async function() {
 
     // ⭐ NUEVO: Cargar desde Firestore primero (caché compartida = más rápido)
     const mlProductosSnap = await getDocs(collection(db, 'ml_productos'));
-    const items = [];
+    let items = [];
     // FIX: Create new objects from Firestore docs to avoid readonly property errors
     mlProductosSnap.forEach(doc => {
       const itemData = doc.data() || {};
@@ -3949,19 +3949,37 @@ window.cargarProductosML = async function() {
       items = data.items;
     }
 
-    // Filtrar solo productos activos con stock
-    const conStock = (items || []).filter(
-      p => p.status === "active" && p.available_quantity > 0
-    );
-    const listaFinal = conStock.length > 0 ? conStock : items;
+    window.renderProductosMLGrid(items, syncInfo);
 
-    let html = syncInfo + `
+    const nAct = items.filter(p => p.status === 'active').length;
+    const nPau = items.filter(p => p.status === 'paused').length;
+    window.toast(`✅ ${items.length} productos ML (${nAct} activos, ${nPau} pausados)`, 'success');
+  } catch (error) {
+    window.toast('Error: ' + error.message, 'error');
+  }
+};
+
+// Render del grid de productos ML (usado por carga inicial y tiempo real)
+window.renderProductosMLGrid = function(items, syncInfo) {
+  const container = document.getElementById('ml-productos-container');
+  if (!container) return;
+
+  if (!items || items.length === 0) {
+    container.innerHTML = '<p style="color:var(--gray)">No hay productos en Mercado Libre</p>';
+    return;
+  }
+
+  // Orden: activos con stock, activos sin stock, pausados, resto
+  const peso = p => p.status === 'active' ? (p.available_quantity > 0 ? 0 : 1) : (p.status === 'paused' ? 2 : 3);
+  const listaFinal = items.slice().sort((a, b) => peso(a) - peso(b));
+
+  let html = (syncInfo || '') + `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:20px">
     `;
 
-    listaFinal.forEach(p => {
-      const statusColor = p.status === 'active' ? '#3BBCD4' : '#f87171';
-      const statusText = p.status === 'active' ? 'Activo' : p.status || 'Inactivo';
+  listaFinal.forEach(p => {
+      const statusColor = p.status === 'active' ? (p.available_quantity > 0 ? '#3BBCD4' : '#ef4444') : (p.status === 'paused' ? '#f59e0b' : '#f87171');
+      const statusText = p.status === 'active' ? (p.available_quantity > 0 ? 'Activo' : 'Sin stock') : (p.status === 'paused' ? 'Pausado' : p.status || 'Inactivo');
 
       html += `
         <div style="
@@ -4023,12 +4041,7 @@ window.cargarProductosML = async function() {
     });
 
     html += `</div>`;
-    container.innerHTML = html;
-
-    window.toast(`✅ ${listaFinal.length} productos activos con stock en Mercado Libre`, 'success');
-  } catch (error) {
-    window.toast('Error: ' + error.message, 'error');
-  }
+  container.innerHTML = html;
 };
 
 // ═════════════════════════════════════════════════════════════
@@ -4036,9 +4049,12 @@ window.cargarProductosML = async function() {
 // ═════════════════════════════════════════════════════════════
 
 // A. Escuchar cambios en tiempo real
+let mlProductosUnsub = null;
+
 window.escucharProductosML = function() {
+  if (mlProductosUnsub) return; // ya hay un listener activo
   const mlProductosCollection = collection(db, 'ml_productos');
-  onSnapshot(mlProductosCollection, (snapshot) => {
+  mlProductosUnsub = onSnapshot(mlProductosCollection, (snapshot) => {
     const productos = [];
     snapshot.forEach(doc => {
       const itemData = doc.data() || {};
@@ -4051,6 +4067,11 @@ window.escucharProductosML = function() {
 
     if (productos.length > 0) {
       verificarAlertas(productos);
+      // Re-render en vivo del grid si el módulo ML está visible
+      const mod = document.getElementById('mod-mercadolibre');
+      if (mod && mod.classList.contains('active') && window.renderProductosMLGrid) {
+        window.renderProductosMLGrid(productos);
+      }
     }
   }, (error) => {
     console.error('Error en escucharProductosML:', error);
@@ -4109,12 +4130,14 @@ window.iniciarMLTiempoReal = function() {
     clearInterval(mlAutoUpdateInterval);
   }
 
-  // AUTO-ACTUALIZAR ÓRDENES cada 3 minutos (180000ms)
-  console.log('🔄 Auto-actualización de órdenes ML iniciada (cada 3 minutos)');
+  // AUTO-ACTUALIZAR ÓRDENES + INVENTARIO cada 3 minutos (180000ms)
+  console.log('🔄 Auto-actualización ML iniciada (cada 3 minutos)');
   cargarOrdenesML(); // Carga inicial
+  sincronizarInventarioML(true); // Sync inicial silencioso (refresca caché → tiempo real)
   mlAutoUpdateInterval = setInterval(async () => {
-    console.log('🔄 Actualizando órdenes ML...');
+    console.log('🔄 Actualizando órdenes + inventario ML...');
     await cargarOrdenesML();
+    await sincronizarInventarioML(true);
   }, 180000); // 3 minutos
 };
 
@@ -5146,18 +5169,20 @@ if (document.readyState === 'loading') {
 // MERCADO LIBRE INVENTORY SYNC
 // ═════════════════════════════════════════════════════════════
 
-window.sincronizarInventarioML = async function() {
+window.sincronizarInventarioML = async function(silent) {
+  const statusDiv = document.getElementById('ml-sync-status');
   try {
-    const statusDiv = document.getElementById('ml-sync-status');
-    statusDiv.style.display = 'block';
-    statusDiv.innerHTML = '⏳ Sincronizando con Mercado Libre...';
+    if (!silent && statusDiv) {
+      statusDiv.style.display = 'block';
+      statusDiv.innerHTML = '⏳ Sincronizando con Mercado Libre...';
+    }
 
     // ⭐ NUEVO: Usar obtenerMLUserId() que lee desde Firestore (compartido)
     let mlUserId = await obtenerMLUserId();
     console.log('ML User ID en sync:', mlUserId);
 
     if (!mlUserId) {
-      statusDiv.innerHTML = '🔗 <strong>El administrador debe conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
+      if (!silent && statusDiv) statusDiv.innerHTML = '🔗 <strong>El administrador debe conectar Mercado Libre primero</strong><br><button class="btn btn-sm btn-primary" onclick="showModule(\'mercadolibre\')" style="margin-top:10px">Ir a Mercado Libre</button>';
       return;
     }
 
@@ -5166,21 +5191,26 @@ window.sincronizarInventarioML = async function() {
     const data = await response.json();
 
     if (data.error) {
-      statusDiv.innerHTML = `❌ Error: ${data.error}`;
+      if (!silent && statusDiv) statusDiv.innerHTML = `❌ Error: ${data.error}`;
       return;
     }
-
-    // ⭐ NUEVO: Guardar productos en Firestore para acceso compartido + contar alertas
-    const batch = writeBatch(db);
-    let syncedCount = 0, stockBajo = 0, sinStock = 0, pausados = 0;
 
     // Usar data.results O data.items (compatibilidad)
     const items = data.results || data.items || [];
 
     if (!items || items.length === 0) {
-      statusDiv.innerHTML = '⚠️ No se recibieron productos de Mercado Libre';
+      if (!silent && statusDiv) statusDiv.innerHTML = '⚠️ No se recibieron productos de Mercado Libre';
       return;
     }
+
+    // ⭐ Guardar productos en Firestore en lotes de máx 400 operaciones (límite 500)
+    let syncedCount = 0, stockBajo = 0, sinStock = 0, pausados = 0;
+    const idsActuales = new Set();
+    let batch = writeBatch(db);
+    let ops = 0;
+    const commitIfFull = async () => {
+      if (ops >= 400) { await batch.commit(); batch = writeBatch(db); ops = 0; }
+    };
 
     for (const producto of items) {
       // ⭐ FIX BUG 1: CREAR OBJETO NUEVO (no modificar readonly)
@@ -5201,10 +5231,13 @@ window.sincronizarInventarioML = async function() {
         productolimpio.usuario = authUser.uid;
       }
 
+      idsActuales.add(productolimpio.id);
       // Guardar en ml_productos (caché compartida)
       batch.set(doc(db, 'ml_productos', productolimpio.id), productolimpio);
       // También guardar en inventario (legado)
       batch.set(doc(db, 'inventario', `ml_${productolimpio.id}`), productolimpio, { merge: true });
+      ops += 2;
+      await commitIfFull();
 
       syncedCount++;
 
@@ -5213,6 +5246,18 @@ window.sincronizarInventarioML = async function() {
       else if (productolimpio.available_quantity === 0) sinStock++;
       else if (productolimpio.available_quantity === 1) stockBajo++;
     }
+
+    // ⭐ Eliminar de la caché productos que ya no existen en ML
+    try {
+      const cacheSnap = await getDocs(collection(db, 'ml_productos'));
+      for (const d of cacheSnap.docs) {
+        if (!idsActuales.has(d.id)) {
+          batch.delete(doc(db, 'ml_productos', d.id));
+          ops++;
+          await commitIfFull();
+        }
+      }
+    } catch (e) { console.warn('No se pudo limpiar caché ML:', e.message); }
 
     await batch.commit();
 
@@ -5225,37 +5270,44 @@ window.sincronizarInventarioML = async function() {
       pausados
     });
 
-    // ⭐ NUEVO: Mostrar resumen con alertas
-    let resumen = `✅ ${syncedCount} productos`;
-    if (stockBajo > 0) resumen += ` | 🟡 ${stockBajo} stock bajo`;
-    if (sinStock > 0) resumen += ` | 🔴 ${sinStock} sin stock`;
-    if (pausados > 0) resumen += ` | ⚠️ ${pausados} pausados`;
+    console.log(`✅ Sync ML: ${syncedCount} productos (silent: ${!!silent})`);
 
-    statusDiv.innerHTML = resumen;
-    window.toast(resumen, 'success');
+    if (!silent) {
+      // ⭐ NUEVO: Mostrar resumen con alertas
+      let resumen = `✅ ${syncedCount} productos`;
+      if (stockBajo > 0) resumen += ` | 🟡 ${stockBajo} stock bajo`;
+      if (sinStock > 0) resumen += ` | 🔴 ${sinStock} sin stock`;
+      if (pausados > 0) resumen += ` | ⚠️ ${pausados} pausados`;
 
-    // Show alert in dashboard
-    if (window.mostrarAlertaML) {
-      mostrarAlertaML(resumen);
+      if (statusDiv) statusDiv.innerHTML = resumen;
+      window.toast(resumen, 'success');
+
+      // Show alert in dashboard
+      if (window.mostrarAlertaML) {
+        mostrarAlertaML(resumen);
+      }
+
+      // ⭐ BONUS: Notificaciones push si hay alertas críticas
+      if (sinStock > 0) {
+        enviarNotificacion('🔴 Stock Agotado', `${sinStock} producto(s) sin stock en ML`);
+      }
+      if (pausados > 0) {
+        enviarNotificacion('⚠️ Productos Pausados', `${pausados} producto(s) pausado(s) en ML`);
+      }
+
+      // Recargar productos ML en la vista (en modo silencioso lo hace el listener en tiempo real)
+      cargarProductosML();
+
+      setTimeout(() => {
+        if (statusDiv) statusDiv.style.display = 'none';
+      }, 5000);
     }
-
-    // ⭐ BONUS: Notificaciones push si hay alertas críticas
-    if (sinStock > 0) {
-      enviarNotificacion('🔴 Stock Agotado', `${sinStock} producto(s) sin stock en ML`);
-    }
-    if (pausados > 0) {
-      enviarNotificacion('⚠️ Productos Pausados', `${pausados} producto(s) pausado(s) en ML`);
-    }
-
-    // Recargar productos ML en la vista
-    cargarProductosML();
-
-    setTimeout(() => {
-      statusDiv.style.display = 'none';
-    }, 5000);
   } catch (error) {
-    window.toast('❌ Error: ' + error.message, 'error');
-    document.getElementById('ml-sync-status').innerHTML = `❌ Error: ${error.message}`;
+    console.error('Error sync ML:', error);
+    if (!silent) {
+      window.toast('❌ Error: ' + error.message, 'error');
+      if (statusDiv) statusDiv.innerHTML = `❌ Error: ${error.message}`;
+    }
   }
 };
 
@@ -5303,7 +5355,7 @@ window.setupMLAutoSync = function() {
               // Ocultar el div de status para evitar que se vea el sync silencioso
               if (statusDiv) statusDiv.style.display = 'none';
 
-              await sincronizarInventarioML();
+              await sincronizarInventarioML(true);
               console.log('✅ Auto-sync completado');
             } finally {
               if (statusDiv) statusDiv.style.display = originalDisplay || 'none';

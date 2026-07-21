@@ -134,59 +134,64 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // ── Full inventory with pagination ──
+    // ── Full inventory with pagination (activos + pausados = todos los vendibles) ──
     if (action === 'inventory' && mlUserId) {
       try {
         const accessToken = await getValidMLToken(mlUserId);
         const LIMIT = 100;
-        let offset = 0;
         let todos = [];
-        let total = 999;
 
-        while (todos.length < total && offset < 1000) {
-          const response = await axios.get(
-            `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
-            {
-              headers: { 'Authorization': `Bearer ${accessToken}` },
-              params: { limit: LIMIT, offset: offset, status: 'active' }
+        for (const st of ['active', 'paused']) {
+          let offset = 0;
+          let total = 999;
+          let fetched = 0;
+
+          while (fetched < total && offset < 1000) {
+            const response = await axios.get(
+              `https://api.mercadolibre.com/users/${mlUserId}/items/search`,
+              {
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                params: { limit: LIMIT, offset: offset, status: st }
+              }
+            );
+
+            const itemIds = response.data.results || [];
+            total = response.data.paging?.total || 0;
+            if (itemIds.length === 0) break;
+            fetched += itemIds.length;
+
+            for (let i = 0; i < itemIds.length; i += 20) {
+              const chunk = itemIds.slice(i, i + 20).join(',');
+              try {
+                const detResponse = await axios.get(
+                  `https://api.mercadolibre.com/items?ids=${chunk}`,
+                  { headers: { 'Authorization': `Bearer ${accessToken}` } }
+                );
+                const items = detResponse.data
+                  .filter(r => r.code === 200)
+                  .map(r => {
+                    const item = r.body;
+                    return {
+                      id: item.id,
+                      title: item.title,
+                      price: item.price,
+                      available_quantity: item.available_quantity,
+                      status: item.status,
+                      thumbnail: item.thumbnail,
+                      permalink: item.permalink,
+                      category_id: item.category_id,
+                      category: item.category_id || 'Sin categoría',
+                      condition: item.condition,
+                      sold_quantity: item.sold_quantity
+                    };
+                  });
+                todos = todos.concat(items);
+              } catch (e) {
+                console.error('Error fetching chunk:', e.message);
+              }
             }
-          );
-
-          const itemIds = response.data.results || [];
-          total = response.data.paging?.total || 0;
-          if (itemIds.length === 0) break;
-
-          for (let i = 0; i < itemIds.length; i += 20) {
-            const chunk = itemIds.slice(i, i + 20).join(',');
-            try {
-              const detResponse = await axios.get(
-                `https://api.mercadolibre.com/items?ids=${chunk}`,
-                { headers: { 'Authorization': `Bearer ${accessToken}` } }
-              );
-              const items = detResponse.data
-                .filter(r => r.code === 200)
-                .map(r => {
-                  const item = r.body;
-                  return {
-                    id: item.id,
-                    title: item.title,
-                    price: item.price,
-                    available_quantity: item.available_quantity,
-                    status: item.status,
-                    thumbnail: item.thumbnail,
-                    permalink: item.permalink,
-                    category_id: item.category_id,
-                    category: item.category_id || 'Sin categoría',
-                    condition: item.condition,
-                    sold_quantity: item.sold_quantity
-                  };
-                });
-              todos = todos.concat(items);
-            } catch (e) {
-              console.error('Error fetching chunk:', e.message);
-            }
+            offset += LIMIT;
           }
-          offset += LIMIT;
         }
 
         console.log(`Inventory total: ${todos.length}`);
