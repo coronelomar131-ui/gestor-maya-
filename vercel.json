@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "functions": {
+    "api/ml.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     { "source": "/callback", "destination": "/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }

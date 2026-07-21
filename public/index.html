@@ -893,8 +893,31 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   const urlParams = new URLSearchParams(window.location.search);
   const mlConnectedParam = urlParams.get('ml_connected');
   const mlUserIdParam = urlParams.get('mlUserId');
+  const mlCodeParam = urlParams.get('code');
 
-  console.log('ML params detected:', { mlConnected: mlConnectedParam, mlUserId: mlUserIdParam });
+  console.log('ML params detected:', { mlConnected: mlConnectedParam, mlUserId: mlUserIdParam, code: !!mlCodeParam });
+
+  // OAuth callback: ML redirected here with ?code= — exchange it for tokens via our API
+  if (mlCodeParam && !mlConnectedParam) {
+    document.title = 'Conectando Mercado Libre...';
+    fetch('/api/ml?action=exchange&code=' + encodeURIComponent(mlCodeParam))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.success && d.mlUserId) {
+          localStorage.setItem('ml_user_id', d.mlUserId);
+          window.location.href = '/?ml_connected=true&mlUserId=' + d.mlUserId;
+        } else {
+          console.error('ML exchange failed:', d);
+          alert('Error conectando Mercado Libre: ' + (d.error || 'desconocido'));
+          window.location.href = '/';
+        }
+      })
+      .catch(function(e) {
+        console.error('ML exchange error:', e);
+        alert('Error conectando Mercado Libre: ' + e.message);
+        window.location.href = '/';
+      });
+  }
 
   if (mlConnectedParam === 'true' && mlUserIdParam) {
     // Store in sessionStorage for immediate access
@@ -3818,7 +3841,7 @@ window.obtenerMLUserId = async function() {
 
 window.loginMercadoLibre = async function() {
   try {
-    const response = await fetch('https://gestor-maya-production.up.railway.app/ml/login-url');
+    const response = await fetch('/api/ml?action=login-url');
     const data = await response.json();
     if(data.loginUrl) {
       window.location.href = data.loginUrl;
@@ -3897,7 +3920,7 @@ window.cargarProductosML = async function() {
     // Si no hay caché, hacer fetch directo
     let data;
     if (items.length === 0) {
-      const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/inventory/${mlUserId}`);
+      const response = await fetch(`/api/ml?action=inventory&mlUserId=${mlUserId}`);
       data = await response.json();
 
       if (data.error === 'token_expired' || response.status === 401) {
@@ -4145,11 +4168,11 @@ window.syncInventarioML = async function(itemId, cantidad, precio) {
       return;
     }
 
-    // Use Railway backend to sync product
-    const response = await fetch('https://gestor-maya-production.up.railway.app/ml/sync', {
+    const response = await fetch('/api/ml', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'sync',
         mlUserId: mlUserId,
         itemId: itemId,
         quantity: cantidad,
@@ -4182,7 +4205,7 @@ window.cargarOrdenesML = async function() {
       return;
     }
 
-    const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/ordenes/${mlUserId}`);
+    const response = await fetch(`/api/ml?action=ordenes&mlUserId=${mlUserId}`);
     if (!response.ok) {
       console.warn('Órdenes ML no disponible:', response.status);
       const tbody = document.getElementById('ml-ordenes-tbody');
@@ -5139,7 +5162,7 @@ window.sincronizarInventarioML = async function() {
     }
 
     // Fetch products from ML
-    const response = await fetch(`https://gestor-maya-production.up.railway.app/ml/inventory/${mlUserId}`);
+    const response = await fetch(`/api/ml?action=inventory&mlUserId=${mlUserId}`);
     const data = await response.json();
 
     if (data.error) {
