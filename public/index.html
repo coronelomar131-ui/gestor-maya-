@@ -991,6 +991,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary" onclick="doLogin()" id="login-btn">INGRESAR AL SISTEMA</button>
+    <div style="margin-top:12px;text-align:center;font-size:12px;">
+      <span style="color:#3BBCD4;cursor:pointer;" onclick="olvidePassword()">¿Olvidaste tu contraseña?</span>
+    </div>
     <div id="firebase-config-notice" style="margin-top:16px;text-align:center;font-size:12px;color:#8a9bb0;">
       ¿Primera vez? <span style="color:#3BBCD4;cursor:pointer;" onclick="showSetup()">Configurar Firebase →</span>
     </div>
@@ -2327,7 +2330,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <!-- FIREBASE SDKs -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, where, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 // Firebase Storage ya no se usa (facturas se guardan como base64 en Firestore)
 // import { getStorage, ref, uploadBytes, getBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
@@ -2456,6 +2459,33 @@ async function loadUserProfile(uid) {
     document.getElementById('nav-finanzas').style.display = 'flex';
   }
 }
+
+// Recuperación de contraseña desde el login (autoservicio)
+window.olvidePassword = async function() {
+  let email = document.getElementById('login-email').value.trim();
+  if (!email) {
+    email = (prompt('Escribe tu correo para enviarte el link de recuperación:') || '').trim();
+  }
+  if (!email) return;
+  try {
+    await sendPasswordResetEmail(auth, email);
+    alert('📧 Listo. Revisa tu correo (' + email + ') y sigue el link para crear una contraseña nueva.\n\nSi no lo ves, checa la carpeta de spam.');
+  } catch (e) {
+    alert('No se pudo enviar el correo: ' + (e.code === 'auth/invalid-email' ? 'correo inválido' : e.message));
+  }
+};
+
+// Admin: enviar link de restablecimiento a un usuario
+window.resetPasswordUsuario = async function(email) {
+  if (!email) { toast('Este usuario no tiene correo registrado', 'error'); return; }
+  if (!confirm('¿Enviar link de recuperación de contraseña a ' + email + '?')) return;
+  try {
+    await sendPasswordResetEmail(auth, email);
+    toast('📧 Link de recuperación enviado a ' + email, 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+};
 
 window.doLogin = async function() {
   const email = document.getElementById('login-email').value.trim();
@@ -2762,7 +2792,7 @@ function renderUsuarios() {
       <td style="font-weight:600">${u.nombre || '—'}</td>
       <td>${u.email || '—'}</td>
       <td><span class="badge badge-b">${u.rol || '—'}</span></td>
-      <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
+      <td style="white-space:nowrap">${rol === 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="resetPasswordUsuario('${u.email || ''}')" title="Enviar link para restablecer contraseña">🔑</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
