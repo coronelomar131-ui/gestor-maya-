@@ -7852,6 +7852,8 @@ window.initNotaEntrega = function() {
   document.getElementById('ne-fecha').value = new Date().toISOString().slice(0,10);
   document.getElementById('ne-vendedor').value = '';
   document.getElementById('ne-iva').checked = false;
+  var chkVenta = document.getElementById('ne-registrar-venta');
+  if (chkVenta) chkVenta.checked = true;
   document.getElementById('ne-items-body').innerHTML = '';
   var dl = document.getElementById('ne-clientes-list');
   if (dl) {
@@ -7933,6 +7935,69 @@ window.saveNotaEntrega = async function() {
     };
     var ref = await window.addDoc(window.collection(window.db, 'notasEntrega'), payload);
     window.toast('Nota de entrega guardada', 'success');
+
+    // 💰 Registrar también como venta (automático, si el checkbox está marcado)
+    var registrarVenta = document.getElementById('ne-registrar-venta') ? document.getElementById('ne-registrar-venta').checked : false;
+    if (registrarVenta) {
+      try {
+        var ventas = window.data.ventas || [];
+        var lastNum = 0;
+        ventas.forEach(function(v) {
+          var str = String(v.notaId || v.notaNumero || '');
+          var num = parseInt(str.replace('NV-','').replace(/\D/g,'') || '0');
+          if (num > lastNum) lastNum = num;
+        });
+        var ventaNotaId = String(lastNum + 1);
+        var cliObj = (window.data.clientes || []).find(function(c){ return (c.razonSocial || c.nombre) === cliente; });
+        var ventaItems = items.map(function(it) {
+          var linea = it.cantidad * it.precioUnit;
+          return {
+            pedido: it.descripcion + (it.anio ? ' (' + it.anio + ')' : '') + (it.cantidad > 1 ? ' x' + it.cantidad : ''),
+            numSiniestro: it.siniestro || '',
+            precio: linea,
+            iva: conIva ? parseFloat((linea * 0.16).toFixed(2)) : 0,
+            ajuste: 0
+          };
+        });
+        var authUser = (window.auth && window.auth.currentUser) || null;
+        var createdByName = (authUser && authUser.displayName) || '';
+        if (!createdByName && authUser && window.data.usuarios) {
+          var uEnc = window.data.usuarios.find(function(u){ return u.email === authUser.email; });
+          if (uEnc) createdByName = uEnc.nombre || authUser.email;
+        }
+        if (!createdByName) createdByName = (authUser && authUser.email) || 'Usuario';
+        var venta = {
+          notaId: ventaNotaId,
+          fecha: fecha ? new Date(fecha + 'T12:00:00').getTime() : Date.now(),
+          clienteId: cliObj ? cliObj.id : '',
+          clienteNombre: cliente,
+          vendedor: vendedor,
+          items: ventaItems,
+          siniestros: siniestro,
+          subtotal: parseFloat(subtotal.toFixed(2)),
+          ivaTotal: parseFloat(ivaTotal.toFixed(2)),
+          ajusteTotal: 0,
+          total: parseFloat(total.toFixed(2)),
+          incluyeDatosFiscales: false,
+          estado: 'pendiente',
+          estatus: 'Entregado',
+          facturaURL: '',
+          tieneFactura: false,
+          fuente: 'nota_entrega',
+          notaEntregaId: notaId,
+          notas: 'Generada automáticamente desde Nota de Entrega ' + notaId,
+          createdAt: window.serverTimestamp(),
+          createdBy: authUser ? authUser.uid : '',
+          createdByName: createdByName
+        };
+        await window.addDoc(window.collection(window.db, 'ventas'), venta);
+        window.toast('💰 Venta ' + ventaNotaId + ' registrada automáticamente', 'success');
+      } catch(ev) {
+        console.error('Error registrando venta automática:', ev);
+        window.toast('Nota guardada, pero la venta no se pudo registrar: ' + ev.message, 'error');
+      }
+    }
+
     closeModal('modal-nota-entrega');
     payload.id = ref.id;
     window.generarNotaEntregaPDF(payload);
@@ -8158,9 +8223,13 @@ window.previewNotaEntregaPDFById = function(id) {
           </table>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <input type="checkbox" id="ne-iva" onchange="calcTotalesNE()">
         <label for="ne-iva" style="cursor:pointer;user-select:none">Incluye IVA 16%</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <input type="checkbox" id="ne-registrar-venta" checked>
+        <label for="ne-registrar-venta" style="cursor:pointer;user-select:none">💰 Registrar también como venta (desmarca si ya la registraste)</label>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:14px">
         <div>Subtotal: <strong id="ne-subtotal">$0.00</strong></div>
