@@ -26,7 +26,7 @@ const db = admin.firestore?.() || null;
 
 // ML API Config
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
-const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tUrXwr';
+const ML_SECRET_KEY = process.env.ML_SECRET_KEY;
 
 // Health check
 app.get('/api/health', (req, res) => {

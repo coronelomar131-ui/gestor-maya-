@@ -17,7 +17,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // ML Config
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
-const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tUrXwr';
+const ML_SECRET_KEY = process.env.ML_SECRET_KEY;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
 // Build redirect URI from FRONTEND_URL if not explicitly set
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI || `${FRONTEND_URL}/ml/callback`;

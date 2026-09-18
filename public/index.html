@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Maya Autopartes — Sistema de Gestión</title>
+<link rel="icon" type="image/svg+xml" href="/maya-logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -993,9 +994,6 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     <button class="btn btn-primary" onclick="doLogin()" id="login-btn">INGRESAR AL SISTEMA</button>
     <div style="margin-top:12px;text-align:center;font-size:12px;">
       <span style="color:#3BBCD4;cursor:pointer;" onclick="olvidePassword()">¿Olvidaste tu contraseña?</span>
-    </div>
-    <div id="firebase-config-notice" style="margin-top:16px;text-align:center;font-size:12px;color:#8a9bb0;">
-      ¿Primera vez? <span style="color:#3BBCD4;cursor:pointer;" onclick="showSetup()">Configurar Firebase →</span>
     </div>
   </div>
 </div>
@@ -3817,10 +3815,6 @@ window.toast = function(msg, type = 'info') {
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 3000);
 };
 
-window.showSetup = function() {
-  alert('Para configurar tu primer usuario admin:\n\n1. Ve a Firebase Console\n2. Authentication → Usuarios → Agregar usuario\n3. Ingresa tu email y contraseña\n4. Regresa aquí e inicia sesión con esas credenciales\n\nLa primera vez que inicies sesión se reconocerá como admin automáticamente.');
-};
-
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', function(e) {
@@ -4130,13 +4124,13 @@ window.verificarAlertas = function(productos) {
     if (sinStock > 0) {
       new Notification('🔴 Maya Autopartes', {
         body: `${sinStock} producto(s) sin stock en Mercado Libre`,
-        icon: '/favicon.ico'
+        icon: '/maya-logo.jpg'
       });
     }
     if (stockBajo > 0) {
       new Notification('🟡 Maya Autopartes', {
         body: `${stockBajo} producto(s) con solo 1 unidad disponible`,
-        icon: '/favicon.ico'
+        icon: '/maya-logo.jpg'
       });
     }
   }
@@ -5124,28 +5118,8 @@ window.subirFactura = async function(ventaId, notaNumero, input) {
   }
 };
 
-window.descargarFactura = async function(ventaId) {
-  try {
-    const ventaRef = doc(window.db, 'ventas', ventaId);
-    const snap = await getDoc(ventaRef);
-    if (!snap.exists() || !snap.data().facturaURL) {
-      window.toast('Factura no encontrada', 'error');
-      return;
-    }
-    const url = snap.data().facturaURL;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factura-${ventaId}.pdf`;
-    a.click();
-    window.toast('Factura descargada', 'success');
-  } catch (e) {
-    console.error('Error:', e);
-    window.toast('Error al descargar factura', 'error');
-  }
-};
-
 window.verFactura = function(base64) {
-  if (!base64) { alert('Factura no disponible'); return; }
+  if (!base64) { window.toast('Factura no disponible', 'error'); return; }
   try {
     const byteString = atob(base64.split(',')[1]);
     const ab = new ArrayBuffer(byteString.length);
@@ -5159,7 +5133,7 @@ window.verFactura = function(base64) {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (e) {
     console.error('Error abriendo factura:', e);
-    alert('Error al abrir la factura');
+    window.toast('Error al abrir la factura', 'error');
   }
 };
 
@@ -5182,8 +5156,8 @@ window.enviarNotificacion = function(titulo, mensaje, icono = '🚗') {
   if (Notification.permission === 'granted') {
     new Notification(`${icono} ${titulo}`, {
       body: mensaje,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico'
+      icon: '/maya-logo.jpg',
+      badge: '/maya-logo.jpg'
     });
   }
 };
@@ -7634,7 +7608,7 @@ window.abrirUploadFactura = function(ventaId, notaId) {
 
 window.descargarFactura = function(base64, nombreArchivo) {
   if (!base64) {
-    alert('Factura no disponible');
+    window.toast('Factura no disponible', 'error');
     return;
   }
   try {
@@ -7656,7 +7630,7 @@ window.descargarFactura = function(base64, nombreArchivo) {
     window.toast('✅ Factura descargada', 'success');
   } catch (e) {
     console.error('Error descargando factura:', e);
-    alert('Error al descargar la factura');
+    window.toast('Error al descargar la factura', 'error');
   }
 };
 

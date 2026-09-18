@@ -2,7 +2,8 @@ const axios = require('axios');
 const admin = require('firebase-admin');
 
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
-const ML_SECRET_KEY = process.env.ML_SECRET_KEY || '0YCTfgEqnDE81vQgpKDdq2i0A9tUrXwr';
+const ML_SECRET_KEY = process.env.ML_SECRET_KEY;
+if (!ML_SECRET_KEY) console.error('⚠️ ML_SECRET_KEY no configurada en variables de entorno');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://gestor-maya.vercel.app';
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI || `${FRONTEND_URL}/callback`;
 
