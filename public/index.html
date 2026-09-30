@@ -1225,10 +1225,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="cli-table">
               <thead><tr>
-                <th>Código</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>Acciones</th>
+                <th>Código</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>Redes</th><th>Acciones</th>
               </tr></thead>
               <tbody id="cli-body">
-                <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>
+                <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -1970,6 +1970,11 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div class="form-group"><label>Teléfono</label><input type="tel" id="c-telefono" placeholder="(55) 1234-5678"></div>
       </div>
 
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="c-redes-sociales">
+        <label for="c-redes-sociales" style="cursor:pointer;user-select:none">📱 Cliente de venta pública (Facebook / WhatsApp / Instagram / TikTok)</label>
+      </div>
+
       <div style="border-top:2px solid #e5e7eb;margin:15px 0;padding:15px 0">
         <h4 style="margin:0 0 15px 0;color:#1E4F7A">Domicilio</h4>
 
@@ -2611,7 +2616,7 @@ function renderClientes() {
   const body = document.getElementById('cli-body');
   const rol = window.currentRole || 'vendedor';
   if (!data.clientes.length) {
-    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>';
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>';
     return;
   }
   body.innerHTML = data.clientes.map(c => `
@@ -2621,6 +2626,11 @@ function renderClientes() {
       <td>${c.telefono || c.tel || '—'}</td>
       <td>${c.email || '—'}</td>
       <td>${c.rfc || '—'}</td>
+      <td style="text-align:center">
+        <span style="cursor:pointer" title="${c.redesSociales ? 'Cliente de venta pública (redes sociales) — clic para quitar' : 'Marcar como cliente de venta pública (redes sociales)'}" onclick="toggleClienteRedes('${c.id}',${!!c.redesSociales})">
+          ${c.redesSociales ? '📱✅' : '➕'}
+        </span>
+      </td>
       <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('clientes','${c.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
@@ -3225,6 +3235,7 @@ window.saveCliente = async function() {
       estado: document.getElementById('c-estado').value || '',
       pais: document.getElementById('c-pais').value.trim() || 'México',
       codigoPostal: document.getElementById('c-codigoPostal').value.trim() || '',
+      redesSociales: document.getElementById('c-redes-sociales').checked,
       createdAt: serverTimestamp()
     };
 
@@ -3239,8 +3250,16 @@ window.saveCliente = async function() {
         const el = document.getElementById(id);
         if (el && el.id !== 'c-codigo') el.value = '';
       });
+    document.getElementById('c-redes-sociales').checked = false;
     document.getElementById('c-estado').value = '';
     document.getElementById('c-pais').value = 'México';
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+};
+
+window.toggleClienteRedes = async function(clienteId, actual) {
+  try {
+    await updateDoc(doc(db, 'clientes', clienteId), { redesSociales: !actual });
+    toast(actual ? 'Cliente ya no marcado como venta pública' : '📱 Cliente marcado como venta pública', 'success');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
@@ -7123,6 +7142,11 @@ window.generarNotaPDF = async function(venta) {
     doc.setTextColor(gris[0], gris[1], gris[2]);
     doc.text('Cliente  -  Venta directa', mg+7, y+17);
     doc.text('Vendedor: ' + (venta.vendedor || '-') + '   |   Elaboro: ' + (venta.createdByName || '-'), mg+7, y+23);
+    // ¿Cliente marcado como venta pública (redes sociales)?
+    var clienteObjNV = ((window.data && window.data.clientes) || []).find(function(c){
+      return (venta.clienteId && c.id === venta.clienteId) || (c.razonSocial || c.nombre) === venta.clienteNombre;
+    });
+    var mostrarRedes = !!(clienteObjNV && clienteObjNV.redesSociales);
     // siniestro badge
     var sins = venta.siniestros || (venta.items ? venta.items.map(function(i){return i.numSiniestro||'';}).filter(function(s){return s;}).join(' | ') : '') || (venta.numSiniestro||'');
     if (sins) {
@@ -7194,6 +7218,60 @@ window.generarNotaPDF = async function(venta) {
     doc.text('TOTAL',boxX+5,y+29);
     doc.text('\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
     y += boxH + 14;
+    // caja de redes sociales (solo clientes marcados como "venta pública")
+    if (mostrarRedes) {
+      var rbTop = y;
+      var rbH = 46;
+      doc.setFillColor(225,230,235);
+      doc.roundedRect(mg+0.7, rbTop+0.7, pageW-mg*2, rbH, 2, 2, 'F');
+      doc.setFillColor(255,255,255);
+      doc.roundedRect(mg, rbTop, pageW-mg*2, rbH, 2, 2, 'F');
+      doc.setFillColor(teal[0], teal[1], teal[2]);
+      doc.roundedRect(mg, rbTop, 2.5, rbH, 1, 1, 'F');
+      doc.setTextColor(negro[0], negro[1], negro[2]);
+      doc.setFontSize(9.5); doc.setFont(undefined,'bold');
+      doc.text('¡Síguenos en nuestras redes sociales!', mg+7, rbTop+8);
+      doc.setFontSize(7.5); doc.setFont(undefined,'normal');
+      doc.setTextColor(gris[0], gris[1], gris[2]);
+      doc.text('Encierra en cual nos encontraste:', mg+7, rbTop+14);
+
+      var redesLogos = [
+        {label:'Facebook', mono:'f', color:[24,119,242]},
+        {label:'Instagram', mono:'IG', color:[193,53,132]},
+        {label:'WhatsApp', mono:'WA', color:[37,211,102]},
+        {label:'TikTok', mono:'TT', color:[20,20,20]}
+      ];
+      var n = redesLogos.length;
+      var usableW = pageW - mg*2 - 14;
+      var slotW = usableW / n;
+      var baseX = mg + 7 + slotW/2;
+      var iconY = rbTop + 25;
+      redesLogos.forEach(function(r, i) {
+        var cx = baseX + slotW * i;
+        doc.setFillColor(r.color[0], r.color[1], r.color[2]);
+        doc.circle(cx, iconY, 5, 'F');
+        doc.setTextColor(255,255,255);
+        doc.setFontSize(r.mono.length > 1 ? 6.5 : 9);
+        doc.setFont(undefined,'bold');
+        doc.text(r.mono, cx, iconY + (r.mono.length > 1 ? 1.4 : 1.8), {align:'center'});
+        // aro vacio para que el cliente lo encierre a mano
+        doc.setDrawColor(150,160,172); doc.setLineWidth(0.4);
+        doc.circle(cx, iconY, 7.5, 'S');
+        doc.setFontSize(6.5); doc.setFont(undefined,'normal');
+        doc.setTextColor(gris[0], gris[1], gris[2]);
+        doc.text(r.label, cx, iconY + 13, {align:'center'});
+      });
+
+      var usuarioLbl = 'Usuario / @:';
+      doc.setFontSize(7.5); doc.setFont(undefined,'bold');
+      doc.setTextColor(negro[0], negro[1], negro[2]);
+      doc.text(usuarioLbl, mg+7, rbTop+rbH-4);
+      var uLblW = doc.getTextWidth(usuarioLbl);
+      doc.setDrawColor(190,196,204); doc.setLineWidth(0.3);
+      doc.line(mg+7+uLblW+3, rbTop+rbH-4.8, pageW-mg-7, rbTop+rbH-4.8);
+
+      y += rbH + 10;
+    }
     // firmas
     var firmaY = pageH - 30;
     doc.setDrawColor(180,190,200); doc.setLineWidth(0.4);
