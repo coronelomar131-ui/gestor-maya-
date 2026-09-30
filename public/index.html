@@ -7948,6 +7948,11 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.setFontSize(8); doc.setFont(undefined,'normal');
     doc.setTextColor(gris[0], gris[1], gris[2]);
     doc.text('Vendedor: ' + (nota.vendedor || '-'), mg+7, y+19);
+    // ¿Cliente marcado como venta pública (redes sociales)?
+    var clienteObjNE = ((window.data && window.data.clientes) || []).find(function(c){
+      return (nota.clienteId && c.id === nota.clienteId) || (c.razonSocial || c.nombre) === nota.cliente;
+    });
+    var mostrarRedesNE = !!(clienteObjNE && clienteObjNE.redesSociales);
     y += 34;
     // badge detalle
     doc.setFillColor(azul[0], azul[1], azul[2]);
@@ -8004,6 +8009,60 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.text('TOTAL',boxX+5,y+29);
     doc.text('\$'+(nota.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
     y += boxH + 14;
+    // caja de redes sociales (solo clientes marcados como "venta pública")
+    if (mostrarRedesNE) {
+      var rbTop = y;
+      var rbH = 46;
+      doc.setFillColor(225,230,235);
+      doc.roundedRect(mg+0.7, rbTop+0.7, pageW-mg*2, rbH, 2, 2, 'F');
+      doc.setFillColor(255,255,255);
+      doc.roundedRect(mg, rbTop, pageW-mg*2, rbH, 2, 2, 'F');
+      doc.setFillColor(teal[0], teal[1], teal[2]);
+      doc.roundedRect(mg, rbTop, 2.5, rbH, 1, 1, 'F');
+      doc.setTextColor(negro[0], negro[1], negro[2]);
+      doc.setFontSize(9.5); doc.setFont(undefined,'bold');
+      doc.text('¡Síguenos en nuestras redes sociales!', mg+7, rbTop+8);
+      doc.setFontSize(7.5); doc.setFont(undefined,'normal');
+      doc.setTextColor(gris[0], gris[1], gris[2]);
+      doc.text('Encierra en cual nos encontraste:', mg+7, rbTop+14);
+
+      var redesLogosNE = [
+        {label:'Facebook', mono:'f', color:[24,119,242]},
+        {label:'Instagram', mono:'IG', color:[193,53,132]},
+        {label:'WhatsApp', mono:'WA', color:[37,211,102]},
+        {label:'TikTok', mono:'TT', color:[20,20,20]}
+      ];
+      var nNE = redesLogosNE.length;
+      var usableWNE = pageW - mg*2 - 14;
+      var slotWNE = usableWNE / nNE;
+      var baseXNE = mg + 7 + slotWNE/2;
+      var iconYNE = rbTop + 25;
+      redesLogosNE.forEach(function(r, i) {
+        var cx = baseXNE + slotWNE * i;
+        doc.setFillColor(r.color[0], r.color[1], r.color[2]);
+        doc.circle(cx, iconYNE, 5, 'F');
+        doc.setTextColor(255,255,255);
+        doc.setFontSize(r.mono.length > 1 ? 6.5 : 9);
+        doc.setFont(undefined,'bold');
+        doc.text(r.mono, cx, iconYNE + (r.mono.length > 1 ? 1.4 : 1.8), {align:'center'});
+        // aro vacio para que el cliente lo encierre a mano
+        doc.setDrawColor(150,160,172); doc.setLineWidth(0.4);
+        doc.circle(cx, iconYNE, 7.5, 'S');
+        doc.setFontSize(6.5); doc.setFont(undefined,'normal');
+        doc.setTextColor(gris[0], gris[1], gris[2]);
+        doc.text(r.label, cx, iconYNE + 13, {align:'center'});
+      });
+
+      var usuarioLblNE = 'Usuario / @:';
+      doc.setFontSize(7.5); doc.setFont(undefined,'bold');
+      doc.setTextColor(negro[0], negro[1], negro[2]);
+      doc.text(usuarioLblNE, mg+7, rbTop+rbH-4);
+      var uLblWNE = doc.getTextWidth(usuarioLblNE);
+      doc.setDrawColor(190,196,204); doc.setLineWidth(0.3);
+      doc.line(mg+7+uLblWNE+3, rbTop+rbH-4.8, pageW-mg-7, rbTop+rbH-4.8);
+
+      y += rbH + 10;
+    }
     // firmas
     var firmaY = pageH - 30;
     doc.setDrawColor(180,190,200); doc.setLineWidth(0.4);
