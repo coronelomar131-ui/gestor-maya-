@@ -2186,7 +2186,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="form-group"><label>Observaciones</label><textarea id="vt-observaciones" placeholder="Qué se platicó, necesidades del taller, seguimiento pendiente..." maxlength="1500"></textarea></div>
       <div class="form-group">
         <label>Foto del taller</label>
-        <input type="file" id="vt-foto-input" accept="image/*" onchange="vtOnFotoSeleccionada(this)">
+        <input type="file" id="vt-foto-input" accept="image/*,.heic,.heif" onchange="vtOnFotoSeleccionada(this)">
+        <div id="vt-foto-estado" style="font-size:12px;color:var(--gray);margin-top:6px"></div>
         <div id="vt-foto-preview" style="display:none;margin-top:12px">
           <img id="vt-foto-img" alt="Foto del taller" style="max-width:100%;max-height:220px;border-radius:10px;border:1px solid var(--border);display:block;margin-bottom:8px">
           <button type="button" class="btn btn-secondary btn-sm" onclick="vtQuitarFoto()">🗑 Quitar foto</button>
@@ -3377,6 +3378,7 @@ const vtFotosCache = new Map();
 let vtFotoNueva = null;
 let vtFotoQuitar = false;
 let vtGuardando = false;
+let vtProcesandoFoto = false;
 let vtVerToken = 0;
 
 function vtEsc(s) {
@@ -3479,44 +3481,135 @@ async function vtObtenerFoto(id) {
   return f;
 }
 
-// Reduce la foto (máx. 1000 px, JPEG) para que quepa holgada en Firestore (límite 1 MB por documento)
-function vtComprimirImagen(file, maxLado = 1000, calidad = 0.72) {
+// Carga un script externo una sola vez
+function vtCargarScript(src, listo) {
+  if (listo()) return Promise.resolve();
+  window._vtScripts = window._vtScripts || {};
+  if (window._vtScripts[src]) return window._vtScripts[src];
+  window._vtScripts[src] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => (listo() ? resolve() : reject(new Error('Librería no disponible')));
+    s.onerror = () => { delete window._vtScripts[src]; reject(new Error('No se pudo descargar la librería (revisa tu internet)')); };
+    document.head.appendChild(s);
+  });
+  return window._vtScripts[src];
+}
+
+// Las fotos de iPhone vienen en HEIC y Chrome/Windows no las abre: se convierten a JPG
+function vtEsHeic(file) {
+  return /hei[cf]/i.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '');
+}
+
+async function vtConvertirHeic(file) {
+  await vtCargarScript('https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js', () => !!window.heic2any);
+  const res = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+  return Array.isArray(res) ? res[0] : res;
+}
+
+// Abre la imagen: createImageBitmap (respeta la orientación de la cámara) y, si no se puede, <img>.
+// Con reducir=true la decodifica ya achicada (para fotos enormes de celular que no caben en memoria).
+async function vtDecodificarImagen(blob, reducir) {
+  if (window.createImageBitmap) {
+    try {
+      const opts = reducir ? { resizeWidth: 1600, resizeQuality: 'medium' } : { imageOrientation: 'from-image' };
+      const bmp = await createImageBitmap(blob, opts);
+      return { fuente: bmp, w: bmp.width, h: bmp.height, liberar: () => { try { bmp.close(); } catch (e) {} } };
+    } catch (e) { /* se intenta con <img> */ }
+  }
+  if (reducir) throw new Error('no se pudo reducir');
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     const img = new Image();
-    img.onload = () => {
-      try {
-        let w = img.naturalWidth, h = img.naturalHeight;
-        if (!w || !h) throw new Error('Imagen inválida');
-        const esc = Math.min(1, maxLado / Math.max(w, h));
-        w = Math.round(w * esc);
-        h = Math.round(h * esc);
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        let q = calidad;
-        let dataUrl = canvas.toDataURL('image/jpeg', q);
-        while (dataUrl.length > 700000 && q > 0.3) {
-          q -= 0.1;
-          dataUrl = canvas.toDataURL('image/jpeg', q);
-        }
-        URL.revokeObjectURL(url);
-        resolve({ dataUrl, ancho: w, alto: h });
-      } catch (e) {
-        URL.revokeObjectURL(url);
-        reject(e);
-      }
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('No se pudo leer la imagen (formato no compatible)'));
-    };
+    img.onload = () => resolve({ fuente: img, w: img.naturalWidth, h: img.naturalHeight, liberar: () => URL.revokeObjectURL(url) });
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('formato no compatible')); };
     img.src = url;
   });
+}
+
+// Reduce la foto (máx. 1000 px, JPEG) para que quepa holgada en Firestore (límite 1 MB por documento)
+// Dibuja la imagen en un canvas reducido y la exporta como JPEG. "blanco" avisa si el navegador
+// la dejó en blanco (pasa en celulares con fotos enormes que no caben en memoria).
+function vtDibujarReducida(dec, maxLado, calidad) {
+  if (!dec.w || !dec.h) throw new Error('Imagen inválida');
+  const esc = Math.min(1, maxLado / Math.max(dec.w, dec.h));
+  const w = Math.max(1, Math.round(dec.w * esc));
+  const h = Math.max(1, Math.round(dec.h * esc));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(dec.fuente, 0, 0, w, h);
+
+  let blanco = true;
+  try {
+    for (let i = 0; i < 12 && blanco; i++) {
+      for (let j = 0; j < 12 && blanco; j++) {
+        const p = ctx.getImageData(Math.min(w - 1, Math.floor((i + 0.5) * w / 12)), Math.min(h - 1, Math.floor((j + 0.5) * h / 12)), 1, 1).data;
+        if (p[0] < 250 || p[1] < 250 || p[2] < 250) blanco = false;
+      }
+    }
+  } catch (e) { blanco = false; }
+
+  let q = calidad;
+  let dataUrl = canvas.toDataURL('image/jpeg', q);
+  while (dataUrl.length > 700000 && q > 0.3) {
+    q -= 0.1;
+    dataUrl = canvas.toDataURL('image/jpeg', q);
+  }
+  return { dataUrl, ancho: w, alto: h, blanco };
+}
+
+async function vtComprimirImagen(file, maxLado = 1000, calidad = 0.72) {
+  if (file.size > 40 * 1024 * 1024) throw new Error('La foto pesa demasiado (máximo 40 MB)');
+  let origen = file;
+  let dec;
+  try {
+    dec = await vtDecodificarImagen(origen);
+  } catch (e) {
+    if (file.type && !vtEsHeic(file)) throw new Error('Formato no compatible. Usa una foto JPG o PNG.');
+    toast('⏳ Convirtiendo foto de iPhone (HEIC)...', 'info');
+    try {
+      origen = await vtConvertirHeic(file);
+      dec = await vtDecodificarImagen(origen);
+    } catch (e2) {
+      console.error('No se pudo convertir la foto:', e2);
+      throw new Error('No se pudo leer la foto. Súbela como JPG o PNG (en iPhone: Ajustes > Cámara > Formatos > Más compatible).');
+    }
+  }
+  let res;
+  try {
+    res = vtDibujarReducida(dec, maxLado, calidad);
+  } finally {
+    dec.liberar();
+  }
+  if (res.blanco) {
+    // Foto enorme: se vuelve a intentar abriéndola ya reducida
+    try {
+      const dec2 = await vtDecodificarImagen(origen, true);
+      try {
+        const res2 = vtDibujarReducida(dec2, maxLado, calidad);
+        if (!res2.blanco) res = res2;
+      } finally {
+        dec2.liberar();
+      }
+    } catch (e) { /* se queda con el primer resultado */ }
+  }
+  return { dataUrl: res.dataUrl, ancho: res.ancho, alto: res.alto };
+}
+
+function vtMensajeError(e, coleccion) {
+  if (e && (e.code === 'permission-denied' || /insufficient permissions/i.test(e.message || ''))) {
+    return `Firebase no te deja guardar en "${coleccion}" (falta darle acceso a esa colección en las reglas de Firestore)`;
+  }
+  return (e && e.message) || String(e);
+}
+
+function vtEstadoFoto(texto) {
+  const el = document.getElementById('vt-foto-estado');
+  if (el) el.textContent = texto || '';
 }
 
 function vtMostrarPreview(dataUrl) {
@@ -3534,17 +3627,19 @@ function vtMostrarPreview(dataUrl) {
 window.vtOnFotoSeleccionada = async function(input) {
   const file = input.files && input.files[0];
   if (!file) return;
-  if (!file.type || !file.type.startsWith('image/')) {
-    input.value = '';
-    return toast('El archivo debe ser una imagen', 'error');
-  }
+  vtProcesandoFoto = true;
+  vtEstadoFoto('⏳ Procesando foto...');
   try {
     vtFotoNueva = await vtComprimirImagen(file);
     vtFotoQuitar = false;
     vtMostrarPreview(vtFotoNueva.dataUrl);
+    vtEstadoFoto(`✅ Foto lista (${Math.round(vtFotoNueva.dataUrl.length / 1024)} KB)`);
   } catch (e) {
     input.value = '';
-    toast('No se pudo procesar la foto: ' + e.message, 'error');
+    vtEstadoFoto('');
+    toast(e.message || 'No se pudo procesar la foto', 'error');
+  } finally {
+    vtProcesandoFoto = false;
   }
 };
 
@@ -3554,6 +3649,7 @@ window.vtQuitarFoto = function() {
   const input = document.getElementById('vt-foto-input');
   if (input) input.value = '';
   vtMostrarPreview(null);
+  vtEstadoFoto('');
 };
 
 window.abrirModalVisitaTaller = async function(id) {
@@ -3573,6 +3669,7 @@ window.abrirModalVisitaTaller = async function(id) {
   set('vt-observaciones', v && v.observaciones);
   document.getElementById('vt-foto-input').value = '';
   vtMostrarPreview(null);
+  vtEstadoFoto('');
 
   // Sugerencias de colaborador: todos los usuarios (admins incluidos) y quienes ya hicieron visitas
   const nombres = new Set();
@@ -3597,6 +3694,7 @@ window.abrirModalVisitaTaller = async function(id) {
 
 window.guardarVisitaTaller = async function() {
   if (vtGuardando) return;
+  if (vtProcesandoFoto) return toast('Espera un momento: la foto todavía se está procesando', 'info');
   const val = id => (document.getElementById(id).value || '').trim();
   const taller = val('vt-taller');
   const direccion = val('vt-direccion');
@@ -3653,14 +3751,14 @@ window.guardarVisitaTaller = async function() {
       console.error('Error guardando la foto de la visita:', e);
       await updateDoc(doc(db, VT_COL, id), { tieneFoto: teniaFoto && !vtFotoQuitar }).catch(() => {});
       closeModal('modal-visita-taller');
-      return toast('La visita se guardó, pero la foto no se pudo subir: ' + e.message, 'error');
+      return toast('La visita se guardó, pero la foto no se pudo subir: ' + vtMensajeError(e, VT_COL_FOTOS), 'error');
     }
 
     closeModal('modal-visita-taller');
     toast(editId ? '✅ Visita actualizada' : '✅ Visita registrada', 'success');
   } catch (e) {
     console.error('Error guardando visita de taller:', e);
-    toast('Error al guardar: ' + e.message, 'error');
+    toast('Error al guardar: ' + vtMensajeError(e, VT_COL), 'error');
   } finally {
     vtGuardando = false;
     btn.disabled = false;
