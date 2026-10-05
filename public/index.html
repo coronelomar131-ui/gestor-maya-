@@ -3723,6 +3723,7 @@ function vtCargarExcelJS() {
   });
   return window._vtExcelJSPromise;
 }
+window.cargarExcelJS = vtCargarExcelJS;
 
 function vtFechaComoDate(f) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(f || '');
@@ -6479,226 +6480,324 @@ window.exportarVendedorPDF = function() {
   doc.save("reporte_ventas_" + vend + "_" + new Date().toISOString().slice(0,10) + ".pdf");
 };
 
-window.exportarVendedorExcel = function() {
-  const ventas = window._repVendData;
-  const f = window._repVendFiltro;
-  if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
-  if (typeof XLSX === "undefined") return toast("XLSX no disponible", "error");
-
+// ══ REPORTE DE VENTAS A EXCEL — INICIO ══
+// Libro con formato real (ExcelJS): hoja "Ventas Detalle" agrupada por vendedor y hoja "Resumen".
+// (SheetJS gratuito ignora colores y estilos, por eso se usa ExcelJS.)
+function repVendConstruirLibro(ExcelJS, ventas, f) {
   const MESES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const fmt  = n => parseFloat(n) || 0;
+  const fmtP = n => fmt(n).toLocaleString("es-MX", {minimumFractionDigits:2, maximumFractionDigits:2});
   const parseFecha = v => {
     if (v.fecha) return new Date(v.fecha);
     if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
   };
-  const fmt  = n => parseFloat(n) || 0;
-  const fmtP = n => fmt(n).toLocaleString("es-MX", {minimumFractionDigits:2, maximumFractionDigits:2});
+  const redondea = n => Math.round((n + Number.EPSILON) * 100) / 100;
+  const soloFecha = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 
-  const totalMonto    = ventas.reduce((s,v)=>s+fmt(v.total),0);
-  const totalSubtotal = ventas.reduce((s,v)=>s+fmt(v.subtotal),0);
-  const totalIVA      = ventas.reduce((s,v)=>s+fmt(v.ivaTotal),0);
-  const totalAjuste   = ventas.reduce((s,v)=>s+fmt(v.ajusteTotal),0);
-  const promedio      = ventas.length ? totalMonto/ventas.length : 0;
+  const totalMonto    = redondea(ventas.reduce((s,v)=>s+fmt(v.total),0));
+  const totalSubtotal = redondea(ventas.reduce((s,v)=>s+fmt(v.subtotal),0));
+  const totalIVA      = redondea(ventas.reduce((s,v)=>s+fmt(v.ivaTotal),0));
+  const totalAjuste   = redondea(ventas.reduce((s,v)=>s+fmt(v.ajusteTotal),0));
+  const promedio      = ventas.length ? redondea(totalMonto/ventas.length) : 0;
 
   let periodoStr = "";
   if (f.desdeMes||f.desdeAno) periodoStr += "Desde: "+(f.desdeMes?MESES[f.desdeMes]+" ":"")+(f.desdeAno||"");
   if (f.hastaMes||f.hastaAno) periodoStr += (periodoStr?" / ":"")+"Hasta: "+(f.hastaMes?MESES[f.hastaMes]+" ":"")+(f.hastaAno||"");
   if (!periodoStr) periodoStr = "Período completo";
+  const generado = new Date().toLocaleString("es-MX");
 
-  // Estilos reutilizables
-  const S = {
-    titulo:    { font:{bold:true,sz:14,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"0D2A4A"}}, alignment:{horizontal:"left",vertical:"center"} },
-    info:      { font:{sz:10,color:{rgb:"334155"}}, fill:{fgColor:{rgb:"F1F5F9"}}, alignment:{horizontal:"left"} },
-    infoLabel: { font:{bold:true,sz:10,color:{rgb:"0D2A4A"}}, fill:{fgColor:{rgb:"F1F5F9"}}, alignment:{horizontal:"left"} },
-    colHead:   { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"1E8FA5"}}, alignment:{horizontal:"center",vertical:"center"}, border:{bottom:{style:"medium",color:{rgb:"0D2A4A"}}} },
-    vendHead:  { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"0D2A4A"}}, alignment:{horizontal:"left"} },
-    dataEven:  { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"FFFFFF"}}, alignment:{wrapText:true,vertical:"top"} },
-    dataOdd:   { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"F0F7FA"}}, alignment:{wrapText:true,vertical:"top"} },
-    numEven:   { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"FFFFFF"}}, numFmt:'"$"#,##0.00', alignment:{horizontal:"right"} },
-    numOdd:    { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"F0F7FA"}}, numFmt:'"$"#,##0.00', alignment:{horizontal:"right"} },
-    subHead:   { font:{bold:true,sz:9,color:{rgb:"0D2A4A"}}, fill:{fgColor:{rgb:"D2E4F5"}}, alignment:{horizontal:"right"} },
-    subLabel:  { font:{bold:true,sz:9,color:{rgb:"0D2A4A"}}, fill:{fgColor:{rgb:"D2E4F5"}}, alignment:{horizontal:"left"} },
-    grandHead: { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"10B981"}}, alignment:{horizontal:"right"} },
-    grandLbl:  { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"10B981"}}, alignment:{horizontal:"left"} },
-    kpiLabel:  { font:{bold:true,sz:9,color:{rgb:"475569"}}, fill:{fgColor:{rgb:"EFF6FF"}}, alignment:{horizontal:"left"} },
-    kpiVal:    { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"EFF6FF"}}, numFmt:'"$"#,##0.00', alignment:{horizontal:"right"} },
-    kpiValN:   { font:{sz:9,color:{rgb:"0F172A"}}, fill:{fgColor:{rgb:"EFF6FF"}}, alignment:{horizontal:"right"} },
-    secHead:   { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"1E8FA5"}}, alignment:{horizontal:"left"} },
-    blank:     { fill:{fgColor:{rgb:"FFFFFF"}} }
-  };
+  // Paleta y estilos
+  const NAVY='FF0D2A4A', TEAL='FF1E8FA5', ZEBRA='FFF0F7FA', INFO='FFF1F5F9', SUB='FFD2E4F5', VERDE='FF10B981', KPI='FFEFF6FF', BORDE='FFD5DEE6', BLANCO='FFFFFFFF';
+  const MONEY = '"$"#,##0.00';
+  const relleno = argb => ({ type:'pattern', pattern:'solid', fgColor:{ argb } });
+  const lineaFina = { style:'thin', color:{ argb:BORDE } };
+  const bordes = { top:lineaFina, left:lineaFina, bottom:lineaFina, right:lineaFina };
 
-  // Helper: crear celda con estilo
-  const c = (v, s) => ({ v, s, t: typeof v === "number" ? "n" : "s" });
-  const cN = (v, s) => ({ v: fmt(v), s, t: "n" });
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Maya Autopartes';
+  wb.created = new Date();
 
-  // ════════════════════════════
-  // HOJA 1 — VENTAS DETALLE (principal)
-  // ════════════════════════════
-  const gruposXls = {};
-  const ordenXls  = [];
+  // Agrupar por vendedor (conserva el orden de aparición)
+  const grupos = {};
+  const orden  = [];
   ventas.forEach(v => {
     const vnd = v.vendedor || "Sin asignar";
-    if (!gruposXls[vnd]) { gruposXls[vnd]=[]; ordenXls.push(vnd); }
-    gruposXls[vnd].push(v);
+    if (!grupos[vnd]) { grupos[vnd] = []; orden.push(vnd); }
+    grupos[vnd].push(v);
   });
 
-  const COLS = 10;
-  const ws = {};
-  const merges = [];
+  // ════ HOJA 1 — VENTAS DETALLE ════
+  const ws = wb.addWorksheet('Ventas Detalle', {
+    views: [{ showGridLines: false }],
+    pageSetup: { orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:0, paperSize:1 }
+  });
+  const ANCHOS = [5, 11, 14, 30, 44, 22, 14, 12, 12, 14];
+  const COLS = ANCHOS.length;
+  ANCHOS.forEach((w,i) => { ws.getColumn(i+1).width = w; });
+  ws.headerFooter = { oddFooter: '&LMaya Autopartes — Reporte de ventas&RPágina &P de &N' };
+
   let r = 0;
-
-  const addRow = (cells) => {
-    cells.forEach((cell, ci) => {
-      const ref = XLSX.utils.encode_cell({r, c: ci});
-      ws[ref] = cell || c("", S.blank);
-    });
+  const banda = (texto, o) => {
     r++;
+    ws.mergeCells(r, 1, r, COLS);
+    const c = ws.getCell(r, 1);
+    c.value = texto;
+    c.font = o.font;
+    c.fill = relleno(o.fill);
+    c.alignment = { vertical:'middle', horizontal:'left', indent:1 };
+    ws.getRow(r).height = o.alto;
   };
-  const addMerge = (r1,c1,r2,c2) => merges.push({s:{r:r1,c:c1},e:{r:r2,c:c2}});
-  const blank = (s) => c("", s||S.blank);
+  const lineas = (texto, ancho) => {
+    if (!texto) return 1;
+    return String(texto).split('\n').reduce((s,p) => s + Math.max(1, Math.ceil(p.length / Math.max(1, ancho-2))), 0);
+  };
 
-  // Fila título
-  addRow([c("MAYA AUTOPARTES  •  REPORTE DE VENTAS", S.titulo), ...Array(COLS-1).fill(blank(S.titulo))]);
-  addMerge(r-1,0,r-1,COLS-1);
+  banda('MAYA AUTOPARTES  •  REPORTE DE VENTAS', { font:{bold:true,size:15,color:{argb:BLANCO}}, fill:NAVY, alto:32 });
+  const infoFont = { size:10, color:{argb:'FF334155'} };
+  banda(`Vendedor: ${f.vendedor || 'Todos los vendedores'}     |     Período: ${periodoStr}`, { font:infoFont, fill:INFO, alto:20 });
+  banda(`Generado: ${generado}     |     Total ventas: ${ventas.length}     |     Monto total: $${fmtP(totalMonto)}`, { font:infoFont, fill:INFO, alto:20 });
+  banda(`Promedio por venta: $${fmtP(promedio)}     |     Subtotal: $${fmtP(totalSubtotal)}     |     IVA: $${fmtP(totalIVA)}`, { font:infoFont, fill:INFO, alto:20 });
+  r++; ws.getRow(r).height = 10;
 
-  // Info header
-  addRow([c("Vendedor:", S.infoLabel), c(f.vendedor||"Todos los vendedores", S.info), blank(S.info), c("Período:", S.infoLabel), c(periodoStr, S.info), ...Array(COLS-5).fill(blank(S.info))]);
-  addRow([c("Generado:", S.infoLabel), c(new Date().toLocaleString("es-MX"), S.info), blank(S.info), c("Total ventas:", S.infoLabel), c(ventas.length, {...S.info, t:"n"}), blank(S.info), c("Monto total:", S.infoLabel), c("$"+fmtP(totalMonto), S.info), ...Array(COLS-8).fill(blank(S.info))]);
-  addRow([c("Promedio/venta:", S.infoLabel), c("$"+fmtP(promedio), S.info), blank(S.info), c("Subtotal:", S.infoLabel), c("$"+fmtP(totalSubtotal), S.info), blank(S.info), c("IVA:", S.infoLabel), c("$"+fmtP(totalIVA), S.info), ...Array(COLS-8).fill(blank(S.info))]);
+  let contador = 0;
+  orden.forEach(vnd => {
+    const gV   = grupos[vnd];
+    const gSub = redondea(gV.reduce((s,v)=>s+fmt(v.subtotal),0));
+    const gIVA = redondea(gV.reduce((s,v)=>s+fmt(v.ivaTotal),0));
+    const gAjt = redondea(gV.reduce((s,v)=>s+fmt(v.ajusteTotal),0));
+    const gTot = redondea(gV.reduce((s,v)=>s+fmt(v.total),0));
 
-  // Fila vacía separadora
-  addRow(Array(COLS).fill(blank()));
-  r++; // espacio extra
+    banda(`${vnd.toUpperCase()}   —   ${gV.length} venta${gV.length!==1?'s':''}   |   Total: $${fmtP(gTot)}`, { font:{bold:true,size:11,color:{argb:BLANCO}}, fill:NAVY, alto:24 });
 
-  let contXls = 0;
-
-  ordenXls.forEach(vnd => {
-    const gV   = gruposXls[vnd];
-    const gSub = gV.reduce((s,v)=>s+fmt(v.subtotal),0);
-    const gIVA = gV.reduce((s,v)=>s+fmt(v.ivaTotal),0);
-    const gAjt = gV.reduce((s,v)=>s+fmt(v.ajusteTotal),0);
-    const gTot = gV.reduce((s,v)=>s+fmt(v.total),0);
-
-    // Encabezado vendedor
-    const vendLabel = "  " + vnd.toUpperCase() + "   —   " + gV.length + " venta" + (gV.length!==1?"s":"") + "   |   Total: $" + fmtP(gTot);
-    addRow([c(vendLabel, S.vendHead), ...Array(COLS-1).fill(blank(S.vendHead))]);
-    addMerge(r-1,0,r-1,COLS-1);
-
-    // Encabezados columnas
-    addRow([
-      c("#",         S.colHead), c("Nota",     S.colHead), c("Fecha",    S.colHead),
-      c("Cliente",   S.colHead), c("Piezas",   S.colHead), c("Siniestro",S.colHead),
-      c("Subtotal",  S.colHead), c("IVA",      S.colHead), c("Ajuste",   S.colHead),
-      c("Total",     S.colHead)
-    ]);
+    r++;
+    const hr = ws.getRow(r);
+    hr.height = 22;
+    ['#','Nota','Fecha','Cliente','Piezas','Siniestro','Subtotal','IVA','Ajuste','Total'].forEach((txt,i) => {
+      const c = hr.getCell(i+1);
+      c.value = txt;
+      c.font = { bold:true, size:10, color:{argb:BLANCO} };
+      c.fill = relleno(TEAL);
+      c.alignment = { vertical:'middle', horizontal:'center' };
+      c.border = { top:lineaFina, left:lineaFina, right:lineaFina, bottom:{ style:'medium', color:{argb:NAVY} } };
+    });
 
     gV.forEach((v, idx) => {
-      contXls++;
+      contador++;
+      r++;
+      const row = ws.getRow(r);
       const piezas = v.items ? v.items.map(it=>it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
       const sin    = v.siniestros || (v.items ? v.items.map(it=>it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
-      const es     = idx%2===0 ? S.dataEven : S.dataOdd;
-      const en     = idx%2===0 ? S.numEven  : S.numOdd;
-      addRow([
-        c(contXls,                              {...es,alignment:{horizontal:"center"}}),
-        c(v.notaId||v.notaNumero||"",           es),
-        c(parseFecha(v).toLocaleDateString("es-MX"), es),
-        c(v.clienteNombre||v.cliente||"",       es),
-        c(piezas,                               es),
-        c(sin,                                  es),
-        cN(v.subtotal||0,                       en),
-        cN(v.ivaTotal||0,                       en),
-        cN(v.ajusteTotal||0,                    en),
-        cN(v.total||0,                          {...en,font:{bold:true,sz:9,color:{rgb:"0F172A"}}})
-      ]);
+      const cliente = v.clienteNombre || v.cliente || "";
+      const fondo = relleno(idx%2===0 ? BLANCO : ZEBRA);
+      const fecha = parseFecha(v);
+      const valores = [contador, v.notaId||v.notaNumero||"", soloFecha(fecha), cliente, piezas, sin, fmt(v.subtotal), fmt(v.ivaTotal), fmt(v.ajusteTotal), fmt(v.total)];
+      valores.forEach((val, ci) => {
+        const c = row.getCell(ci+1);
+        c.value = val;
+        c.font = { size:9, color:{argb:'FF0F172A'}, bold: ci===9 };
+        c.fill = fondo;
+        c.border = bordes;
+        c.alignment = { vertical:'middle', wrapText:true, horizontal: (ci===0||ci===1||ci===2) ? 'center' : (ci>=6 ? 'right' : 'left') };
+      });
+      row.getCell(3).numFmt = 'dd/mm/yyyy';
+      for (let ci = 7; ci <= 10; ci++) row.getCell(ci).numFmt = MONEY;
+      row.height = Math.max(20, Math.max(lineas(piezas, ANCHOS[4]), lineas(cliente, ANCHOS[3]), lineas(sin, ANCHOS[5])) * 12.5 + 7);
     });
 
-    // Subtotal vendedor
-    addRow([
-      blank(S.subHead), blank(S.subHead), blank(S.subHead), blank(S.subHead),
-      c("Subtotal " + vnd, {...S.subLabel, alignment:{horizontal:"right"}}),
-      blank(S.subHead),
-      cN(gSub, S.subHead), cN(gIVA, S.subHead), cN(gAjt, S.subHead),
-      cN(gTot, {...S.subHead, font:{bold:true,sz:10,color:{rgb:"0D2A4A"}}})
-    ]);
-    addMerge(r-1,0,r-1,5);
+    // Subtotal del vendedor
+    r++;
+    ws.mergeCells(r, 1, r, 6);
+    const sr = ws.getRow(r);
+    sr.height = 22;
+    const lbl = sr.getCell(1);
+    lbl.value = `Subtotal ${vnd}`;
+    lbl.font = { bold:true, size:9, color:{argb:NAVY} };
+    lbl.alignment = { vertical:'middle', horizontal:'right', indent:1 };
+    [gSub, gIVA, gAjt, gTot].forEach((val, i) => {
+      const c = sr.getCell(7+i);
+      c.value = val;
+      c.numFmt = MONEY;
+      c.font = { bold:true, size: i===3 ? 10 : 9, color:{argb:NAVY} };
+      c.alignment = { vertical:'middle', horizontal:'right' };
+    });
+    for (let ci = 1; ci <= COLS; ci++) sr.getCell(ci).fill = relleno(SUB);
 
-    addRow(Array(COLS).fill(blank())); // espacio
+    r++; ws.getRow(r).height = 10;
   });
 
   // Gran total
-  addRow([
-    blank(S.grandLbl), blank(S.grandLbl), blank(S.grandLbl), blank(S.grandLbl),
-    c("GRAN TOTAL", {...S.grandLbl, alignment:{horizontal:"right"}}),
-    blank(S.grandLbl),
-    cN(totalSubtotal, S.grandHead), cN(totalIVA, S.grandHead), cN(totalAjuste, S.grandHead),
-    cN(totalMonto, {...S.grandHead, font:{bold:true,sz:11,color:{rgb:"FFFFFF"}}})
-  ]);
-  addMerge(r-1,0,r-1,5);
+  r++;
+  ws.mergeCells(r, 1, r, 6);
+  const gr = ws.getRow(r);
+  gr.height = 26;
+  const gl = gr.getCell(1);
+  gl.value = 'GRAN TOTAL';
+  gl.font = { bold:true, size:11, color:{argb:BLANCO} };
+  gl.alignment = { vertical:'middle', horizontal:'right', indent:1 };
+  [totalSubtotal, totalIVA, totalAjuste, totalMonto].forEach((val, i) => {
+    const c = gr.getCell(7+i);
+    c.value = val;
+    c.numFmt = MONEY;
+    c.font = { bold:true, size: i===3 ? 11 : 10, color:{argb:BLANCO} };
+    c.alignment = { vertical:'middle', horizontal:'right' };
+  });
+  for (let ci = 1; ci <= COLS; ci++) gr.getCell(ci).fill = relleno(VERDE);
 
-  ws["!ref"]  = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:r,c:COLS-1}});
-  ws["!merges"] = merges;
-  ws["!cols"] = [{wch:5},{wch:11},{wch:14},{wch:30},{wch:44},{wch:22},{wch:14},{wch:12},{wch:12},{wch:14}];
-  ws["!rows"] = [{hpt:22}]; // fila título más alta
-  ws["!freeze"] = {xSplit:0, ySplit:5};
-
-  // ════════════════════════════
-  // HOJA 2 — RESUMEN EJECUTIVO
-  // ════════════════════════════
+  // ════ HOJA 2 — RESUMEN EJECUTIVO ════
   const cliMap = {};
-  ventas.forEach(v=>{const n=v.clienteNombre||v.cliente||"?"; cliMap[n]=(cliMap[n]||0)+fmt(v.total);});
+  ventas.forEach(v => { const n = v.clienteNombre || v.cliente || "?"; cliMap[n] = redondea((cliMap[n]||0) + fmt(v.total)); });
   const topCli = Object.entries(cliMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
   const mesMapa = {};
-  ventas.forEach(v=>{
-    const d=parseFecha(v);
-    const k=MESES[d.getMonth()+1]+" "+d.getFullYear();
-    if(!mesMapa[k]) mesMapa[k]={n:0,t:0};
-    mesMapa[k].n++; mesMapa[k].t+=fmt(v.total);
+  ventas.forEach(v => {
+    const d = parseFecha(v);
+    const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    if (!mesMapa[k]) mesMapa[k] = { etiqueta: MESES[d.getMonth()+1] + ' ' + d.getFullYear(), n:0, t:0 };
+    mesMapa[k].n++;
+    mesMapa[k].t = redondea(mesMapa[k].t + fmt(v.total));
+  });
+  const meses = Object.keys(mesMapa).sort().map(k => mesMapa[k]);
+
+  const rs = wb.addWorksheet('Resumen', { views: [{ showGridLines: false }] });
+  [30, 16, 18].forEach((w,i) => { rs.getColumn(i+1).width = w; });
+  let q = 0;
+  const bandaR = (texto, o) => {
+    q++;
+    rs.mergeCells(q, 1, q, 3);
+    const c = rs.getCell(q, 1);
+    c.value = texto;
+    c.font = o.font;
+    c.fill = relleno(o.fill);
+    c.alignment = { vertical:'middle', horizontal:'left', indent:1 };
+    rs.getRow(q).height = o.alto;
+  };
+  const infoR = (etiqueta, valor) => {
+    q++;
+    rs.mergeCells(q, 2, q, 3);
+    const a = rs.getCell(q, 1), b = rs.getCell(q, 2);
+    a.value = etiqueta; a.font = { bold:true, size:10, color:{argb:NAVY} };
+    b.value = valor;    b.font = { size:10, color:{argb:'FF334155'} };
+    a.alignment = { vertical:'middle', horizontal:'left', indent:1 };
+    b.alignment = { vertical:'middle', horizontal:'left' };
+    for (let ci = 1; ci <= 3; ci++) rs.getCell(q, ci).fill = relleno(INFO);
+    rs.getRow(q).height = 19;
+  };
+  const seccion = (titulo, col2, col3) => {
+    q++;
+    const row = rs.getRow(q);
+    row.height = 22;
+    [titulo, col2||'', col3||''].forEach((txt, i) => {
+      const c = row.getCell(i+1);
+      c.value = txt;
+      c.font = { bold:true, size:10, color:{argb:BLANCO} };
+      c.fill = relleno(TEAL);
+      c.alignment = { vertical:'middle', horizontal: i===0 ? 'left' : 'right', indent: i===0 ? 1 : 0 };
+    });
+  };
+  const filaKpi = (etiqueta, v2, v3, fmt2, fmt3) => {
+    q++;
+    const row = rs.getRow(q);
+    row.height = 19;
+    [etiqueta, v2, v3].forEach((val, i) => {
+      const c = row.getCell(i+1);
+      if (val !== undefined && val !== null && val !== '') c.value = val;
+      c.font = { size:9, color:{argb:'FF0F172A'}, bold: i===0 };
+      c.fill = relleno(KPI);
+      c.border = bordes;
+      c.alignment = { vertical:'middle', horizontal: i===0 ? 'left' : 'right', indent: i===0 ? 1 : 0 };
+    });
+    if (fmt2) row.getCell(2).numFmt = fmt2;
+    if (fmt3) row.getCell(3).numFmt = fmt3;
+  };
+  const espacio = () => { q++; rs.getRow(q).height = 10; };
+
+  bandaR('RESUMEN EJECUTIVO  •  MAYA AUTOPARTES', { font:{bold:true,size:14,color:{argb:BLANCO}}, fill:NAVY, alto:30 });
+  infoR('Vendedor:', f.vendedor || 'Todos');
+  infoR('Período:', periodoStr);
+  infoR('Generado:', generado);
+  espacio();
+
+  seccion('MÉTRICAS');
+  filaKpi('Total ventas', ventas.length, null, '#,##0');
+  filaKpi('Monto total', totalMonto, null, MONEY);
+  filaKpi('Subtotal', totalSubtotal, null, MONEY);
+  filaKpi('IVA acumulado', totalIVA, null, MONEY);
+  filaKpi('Ajuste', totalAjuste, null, MONEY);
+  filaKpi('Promedio por venta', promedio, null, MONEY);
+  espacio();
+
+  seccion('TOP CLIENTES', 'Total');
+  topCli.forEach(([n,t]) => filaKpi(n, t, null, MONEY));
+  espacio();
+
+  seccion('VENTAS POR MES', '# Ventas', 'Total');
+  meses.forEach(m => filaKpi(m.etiqueta, m.n, m.t, '#,##0', MONEY));
+  espacio();
+
+  seccion('VENDEDORES', '# Ventas', 'Total');
+  orden.forEach(vnd => {
+    const gV = grupos[vnd];
+    filaKpi(vnd, gV.length, redondea(gV.reduce((s,v)=>s+fmt(v.total),0)), '#,##0', MONEY);
   });
 
-  const ws2 = {};
-  const m2  = [];
-  let r2 = 0;
-  const add2 = (cells) => { cells.forEach((cell,ci)=>{ ws2[XLSX.utils.encode_cell({r:r2,c:ci})] = cell||c("",S.blank); }); r2++; };
-  const mg2  = (r1,c1,r2e,c2) => m2.push({s:{r:r1,c:c1},e:{r:r2e,c:c2}});
+  return wb;
+}
 
-  add2([c("RESUMEN EJECUTIVO  •  MAYA AUTOPARTES", S.titulo), ...Array(2).fill(blank(S.titulo))]);
-  mg2(0,0,0,2);
-  add2([c("Vendedor:",S.infoLabel),c(f.vendedor||"Todos",S.info),blank(S.info)]);
-  add2([c("Período:",S.infoLabel),c(periodoStr,S.info),blank(S.info)]);
-  add2([c("Generado:",S.infoLabel),c(new Date().toLocaleString("es-MX"),S.info),blank(S.info)]);
-  r2++;
-
-  add2([c("MÉTRICAS", S.secHead), ...Array(2).fill(blank(S.secHead))]); mg2(r2-1,0,r2-1,2);
-  const kpis = [["Total ventas",ventas.length,false],["Monto total",totalMonto,true],["Subtotal",totalSubtotal,true],["IVA acumulado",totalIVA,true],["Ajuste",totalAjuste,true],["Promedio/venta",promedio,true]];
-  kpis.forEach(([l,v,money])=>add2([c(l,S.kpiLabel), money?cN(v,S.kpiVal):c(v,{...S.kpiValN,t:"n"}), blank(S.kpiLabel)]));
-  r2++;
-
-  add2([c("TOP CLIENTES", S.secHead), c("Total", {...S.secHead,alignment:{horizontal:"right"}}), blank(S.secHead)]);
-  topCli.forEach(([n,t])=>add2([c(n,S.kpiLabel), cN(t,S.kpiVal), blank(S.kpiLabel)]));
-  r2++;
-
-  add2([c("VENTAS POR MES", S.secHead), c("# Ventas",{...S.secHead,alignment:{horizontal:"right"}}), c("Total",{...S.secHead,alignment:{horizontal:"right"}})]);
-  Object.entries(mesMapa).forEach(([mes,d])=>add2([c(mes,S.kpiLabel), c(d.n,{...S.kpiValN,t:"n"}), cN(d.t,S.kpiVal)]));
-
-  add2([c("VENDEDORES", S.secHead), c("# Ventas",{...S.secHead,alignment:{horizontal:"right"}}), c("Total",{...S.secHead,alignment:{horizontal:"right"}})]);
-  ordenXls.forEach(vnd=>{
-    const gV=gruposXls[vnd]; const gT=gV.reduce((s,v)=>s+fmt(v.total),0);
-    add2([c(vnd,S.kpiLabel), c(gV.length,{...S.kpiValN,t:"n"}), cN(gT,S.kpiVal)]);
+// Respaldo si ExcelJS no se pudo descargar: tabla plana sin colores
+function repVendExcelBasico(ventas) {
+  const fmt = n => parseFloat(n) || 0;
+  const aoa = [['Vendedor','Nota','Fecha','Cliente','Piezas','Siniestro','Subtotal','IVA','Ajuste','Total']];
+  ventas.forEach(v => {
+    const piezas = v.items ? v.items.map(it=>it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
+    const sin    = v.siniestros || (v.items ? v.items.map(it=>it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
+    const d = v.fecha ? new Date(v.fecha) : (v.createdAt && v.createdAt.toDate ? v.createdAt.toDate() : new Date(v.createdAt || 0));
+    aoa.push([v.vendedor||'Sin asignar', v.notaId||v.notaNumero||'', d.toLocaleDateString('es-MX'), v.clienteNombre||v.cliente||'', piezas, sin, fmt(v.subtotal), fmt(v.ivaTotal), fmt(v.ajusteTotal), fmt(v.total)]);
   });
-
-  ws2["!ref"]   = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:r2,c:2}});
-  ws2["!merges"]= m2;
-  ws2["!cols"]  = [{wch:26},{wch:16},{wch:16}];
-
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [18,11,14,30,44,22,14,12,12,14].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws,  "Ventas Detalle");
-  XLSX.utils.book_append_sheet(wb, ws2, "Resumen");
+  XLSX.utils.book_append_sheet(wb, ws, 'Ventas');
+  const buf = XLSX.write(wb, { type:'array', bookType:'xlsx' });
+  return new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
 
+window.exportarVendedorExcel = async function() {
+  const ventas = window._repVendData;
+  const f = window._repVendFiltro || {};
+  if (!ventas || !ventas.length) return toast("Primero aplica el filtro", "error");
+  toast('⏳ Preparando Excel...', 'info');
+
+  const d = new Date();
+  const hoy = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   const vend = f.vendedor ? f.vendedor.replace(/[^a-zA-Z0-9]/g,"_") : "todos";
-  XLSX.writeFile(wb, "reporte_ventas_" + vend + "_" + new Date().toISOString().slice(0,10) + ".xlsx");
+
+  let blob;
+  try {
+    if (!window.cargarExcelJS) throw new Error('Cargador de ExcelJS no disponible');
+    const ExcelJS = await window.cargarExcelJS();
+    const wb = repVendConstruirLibro(ExcelJS, ventas, f);
+    const buf = await wb.xlsx.writeBuffer();
+    blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  } catch (e) {
+    console.warn('ExcelJS falló; se usa el formato básico:', e);
+    if (typeof XLSX === 'undefined') return toast('No se pudo generar el Excel: ' + e.message, 'error');
+    blob = repVendExcelBasico(ventas);
+    toast('Se generó una versión básica del Excel (sin colores)', 'info');
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "reporte_ventas_" + vend + "_" + hoy + ".xlsx";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast('✅ Excel generado', 'success');
 };
+// ══ REPORTE DE VENTAS A EXCEL — FIN ══
 
 
 // ═══════════════════════════════════════
