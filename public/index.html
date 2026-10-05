@@ -499,6 +499,16 @@ body {
 .search-box:focus { border-color: var(--blue); background: rgba(59,188,212,0.05); }
 .search-box::placeholder { color: var(--gray); }
 
+/* Filtros del módulo Visita de Talleres */
+.vt-filter label { display:block; font-size:11px; color:var(--gray); margin-bottom:4px; letter-spacing:1px; text-transform:uppercase; }
+.vt-filter input[type=date], .vt-filter select { color-scheme: dark; width:auto; min-width:150px; }
+.vt-filter select option { background: var(--surface); color: var(--white); }
+.vt-filter #vt-search { width: 260px; max-width: 100%; }
+#modal-visita-taller input[type=file]::file-selector-button {
+  background: rgba(59,188,212,0.15); color: var(--blue); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 12px; margin-right: 10px; cursor: pointer; font-family: var(--font-body);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1041,6 +1051,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" onclick="showModule('envios')">
         <span class="nav-icon">📦</span> Envíos
       </div>
+      <div class="nav-item" onclick="showModule('visitas-talleres')">
+        <span class="nav-icon">🔧</span> Visita de Talleres
+      </div>
       <div class="nav-section">Reportes</div>
       <div class="nav-item" onclick="showModule('reportes')">
         <span class="nav-icon">📈</span> Reportes
@@ -1314,6 +1327,49 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               </tr></thead>
               <tbody id="ne-body">
                 <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISITA DE TALLERES -->
+      <div class="module-view" id="mod-visitas-talleres">
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">🔧 Visita de Talleres</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="abrirModalVisitaTaller()">+ Nueva Visita</button>
+              <button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:0.9em" onclick="exportarVisitasTalleresExcel()">📤 Exportar Excel</button>
+            </div>
+          </div>
+          <div class="vt-filter" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 22px;border-bottom:1px solid var(--border)">
+            <div>
+              <label>Buscar</label>
+              <input class="search-box" id="vt-search" placeholder="🔍 Taller, dirección, contacto..." oninput="renderVisitasTalleres()">
+            </div>
+            <div>
+              <label>Colaborador</label>
+              <select class="search-box" id="vt-filtro-colab" onchange="renderVisitasTalleres()"><option value="">Todos</option></select>
+            </div>
+            <div>
+              <label>Desde</label>
+              <input class="search-box" type="date" id="vt-desde" onchange="renderVisitasTalleres()">
+            </div>
+            <div>
+              <label>Hasta</label>
+              <input class="search-box" type="date" id="vt-hasta" onchange="renderVisitasTalleres()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="limpiarFiltrosVisitasTalleres()">Limpiar</button>
+            <span id="vt-contador" style="color:var(--gray);font-size:12px;margin-left:auto"></span>
+          </div>
+          <div style="overflow-x:auto">
+            <table id="vt-table">
+              <thead><tr>
+                <th>Fecha</th><th>Taller</th><th>Dirección</th><th>Contacto</th><th>Teléfono</th><th>Colaborador</th><th>Observaciones</th><th>Foto</th><th>Acciones</th>
+              </tr></thead>
+              <tbody id="vt-body">
+                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🔧</div><div class="empty-title">Aún no hay visitas registradas</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -2111,6 +2167,54 @@ tr:hover td { background: rgba(59,188,212,0.03); }
   </div>
 </div>
 
+<!-- Modal Visita de Taller -->
+<div class="modal-overlay" id="modal-visita-taller">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-head"><h3 id="vt-modal-title">🔧 Nueva Visita de Taller</h3><button class="modal-close" onclick="closeModal('modal-visita-taller')">×</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="vt-edit-id">
+      <div class="form-group"><label>Nombre del taller *</label><input type="text" id="vt-taller" placeholder="Ej: Taller Mecánico El Güero" maxlength="120"></div>
+      <div class="form-group"><label>Dirección del taller *</label><textarea id="vt-direccion" placeholder="Calle, número, colonia, municipio..." style="min-height:62px" maxlength="300"></textarea></div>
+      <div class="grid-2">
+        <div class="form-group"><label>Contacto del taller</label><input type="text" id="vt-contacto" placeholder="Nombre de la persona" maxlength="100"></div>
+        <div class="form-group"><label>Teléfono</label><input type="tel" id="vt-telefono" placeholder="(55) 1234-5678" maxlength="30"></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Fecha de la visita *</label><input type="date" id="vt-fecha" style="color-scheme:dark"></div>
+        <div class="form-group"><label>Colaborador que visitó *</label><input type="text" id="vt-colaborador" list="vt-colab-list" placeholder="Elige o escribe un nombre" maxlength="100"><datalist id="vt-colab-list"></datalist></div>
+      </div>
+      <div class="form-group"><label>Observaciones</label><textarea id="vt-observaciones" placeholder="Qué se platicó, necesidades del taller, seguimiento pendiente..." maxlength="1500"></textarea></div>
+      <div class="form-group">
+        <label>Foto del taller</label>
+        <input type="file" id="vt-foto-input" accept="image/*" onchange="vtOnFotoSeleccionada(this)">
+        <div id="vt-foto-preview" style="display:none;margin-top:12px">
+          <img id="vt-foto-img" alt="Foto del taller" style="max-width:100%;max-height:220px;border-radius:10px;border:1px solid var(--border);display:block;margin-bottom:8px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="vtQuitarFoto()">🗑 Quitar foto</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-visita-taller')">Cancelar</button>
+      <button class="btn btn-primary" id="vt-btn-guardar" onclick="guardarVisitaTaller()">Guardar Visita</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal ver foto de taller -->
+<div class="modal-overlay" id="modal-vt-foto" onclick="if(event.target===this)closeModal('modal-vt-foto')">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-head"><h3 id="vt-foto-view-titulo">Foto del taller</h3><button class="modal-close" onclick="closeModal('modal-vt-foto')">×</button></div>
+    <div class="modal-body" style="text-align:center">
+      <div id="vt-foto-view-msg" style="color:var(--gray);padding:30px 0">Cargando foto...</div>
+      <img id="vt-foto-view-img" alt="Foto del taller" style="max-width:100%;max-height:70vh;border-radius:10px">
+    </div>
+    <div class="modal-footer">
+      <a id="vt-foto-view-dl" class="btn btn-secondary" style="text-decoration:none" download="foto-taller.jpg">⬇️ Descargar</a>
+      <button class="btn btn-primary" onclick="closeModal('modal-vt-foto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Entrega -->
 <div class="modal-overlay" id="modal-entrega">
   <div class="modal">
@@ -2321,7 +2425,7 @@ const db = window.db;
 // ── STATE ──
 let currentUser = null;
 window.currentRole = 'vendedor';
-const data = { ventas: [], productos: [], clientes: [], cotizaciones: [], proveedores: [], entregas: [], usuarios: [], envios: [] };
+const data = { ventas: [], productos: [], clientes: [], cotizaciones: [], proveedores: [], entregas: [], usuarios: [], envios: [], visitasTalleres: [] };
 const unsubs = [];
 window.data = data;
 
@@ -2465,6 +2569,7 @@ function startListeners() {
   listenCollection('proveedores', 'prov-body', renderProveedores);
   listenCollection('notasEntrega', 'ne-body', renderNotasEntrega);
   listenCollection('entregas', 'ent-body', renderEntregas);
+  listenCollection('visitasTalleres', 'vt-body', renderVisitasTalleres);
   listenCollection('usuarios', 'users-body', renderUsuarios);
   // startEnviosListener(); // Comentado - usa cargarEnvios() en su lugar
   // startFinanzasListeners(); // Comentado - usar getDocs() en su lugar
@@ -3263,6 +3368,595 @@ window.toggleClienteRedes = async function(clienteId, actual) {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
+// ══ VISITA DE TALLERES — INICIO ══
+// Colección "visitasTalleres" (datos de la visita) + "visitasTalleresFotos" (una foto comprimida por visita,
+// aparte para que la lista cargue rápido aunque haya muchas fotos).
+const VT_COL = 'visitasTalleres';
+const VT_COL_FOTOS = 'visitasTalleresFotos';
+const vtFotosCache = new Map();
+let vtFotoNueva = null;
+let vtFotoQuitar = false;
+let vtGuardando = false;
+let vtVerToken = 0;
+
+function vtEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function vtFmtFecha(f) {
+  if (!f) return '—';
+  const d = new Date(f + 'T12:00:00');
+  return isNaN(d) ? f : d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function vtHoyLocal() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function vtNombreUsuarioActual() {
+  const u = auth.currentUser;
+  if (!u) return '';
+  const reg = (data.usuarios || []).find(x => x.email && u.email && x.email.toLowerCase() === u.email.toLowerCase());
+  return (reg && reg.nombre) || u.displayName || u.email || '';
+}
+
+function vtVisitasFiltradas() {
+  const q = (document.getElementById('vt-search')?.value || '').toLowerCase().trim();
+  const colab = document.getElementById('vt-filtro-colab')?.value || '';
+  const desde = document.getElementById('vt-desde')?.value || '';
+  const hasta = document.getElementById('vt-hasta')?.value || '';
+  return (data[VT_COL] || []).filter(v => {
+    if (colab && v.colaborador !== colab) return false;
+    if (desde && (!v.fechaVisita || v.fechaVisita < desde)) return false;
+    if (hasta && (!v.fechaVisita || v.fechaVisita > hasta)) return false;
+    if (q) {
+      const texto = [v.taller, v.direccion, v.contacto, v.telefono, v.colaborador, v.observaciones].join(' ').toLowerCase();
+      if (!texto.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => (b.fechaVisita || '').localeCompare(a.fechaVisita || ''));
+}
+
+function renderVisitasTalleres() {
+  const body = document.getElementById('vt-body');
+  if (!body) return;
+  const rol = window.currentRole || 'vendedor';
+
+  const sel = document.getElementById('vt-filtro-colab');
+  if (sel) {
+    const actual = sel.value;
+    const nombres = [...new Set((data[VT_COL] || []).map(v => v.colaborador).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    sel.innerHTML = '<option value="">Todos</option>' + nombres.map(n => `<option value="${vtEsc(n)}">${vtEsc(n)}</option>`).join('');
+    sel.value = nombres.includes(actual) ? actual : '';
+  }
+
+  const lista = vtVisitasFiltradas();
+  const total = (data[VT_COL] || []).length;
+  const cont = document.getElementById('vt-contador');
+  if (cont) cont.textContent = lista.length === total ? `${total} visita${total !== 1 ? 's' : ''}` : `${lista.length} de ${total} visitas`;
+
+  if (!lista.length) {
+    body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🔧</div><div class="empty-title">${total ? 'Sin resultados con esos filtros' : 'Aún no hay visitas registradas'}</div></div></td></tr>`;
+    return;
+  }
+
+  body.innerHTML = lista.map(v => `
+    <tr>
+      <td style="white-space:nowrap;font-weight:600;color:#3BBCD4">${vtFmtFecha(v.fechaVisita)}</td>
+      <td style="font-weight:600">${vtEsc(v.taller)}</td>
+      <td style="min-width:180px;max-width:240px">${vtEsc(v.direccion) || '—'}</td>
+      <td>${vtEsc(v.contacto) || '—'}</td>
+      <td style="white-space:nowrap">${vtEsc(v.telefono) || '—'}</td>
+      <td>${vtEsc(v.colaborador) || '—'}</td>
+      <td style="min-width:200px;max-width:300px;white-space:pre-wrap">${vtEsc(v.observaciones) || '—'}</td>
+      <td style="text-align:center">${v.tieneFoto ? `<button class="btn btn-secondary btn-sm" onclick="verFotoVisitaTaller('${v.id}')">📷 Ver</button>` : '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" title="Editar" onclick="abrirModalVisitaTaller('${v.id}')">✏️</button>
+        ${rol === 'admin' ? `<button class="btn btn-danger btn-sm" title="Eliminar" onclick="eliminarVisitaTaller('${v.id}')">🗑</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+window.renderVisitasTalleres = renderVisitasTalleres;
+
+window.limpiarFiltrosVisitasTalleres = function() {
+  ['vt-search', 'vt-filtro-colab', 'vt-desde', 'vt-hasta'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  renderVisitasTalleres();
+};
+
+async function vtObtenerFoto(id) {
+  if (vtFotosCache.has(id)) return vtFotosCache.get(id);
+  const snap = await getDoc(doc(db, VT_COL_FOTOS, id));
+  if (!snap.exists()) return null;
+  const d = snap.data() || {};
+  if (!d.foto) return null;
+  const f = { foto: d.foto, ancho: d.ancho || 0, alto: d.alto || 0 };
+  vtFotosCache.set(id, f);
+  return f;
+}
+
+// Reduce la foto (máx. 1000 px, JPEG) para que quepa holgada en Firestore (límite 1 MB por documento)
+function vtComprimirImagen(file, maxLado = 1000, calidad = 0.72) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) throw new Error('Imagen inválida');
+        const esc = Math.min(1, maxLado / Math.max(w, h));
+        w = Math.round(w * esc);
+        h = Math.round(h * esc);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let q = calidad;
+        let dataUrl = canvas.toDataURL('image/jpeg', q);
+        while (dataUrl.length > 700000 && q > 0.3) {
+          q -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', q);
+        }
+        URL.revokeObjectURL(url);
+        resolve({ dataUrl, ancho: w, alto: h });
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('No se pudo leer la imagen (formato no compatible)'));
+    };
+    img.src = url;
+  });
+}
+
+function vtMostrarPreview(dataUrl) {
+  const prev = document.getElementById('vt-foto-preview');
+  const img = document.getElementById('vt-foto-img');
+  if (dataUrl) {
+    img.src = dataUrl;
+    prev.style.display = 'block';
+  } else {
+    img.removeAttribute('src');
+    prev.style.display = 'none';
+  }
+}
+
+window.vtOnFotoSeleccionada = async function(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    input.value = '';
+    return toast('El archivo debe ser una imagen', 'error');
+  }
+  try {
+    vtFotoNueva = await vtComprimirImagen(file);
+    vtFotoQuitar = false;
+    vtMostrarPreview(vtFotoNueva.dataUrl);
+  } catch (e) {
+    input.value = '';
+    toast('No se pudo procesar la foto: ' + e.message, 'error');
+  }
+};
+
+window.vtQuitarFoto = function() {
+  vtFotoNueva = null;
+  vtFotoQuitar = true;
+  const input = document.getElementById('vt-foto-input');
+  if (input) input.value = '';
+  vtMostrarPreview(null);
+};
+
+window.abrirModalVisitaTaller = async function(id) {
+  vtFotoNueva = null;
+  vtFotoQuitar = false;
+  const v = id ? (data[VT_COL] || []).find(x => x.id === id) : null;
+  const set = (campo, valor) => { document.getElementById(campo).value = valor || ''; };
+
+  document.getElementById('vt-edit-id').value = v ? v.id : '';
+  document.getElementById('vt-modal-title').textContent = v ? '✏️ Editar Visita de Taller' : '🔧 Nueva Visita de Taller';
+  set('vt-taller', v && v.taller);
+  set('vt-direccion', v && v.direccion);
+  set('vt-contacto', v && v.contacto);
+  set('vt-telefono', v && v.telefono);
+  set('vt-fecha', v ? v.fechaVisita : vtHoyLocal());
+  set('vt-colaborador', v ? v.colaborador : vtNombreUsuarioActual());
+  set('vt-observaciones', v && v.observaciones);
+  document.getElementById('vt-foto-input').value = '';
+  vtMostrarPreview(null);
+
+  // Sugerencias de colaborador: todos los usuarios (admins incluidos) y quienes ya hicieron visitas
+  const nombres = new Set();
+  (data.usuarios || []).forEach(u => { if (u.nombre) nombres.add(u.nombre); });
+  (data[VT_COL] || []).forEach(x => { if (x.colaborador) nombres.add(x.colaborador); });
+  const actual = vtNombreUsuarioActual();
+  if (actual) nombres.add(actual);
+  document.getElementById('vt-colab-list').innerHTML = [...nombres].sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${vtEsc(n)}"></option>`).join('');
+
+  openModal('modal-visita-taller');
+
+  if (v && v.tieneFoto) {
+    try {
+      const f = await vtObtenerFoto(v.id);
+      // solo mostrar si el usuario sigue editando esta misma visita y no cambió la foto
+      if (f && document.getElementById('vt-edit-id').value === v.id && !vtFotoNueva && !vtFotoQuitar) vtMostrarPreview(f.foto);
+    } catch (e) {
+      console.warn('No se pudo cargar la foto de la visita:', e);
+    }
+  }
+};
+
+window.guardarVisitaTaller = async function() {
+  if (vtGuardando) return;
+  const val = id => (document.getElementById(id).value || '').trim();
+  const taller = val('vt-taller');
+  const direccion = val('vt-direccion');
+  const fecha = val('vt-fecha');
+  const colaborador = val('vt-colaborador');
+  if (!taller) return toast('Escribe el nombre del taller', 'error');
+  if (!direccion) return toast('Escribe la dirección del taller', 'error');
+  if (!fecha) return toast('Elige la fecha de la visita', 'error');
+  if (!colaborador) return toast('Indica qué colaborador hizo la visita', 'error');
+
+  const editId = document.getElementById('vt-edit-id').value;
+  const previo = editId ? (data[VT_COL] || []).find(x => x.id === editId) : null;
+  const btn = document.getElementById('vt-btn-guardar');
+  vtGuardando = true;
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    const teniaFoto = !!(previo && previo.tieneFoto);
+    const tieneFoto = vtFotoNueva ? true : (vtFotoQuitar ? false : teniaFoto);
+    const campos = {
+      taller,
+      direccion,
+      contacto: val('vt-contacto'),
+      telefono: val('vt-telefono'),
+      fechaVisita: fecha,
+      colaborador,
+      observaciones: val('vt-observaciones'),
+      tieneFoto
+    };
+
+    let id = editId;
+    if (editId) {
+      await updateDoc(doc(db, VT_COL, editId), { ...campos, updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || '' });
+    } else {
+      const ref = await addDoc(collection(db, VT_COL), {
+        ...campos,
+        createdAt: serverTimestamp(),
+        createdBy: auth.currentUser?.uid || '',
+        createdByName: vtNombreUsuarioActual()
+      });
+      id = ref.id;
+    }
+
+    try {
+      if (vtFotoNueva) {
+        await setDoc(doc(db, VT_COL_FOTOS, id), { foto: vtFotoNueva.dataUrl, ancho: vtFotoNueva.ancho, alto: vtFotoNueva.alto, updatedAt: serverTimestamp() });
+        vtFotosCache.set(id, { foto: vtFotoNueva.dataUrl, ancho: vtFotoNueva.ancho, alto: vtFotoNueva.alto });
+      } else if (vtFotoQuitar && teniaFoto) {
+        await deleteDoc(doc(db, VT_COL_FOTOS, id));
+        vtFotosCache.delete(id);
+      }
+    } catch (e) {
+      console.error('Error guardando la foto de la visita:', e);
+      await updateDoc(doc(db, VT_COL, id), { tieneFoto: teniaFoto && !vtFotoQuitar }).catch(() => {});
+      closeModal('modal-visita-taller');
+      return toast('La visita se guardó, pero la foto no se pudo subir: ' + e.message, 'error');
+    }
+
+    closeModal('modal-visita-taller');
+    toast(editId ? '✅ Visita actualizada' : '✅ Visita registrada', 'success');
+  } catch (e) {
+    console.error('Error guardando visita de taller:', e);
+    toast('Error al guardar: ' + e.message, 'error');
+  } finally {
+    vtGuardando = false;
+    btn.disabled = false;
+    btn.textContent = 'Guardar Visita';
+  }
+};
+
+window.verFotoVisitaTaller = async function(id) {
+  const v = (data[VT_COL] || []).find(x => x.id === id);
+  const token = ++vtVerToken;
+  const img = document.getElementById('vt-foto-view-img');
+  const msg = document.getElementById('vt-foto-view-msg');
+  const dl = document.getElementById('vt-foto-view-dl');
+  document.getElementById('vt-foto-view-titulo').textContent = v ? v.taller : 'Foto del taller';
+  img.removeAttribute('src');
+  img.style.display = 'none';
+  dl.style.display = 'none';
+  msg.textContent = 'Cargando foto...';
+  msg.style.display = 'block';
+  openModal('modal-vt-foto');
+  try {
+    const f = await vtObtenerFoto(id);
+    if (token !== vtVerToken) return;
+    if (!f) { msg.textContent = 'Esta visita no tiene foto guardada.'; return; }
+    img.src = f.foto;
+    img.style.display = 'inline-block';
+    msg.style.display = 'none';
+    dl.href = f.foto;
+    dl.download = 'foto-' + ((v && v.taller) || 'taller').replace(/[^a-zA-Z0-9]+/g, '_') + '.jpg';
+    dl.style.display = 'inline-block';
+  } catch (e) {
+    if (token === vtVerToken) msg.textContent = 'No se pudo cargar la foto: ' + e.message;
+  }
+};
+
+window.eliminarVisitaTaller = async function(id) {
+  if (window.currentRole !== 'admin') return toast('Solo un administrador puede eliminar visitas', 'error');
+  const v = (data[VT_COL] || []).find(x => x.id === id);
+  if (!confirm(`¿Eliminar la visita a "${(v && v.taller) || 'este taller'}"? Esta acción no se puede deshacer.`)) return;
+  try {
+    await deleteDoc(doc(db, VT_COL, id));
+    try { await deleteDoc(doc(db, VT_COL_FOTOS, id)); } catch (e) { console.warn('No se pudo borrar la foto:', e); }
+    vtFotosCache.delete(id);
+    toast('Visita eliminada', 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+};
+
+// ── Exportar a Excel ──
+function vtCargarExcelJS() {
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if (window._vtExcelJSPromise) return window._vtExcelJSPromise;
+  window._vtExcelJSPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+    s.onload = () => (window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error('ExcelJS no disponible')));
+    s.onerror = () => { window._vtExcelJSPromise = null; reject(new Error('No se pudo cargar la librería de Excel')); };
+    document.head.appendChild(s);
+  });
+  return window._vtExcelJSPromise;
+}
+
+function vtFechaComoDate(f) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(f || '');
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+}
+
+// Construye el libro con formato (colores, filtros, fotos incrustadas). Recibe ExcelJS por parámetro.
+function vtConstruirLibroExcel(ExcelJS, filas, fotos, meta) {
+  const NAVY = 'FF0D2A4A', TEAL = 'FF1E8FA5', ZEBRA = 'FFF0F7FA', INFO = 'FFEAF1F7', BORDE = 'FFD5DEE6';
+  const borde = { style: 'thin', color: { argb: BORDE } };
+  const bordes = { top: borde, left: borde, bottom: borde, right: borde };
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Maya Autopartes';
+  wb.created = new Date();
+
+  // ════ Hoja 1: detalle ════
+  const ws = wb.addWorksheet('Visitas a Talleres', {
+    views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 1 }
+  });
+  const columnas = [
+    { w: 5 }, { w: 16 }, { w: 28 }, { w: 38 }, { w: 22 }, { w: 16 }, { w: 22 }, { w: 46 }, { w: 24 }
+  ];
+  columnas.forEach((c, i) => { ws.getColumn(i + 1).width = c.w; });
+  const NCOL = columnas.length;
+
+  ws.mergeCells(1, 1, 1, NCOL);
+  const t = ws.getCell(1, 1);
+  t.value = 'MAYA AUTOPARTES  •  VISITA DE TALLERES';
+  t.font = { bold: true, size: 15, color: { argb: 'FFFFFFFF' } };
+  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+  t.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(1).height = 32;
+
+  ws.mergeCells(2, 1, 2, NCOL);
+  const info = ws.getCell(2, 1);
+  info.value = `Generado: ${meta.generado}     |     Colaborador: ${meta.colaborador}     |     Periodo: ${meta.periodo}     |     Total de visitas: ${filas.length}`;
+  info.font = { size: 10, color: { argb: 'FF334155' } };
+  info.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INFO } };
+  info.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(2).height = 20;
+  ws.getRow(3).height = 6;
+
+  const cab = ['#', 'Fecha de visita', 'Taller', 'Dirección', 'Contacto', 'Teléfono', 'Colaborador', 'Observaciones', 'Foto'];
+  const hr = ws.getRow(4);
+  hr.height = 26;
+  cab.forEach((txt, i) => {
+    const c = hr.getCell(i + 1);
+    c.value = txt;
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } };
+    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    c.border = { top: borde, left: borde, right: borde, bottom: { style: 'medium', color: { argb: NAVY } } };
+  });
+
+  const lineas = (texto, ancho) => {
+    if (!texto) return 1;
+    return String(texto).split('\n').reduce((s, p) => s + Math.max(1, Math.ceil(p.length / Math.max(1, ancho - 2))), 0);
+  };
+
+  filas.forEach((v, i) => {
+    const rowNum = 5 + i;
+    const row = ws.getRow(rowNum);
+    const fondo = i % 2 === 1 ? ZEBRA : 'FFFFFFFF';
+    const fecha = vtFechaComoDate(v.fechaVisita);
+    const valores = [i + 1, fecha || (v.fechaVisita || ''), v.taller || '', v.direccion || '', v.contacto || '', v.telefono || '', v.colaborador || '', v.observaciones || '', ''];
+    valores.forEach((val, ci) => {
+      const c = row.getCell(ci + 1);
+      c.value = val;
+      c.font = { size: 10, color: { argb: 'FF0F172A' }, bold: ci === 2 };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fondo } };
+      c.border = bordes;
+      c.alignment = {
+        vertical: 'middle',
+        wrapText: true,
+        horizontal: (ci === 0 || ci === 1 || ci === 5 || ci === 8) ? 'center' : 'left'
+      };
+    });
+    if (fecha) row.getCell(2).numFmt = 'dd/mm/yyyy';
+    row.getCell(6).numFmt = '@';
+
+    const foto = fotos.get(v.id);
+    let alto = 22;
+    [[3, v.taller], [4, v.direccion], [5, v.contacto], [7, v.colaborador], [8, v.observaciones]].forEach(([col, txt]) => {
+      alto = Math.max(alto, lineas(txt, columnas[col - 1].w) * 13.5 + 8);
+    });
+    if (foto && foto.foto) {
+      alto = Math.max(alto, 90);
+      const imgId = wb.addImage({ base64: foto.foto, extension: 'jpeg' });
+      const ratio = foto.ancho && foto.alto ? foto.ancho / foto.alto : 4 / 3;
+      let w = 150, h = w / ratio;
+      if (h > 108) { h = 108; w = h * ratio; }
+      ws.addImage(imgId, { tl: { col: 8.04, row: rowNum - 1 + 0.06 }, ext: { width: Math.round(w), height: Math.round(h) }, editAs: 'oneCell' });
+    } else {
+      row.getCell(9).value = v.tieneFoto ? '(foto no disponible)' : '—';
+      row.getCell(9).font = { size: 9, italic: true, color: { argb: 'FF94A3B8' } };
+    }
+    row.height = alto;
+  });
+
+  if (filas.length) {
+    ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + filas.length, column: NCOL } };
+  }
+  ws.pageSetup.printTitlesRow = '4:4';
+  ws.headerFooter = { oddFooter: '&LMaya Autopartes — Visita de Talleres&RPágina &P de &N' };
+
+  // ════ Hoja 2: resumen por colaborador ════
+  const rs = wb.addWorksheet('Resumen', { views: [{ showGridLines: false }] });
+  [30, 12, 18, 18].forEach((w, i) => { rs.getColumn(i + 1).width = w; });
+  rs.mergeCells(1, 1, 1, 4);
+  const rt = rs.getCell(1, 1);
+  rt.value = 'RESUMEN POR COLABORADOR';
+  rt.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  rt.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+  rt.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  rs.getRow(1).height = 30;
+  rs.getRow(2).height = 6;
+  ['Colaborador', 'Visitas', 'Primera visita', 'Última visita'].forEach((txt, i) => {
+    const c = rs.getRow(3).getCell(i + 1);
+    c.value = txt;
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } };
+    c.alignment = { vertical: 'middle', horizontal: 'center' };
+    c.border = bordes;
+  });
+  rs.getRow(3).height = 22;
+
+  const grupos = new Map();
+  filas.forEach(v => {
+    const k = v.colaborador || 'Sin asignar';
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(v.fechaVisita || '');
+  });
+  const resumen = [...grupos.entries()].map(([nombre, fechas]) => {
+    const f = fechas.filter(Boolean).sort();
+    return { nombre, n: fechas.length, primera: f[0] || '', ultima: f[f.length - 1] || '' };
+  }).sort((a, b) => b.n - a.n || a.nombre.localeCompare(b.nombre, 'es'));
+
+  resumen.forEach((r, i) => {
+    const row = rs.getRow(4 + i);
+    const fondo = i % 2 === 1 ? ZEBRA : 'FFFFFFFF';
+    const p = vtFechaComoDate(r.primera), u = vtFechaComoDate(r.ultima);
+    [r.nombre, r.n, p || '', u || ''].forEach((val, ci) => {
+      const c = row.getCell(ci + 1);
+      c.value = val;
+      c.font = { size: 10, color: { argb: 'FF0F172A' }, bold: ci === 0 };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fondo } };
+      c.border = bordes;
+      c.alignment = { vertical: 'middle', horizontal: ci === 0 ? 'left' : 'center' };
+    });
+    if (p) row.getCell(3).numFmt = 'dd/mm/yyyy';
+    if (u) row.getCell(4).numFmt = 'dd/mm/yyyy';
+    row.height = 20;
+  });
+  const tr = rs.getRow(4 + resumen.length);
+  tr.height = 22;
+  ['TOTAL', filas.length, '', ''].forEach((val, ci) => {
+    const c = tr.getCell(ci + 1);
+    c.value = val;
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
+    c.alignment = { vertical: 'middle', horizontal: ci === 0 ? 'left' : 'center' };
+  });
+
+  return wb;
+}
+
+// Respaldo si ExcelJS no se pudo descargar: libro simple (sin colores ni fotos)
+function vtLibroExcelBasico(filas) {
+  const aoa = [['#', 'Fecha de visita', 'Taller', 'Dirección', 'Contacto', 'Teléfono', 'Colaborador', 'Observaciones', 'Foto']];
+  filas.forEach((v, i) => aoa.push([i + 1, vtFmtFecha(v.fechaVisita), v.taller || '', v.direccion || '', v.contacto || '', v.telefono || '', v.colaborador || '', v.observaciones || '', v.tieneFoto ? 'Sí' : 'No']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [5, 16, 28, 38, 22, 16, 22, 46, 8].map(w => ({ wch: w }));
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: 8 } }) };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Visitas a Talleres');
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+window.exportarVisitasTalleresExcel = async function() {
+  const filas = vtVisitasFiltradas();
+  if (!filas.length) return toast('No hay visitas para exportar con los filtros actuales', 'error');
+  toast('⏳ Preparando Excel...', 'info');
+  try {
+    const fotos = new Map();
+    const conFoto = filas.filter(v => v.tieneFoto);
+    for (let i = 0; i < conFoto.length; i += 4) {
+      await Promise.all(conFoto.slice(i, i + 4).map(async v => {
+        try {
+          const f = await vtObtenerFoto(v.id);
+          if (f) fotos.set(v.id, f);
+        } catch (e) { console.warn('Foto no disponible para exportar:', v.id, e); }
+      }));
+    }
+
+    const desde = document.getElementById('vt-desde')?.value || '';
+    const hasta = document.getElementById('vt-hasta')?.value || '';
+    const periodo = desde || hasta ? `${desde ? vtFmtFecha(desde) : 'inicio'} al ${hasta ? vtFmtFecha(hasta) : 'hoy'}` : 'Todas las fechas';
+    const meta = {
+      generado: new Date().toLocaleString('es-MX'),
+      colaborador: document.getElementById('vt-filtro-colab')?.value || 'Todos',
+      periodo
+    };
+
+    let blob;
+    try {
+      const ExcelJS = await vtCargarExcelJS();
+      const wb = vtConstruirLibroExcel(ExcelJS, filas, fotos, meta);
+      const buf = await wb.xlsx.writeBuffer();
+      blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    } catch (e) {
+      console.warn('ExcelJS falló; se usa el formato básico:', e);
+      blob = vtLibroExcelBasico(filas);
+      toast('Se generó una versión básica del Excel (sin colores ni fotos)', 'info');
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Visitas_Talleres_Maya_${vtHoyLocal()}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast(`✅ Excel generado (${filas.length} visita${filas.length !== 1 ? 's' : ''})`, 'success');
+  } catch (e) {
+    console.error('Error exportando visitas:', e);
+    toast('Error al exportar: ' + e.message, 'error');
+  }
+};
+// ══ VISITA DE TALLERES — FIN ══
+
 window.inicializarFormularioCotizacion = function() {
   const hoy = new Date().toISOString().split('T')[0];
   document.getElementById('cot-fecha').value = hoy;
@@ -3558,6 +4252,7 @@ window.showModule = function(name) {
     proveedores: ['admin', 'almacen'],
     entregas: ['admin', 'vendedor', 'almacen'],
     envios: ['admin', 'vendedor', 'almacen'],
+    'visitas-talleres': ['admin', 'vendedor', 'almacen'],
     reportes: ['admin'],
     mercadolibre: ['admin'],
     documentos: ['admin', 'vendedor'],
@@ -3590,6 +4285,8 @@ window.showModule = function(name) {
     proveedores: ['Proveedores', 'Directorio de proveedores'],
     entregas: ['Entregas', 'Logística y control de entregas'],
     envios: ['Envíos', 'Seguimiento de envíos por guía'],
+    'visitas-talleres': ['Visita de Talleres', 'Registro de visitas a talleres'],
+    'notas-entrega': ['Notas de Entrega', 'Notas de entrega a clientes'],
     reportes: ['Reportes', 'Análisis y métricas del negocio'],
     mercadolibre: ['Mercado Libre', 'Sincronización con Mercado Libre'],
     documentos: ['Documentos', 'Gestión de notas de venta y facturas'],
@@ -7722,7 +8419,7 @@ window.agregarSiniestroNE = function() {
 
 window.initNotaEntrega = function() {
   document.getElementById('ne-cliente').value = '';
-  document.getElementById('ne-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('ne-fecha').value = (function() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
   document.getElementById('ne-vendedor').value = '';
   document.getElementById('ne-iva').checked = false;
   var chkVenta = document.getElementById('ne-registrar-venta');
