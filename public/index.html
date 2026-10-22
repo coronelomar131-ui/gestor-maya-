@@ -1345,7 +1345,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               <input id="ne-filter-hora" type="number" min="0" max="23" placeholder="0–23" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:80px" oninput="renderNotasEntregaFiltrado()">
             </div>
             <button class="btn btn-secondary btn-sm" onclick="limpiarFiltrosNE()" style="align-self:flex-end">✕ Limpiar</button>
-            <button class="btn btn-secondary btn-sm" onclick="descargarHistorialNE()" style="align-self:flex-end">⬇️ Descargar Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="descargarHistorialNE()" style="align-self:flex-end">⬇️ Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="descargarHistorialNEPDF()" style="align-self:flex-end">📄 PDF</button>
             <span id="ne-filter-count" style="align-self:flex-end;font-size:12px;color:var(--gray)"></span>
           </div>
           <div style="overflow-x:auto">
@@ -8723,6 +8724,93 @@ window.descargarHistorialNE = function() {
   XLSX.utils.book_append_sheet(wb, ws, 'Notas de Entrega');
   XLSX.writeFile(wb, nombreArchivo);
   window.toast('✅ Descargando ' + filtradas.length + ' notas', 'success');
+};
+
+window.descargarHistorialNEPDF = function() {
+  var notas = window.data.notasEntrega || [];
+  var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
+  var filtMes = (document.getElementById('ne-filter-mes') || {}).value || '';
+  var filtDia = (document.getElementById('ne-filter-dia') || {}).value || '';
+  var filtHora = (document.getElementById('ne-filter-hora') || {}).value || '';
+
+  var filtradas = notas.filter(function(n) {
+    if (filtCliente && !(n.cliente || '').toLowerCase().includes(filtCliente.toLowerCase())) return false;
+    if (filtMes || filtDia) {
+      var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
+      if (!fecha) return false;
+      if (filtMes && String(fecha.getMonth() + 1) !== String(filtMes)) return false;
+      if (filtDia && String(fecha.getDate()) !== String(filtDia)) return false;
+    }
+    if (filtHora !== '') {
+      var ts = n.creadoEn || n.createdAt || null;
+      if (ts) {
+        var d = ts.toDate ? ts.toDate() : new Date(ts);
+        if (String(d.getHours()) !== String(filtHora)) return false;
+      } else { return false; }
+    }
+    return true;
+  });
+
+  if (!filtradas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
+
+  var meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var labelMes = filtMes ? meses[parseInt(filtMes)] : 'Todos los meses';
+  var labelFiltros = [
+    filtCliente ? 'Cliente: ' + filtCliente : '',
+    filtMes ? 'Mes: ' + labelMes : '',
+    filtDia ? 'Día: ' + filtDia : '',
+    filtHora !== '' ? 'Hora: ' + filtHora + ':00' : ''
+  ].filter(Boolean).join('   |   ');
+
+  var { jsPDF } = window.jspdf;
+  var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+
+  // Header
+  doc.setFillColor(18, 22, 30);
+  doc.rect(0, 0, 280, 30, 'F');
+  doc.setTextColor(59, 188, 212);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('HISTORIAL DE NOTAS DE ENTREGA', 14, 12);
+  doc.setFontSize(9);
+  doc.setTextColor(160, 170, 185);
+  doc.setFont('helvetica', 'normal');
+  doc.text(labelFiltros || 'Sin filtros aplicados', 14, 20);
+  doc.text('Generado: ' + new Date().toLocaleString('es-MX'), 14, 26);
+  doc.text('Total: ' + filtradas.length + ' notas', 240, 26);
+
+  var totalGeneral = filtradas.reduce(function(s, n){ return s + (n.total || 0); }, 0);
+
+  var filas = filtradas.map(function(n, i) {
+    var ts = n.creadoEn || n.createdAt || null;
+    var hora = ts ? (function(){ var d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); })() : '-';
+    return [
+      i + 1,
+      n.notaId || '-',
+      n.fecha || '-',
+      hora,
+      n.cliente || '-',
+      n.siniestro || '-',
+      n.vendedor || '-',
+      '$' + (n.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})
+    ];
+  });
+
+  doc.autoTable({
+    startY: 34,
+    head: [['#','Nota','Fecha','Hora','Cliente','Siniestro','Vendedor','Total']],
+    body: filas,
+    foot: [['','','','','','','TOTAL','$' + totalGeneral.toLocaleString('es-MX',{minimumFractionDigits:2})]],
+    styles: { fontSize: 8, cellPadding: 3, textColor: [220,225,235], fillColor: [24,29,40] },
+    headStyles: { fillColor: [30,37,52], textColor: [59,188,212], fontStyle: 'bold' },
+    footStyles: { fillColor: [20,25,35], textColor: [59,188,212], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [28,34,46] },
+    columnStyles: { 0:{cellWidth:8}, 1:{cellWidth:22}, 2:{cellWidth:22}, 3:{cellWidth:18}, 4:{cellWidth:55}, 5:{cellWidth:28}, 6:{cellWidth:30}, 7:{cellWidth:22, halign:'right'} }
+  });
+
+  var nombreArchivo = 'Historial_NE_' + labelMes.replace(/\s/g,'') + (filtCliente ? '_' + filtCliente.replace(/\s+/g,'_') : '') + '.pdf';
+  doc.save(nombreArchivo);
+  window.toast('✅ PDF generado con ' + filtradas.length + ' notas', 'success');
 };
 
 window.eliminarNotaEntrega = async function(id) {
