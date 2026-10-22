@@ -8729,88 +8729,145 @@ window.descargarHistorialNE = function() {
 window.descargarHistorialNEPDF = function() {
   var notas = window.data.notasEntrega || [];
   var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
-  var filtMes = (document.getElementById('ne-filter-mes') || {}).value || '';
-  var filtDia = (document.getElementById('ne-filter-dia') || {}).value || '';
-  var filtHora = (document.getElementById('ne-filter-hora') || {}).value || '';
+  var filtMes    = (document.getElementById('ne-filter-mes')    || {}).value || '';
+  var filtDia    = (document.getElementById('ne-filter-dia')    || {}).value || '';
+  var filtHora   = (document.getElementById('ne-filter-hora')   || {}).value || '';
 
   var filtradas = notas.filter(function(n) {
-    if (filtCliente && !(n.cliente || '').toLowerCase().includes(filtCliente.toLowerCase())) return false;
+    if (filtCliente && !(n.cliente||'').toLowerCase().includes(filtCliente.toLowerCase())) return false;
     if (filtMes || filtDia) {
-      var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
-      if (!fecha) return false;
-      if (filtMes && String(fecha.getMonth() + 1) !== String(filtMes)) return false;
-      if (filtDia && String(fecha.getDate()) !== String(filtDia)) return false;
+      var fd = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
+      if (!fd) return false;
+      if (filtMes && String(fd.getMonth()+1) !== String(filtMes)) return false;
+      if (filtDia && String(fd.getDate())    !== String(filtDia))  return false;
     }
     if (filtHora !== '') {
       var ts = n.creadoEn || n.createdAt || null;
-      if (ts) {
-        var d = ts.toDate ? ts.toDate() : new Date(ts);
-        if (String(d.getHours()) !== String(filtHora)) return false;
-      } else { return false; }
+      if (!ts) return false;
+      var dh = ts.toDate ? ts.toDate() : new Date(ts);
+      if (String(dh.getHours()) !== String(filtHora)) return false;
     }
     return true;
   });
 
   if (!filtradas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
 
-  var meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  var labelMes = filtMes ? meses[parseInt(filtMes)] : 'Todos los meses';
-  var labelFiltros = [
-    filtCliente ? 'Cliente: ' + filtCliente : '',
-    filtMes ? 'Mes: ' + labelMes : '',
-    filtDia ? 'Día: ' + filtDia : '',
-    filtHora !== '' ? 'Hora: ' + filtHora + ':00' : ''
-  ].filter(Boolean).join('   |   ');
+  var MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var labelMes = filtMes ? MESES[parseInt(filtMes)] : 'Todos';
+  var fmtMXN = function(n){ return '$'+(parseFloat(n)||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 
-  var { jsPDF } = window.jspdf;
-  var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+  // ── Paleta (igual que Reporte de Ventas) ──────────────────────────────
+  var C_AZUL  = [13,42,74];
+  var C_TEAL  = [30,143,165];
+  var C_TEAL2 = [59,188,212];
+  var C_VERDE = [16,185,129];
+  var C_AMBER = [245,158,11];
+  var C_BLANC = [255,255,255];
+  var C_GRIS  = [100,116,139];
+  var C_FONDO = [245,249,252];
 
-  // Header
-  doc.setFillColor(18, 22, 30);
-  doc.rect(0, 0, 280, 30, 'F');
-  doc.setTextColor(59, 188, 212);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('HISTORIAL DE NOTAS DE ENTREGA', 14, 12);
-  doc.setFontSize(9);
-  doc.setTextColor(160, 170, 185);
-  doc.setFont('helvetica', 'normal');
-  doc.text(labelFiltros || 'Sin filtros aplicados', 14, 20);
-  doc.text('Generado: ' + new Date().toLocaleString('es-MX'), 14, 26);
-  doc.text('Total: ' + filtradas.length + ' notas', 240, 26);
+  var jsPDFLib = window.jspdf || window.jsPDF;
+  var doc = new jsPDFLib.jsPDF({ orientation:'landscape', unit:'mm', format:'letter' });
+  var pageW = doc.internal.pageSize.getWidth();
 
-  var totalGeneral = filtradas.reduce(function(s, n){ return s + (n.total || 0); }, 0);
+  // ── Métricas KPI ──────────────────────────────────────────────────────
+  var totalGeneral = filtradas.reduce(function(s,n){ return s+(parseFloat(n.total)||0); },0);
+  var promedio     = filtradas.length ? totalGeneral / filtradas.length : 0;
+  var maxNota      = filtradas.reduce(function(mx,n){ return (parseFloat(n.total)||0)>mx?parseFloat(n.total):mx; },0);
+  var clientesU    = Object.keys(filtradas.reduce(function(m,n){ m[n.cliente||'?']=1; return m; },{})).length;
 
-  var filas = filtradas.map(function(n, i) {
+  // ── HEADER ────────────────────────────────────────────────────────────
+  doc.setFillColor(C_AZUL[0],C_AZUL[1],C_AZUL[2]);
+  doc.rect(0,0,pageW,32,'F');
+  doc.setFillColor(C_TEAL[0],C_TEAL[1],C_TEAL[2]);
+  doc.rect(0,29,pageW,3,'F');
+
+  try {
+    var logoImg = document.querySelector('.sidebar-logo img');
+    if (logoImg && logoImg.src) {
+      doc.setFillColor(255,255,255); doc.roundedRect(7,4,22,22,2,2,'F');
+      doc.addImage(logoImg.src,'JPEG',8,5,20,20);
+    }
+  } catch(e2){}
+
+  doc.setTextColor(C_BLANC[0],C_BLANC[1],C_BLANC[2]);
+  doc.setFontSize(15); doc.setFont(undefined,'bold');
+  doc.text('HISTORIAL DE NOTAS DE ENTREGA', 35, 13);
+  doc.setFontSize(9); doc.setFont(undefined,'normal');
+  var subtitulo = [
+    filtCliente ? 'Cliente: '+filtCliente : '',
+    'Mes: '+labelMes,
+    filtDia ? 'Día: '+filtDia : '',
+    filtHora !== '' ? 'Hora: '+filtHora+'h' : ''
+  ].filter(Boolean).join('   •   ');
+  doc.text(subtitulo, 35, 21);
+  doc.setFontSize(8);
+  doc.text('Generado: '+new Date().toLocaleString('es-MX'), pageW-10, 13, {align:'right'});
+  doc.text('Notas: '+filtradas.length, pageW-10, 21, {align:'right'});
+
+  // ── TARJETAS KPI ─────────────────────────────────────────────────────
+  var y0=36; var cardH=20; var cols=4;
+  var cardW=(pageW-16)/cols; var mx=8;
+  var kpis=[
+    {label:'TOTAL GENERAL', valor:fmtMXN(totalGeneral), color:C_VERDE},
+    {label:'PROMEDIO X NOTA',valor:fmtMXN(promedio),    color:C_TEAL2},
+    {label:'NOTA MÁS ALTA',  valor:fmtMXN(maxNota),     color:C_AMBER},
+    {label:'CLIENTES',        valor:String(clientesU),   color:[99,102,241]}
+  ];
+  kpis.forEach(function(k,i){
+    var x=mx+i*cardW;
+    doc.setFillColor(C_FONDO[0],C_FONDO[1],C_FONDO[2]);
+    doc.roundedRect(x,y0,cardW-2,cardH,2,2,'F');
+    doc.setFillColor(k.color[0],k.color[1],k.color[2]);
+    doc.roundedRect(x,y0,3,cardH,1,1,'F');
+    doc.setTextColor(C_GRIS[0],C_GRIS[1],C_GRIS[2]);
+    doc.setFontSize(6.5); doc.setFont(undefined,'normal');
+    doc.text(k.label, x+6, y0+7);
+    doc.setTextColor(k.color[0],k.color[1],k.color[2]);
+    doc.setFontSize(10); doc.setFont(undefined,'bold');
+    doc.text(k.valor, x+6, y0+15);
+  });
+
+  // ── TABLA ─────────────────────────────────────────────────────────────
+  var filas = filtradas.map(function(n,i){
     var ts = n.creadoEn || n.createdAt || null;
-    var hora = ts ? (function(){ var d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); })() : '-';
-    return [
-      i + 1,
-      n.notaId || '-',
-      n.fecha || '-',
-      hora,
-      n.cliente || '-',
-      n.siniestro || '-',
-      n.vendedor || '-',
-      '$' + (n.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})
-    ];
+    var hora = ts ? (function(){ var d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); })() : '-';
+    return [i+1, n.notaId||'-', n.fecha||'-', hora, n.cliente||'-', n.siniestro||'-', n.vendedor||'-', fmtMXN(n.total||0)];
   });
 
   doc.autoTable({
-    startY: 34,
+    startY: y0+cardH+4,
     head: [['#','Nota','Fecha','Hora','Cliente','Siniestro','Vendedor','Total']],
     body: filas,
-    foot: [['','','','','','','TOTAL','$' + totalGeneral.toLocaleString('es-MX',{minimumFractionDigits:2})]],
-    styles: { fontSize: 8, cellPadding: 3, textColor: [220,225,235], fillColor: [24,29,40] },
-    headStyles: { fillColor: [30,37,52], textColor: [59,188,212], fontStyle: 'bold' },
-    footStyles: { fillColor: [20,25,35], textColor: [59,188,212], fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [28,34,46] },
-    columnStyles: { 0:{cellWidth:8}, 1:{cellWidth:22}, 2:{cellWidth:22}, 3:{cellWidth:18}, 4:{cellWidth:55}, 5:{cellWidth:28}, 6:{cellWidth:30}, 7:{cellWidth:22, halign:'right'} }
+    foot: [['','','','','','','TOTAL',fmtMXN(totalGeneral)]],
+    styles:          {fontSize:8, cellPadding:3, textColor:[40,55,75]},
+    headStyles:      {fillColor:C_AZUL, textColor:C_BLANC, fontStyle:'bold', fontSize:8.5},
+    footStyles:      {fillColor:C_AZUL, textColor:C_TEAL2, fontStyle:'bold'},
+    alternateRowStyles:{fillColor:[235,243,250]},
+    rowPageBreak:    'auto',
+    columnStyles:{
+      0:{cellWidth:8,  halign:'center'},
+      1:{cellWidth:24},
+      2:{cellWidth:22},
+      3:{cellWidth:16},
+      4:{cellWidth:52},
+      5:{cellWidth:28},
+      6:{cellWidth:34},
+      7:{cellWidth:24, halign:'right', fontStyle:'bold'}
+    },
+    didDrawPage: function(data){
+      // Footer en cada página
+      var pg = doc.internal.getCurrentPageInfo().pageNumber;
+      var total = doc.internal.getNumberOfPages();
+      doc.setFontSize(7); doc.setTextColor(C_GRIS[0],C_GRIS[1],C_GRIS[2]);
+      doc.text('Maya Autopartes  •  Historial Notas de Entrega  •  '+labelMes, mx, doc.internal.pageSize.getHeight()-5);
+      doc.text('Página '+pg+' / '+total, pageW-mx, doc.internal.pageSize.getHeight()-5, {align:'right'});
+    }
   });
 
-  var nombreArchivo = 'Historial_NE_' + labelMes.replace(/\s/g,'') + (filtCliente ? '_' + filtCliente.replace(/\s+/g,'_') : '') + '.pdf';
+  var nombreArchivo = 'Historial_NE_'+labelMes+(filtCliente?'_'+filtCliente.replace(/\s+/g,'_'):'')+'.pdf';
   doc.save(nombreArchivo);
-  window.toast('✅ PDF generado con ' + filtradas.length + ' notas', 'success');
+  window.toast('✅ PDF generado con '+filtradas.length+' notas', 'success');
 };
 
 window.eliminarNotaEntrega = async function(id) {
