@@ -1315,10 +1315,37 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div class="table-card">
           <div class="table-header">
             <div class="table-title">📝 Notas de Entrega</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <input class="search-box" placeholder="🔍 Buscar nota..." oninput="filterTable('ne-table',this.value)">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <button class="btn btn-primary btn-sm" onclick="openModal('modal-nota-entrega');initNotaEntrega()">+ Nueva Nota</button>
             </div>
+          </div>
+          <!-- Filtros de Notas de Entrega -->
+          <div id="ne-filters" style="display:flex;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border);align-items:flex-end">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Cliente</label>
+              <input id="ne-filter-cliente" type="text" list="ne-filter-clientes-list" placeholder="Todos" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:160px" oninput="renderNotasEntregaFiltrado()">
+              <datalist id="ne-filter-clientes-list"></datalist>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Mes</label>
+              <select id="ne-filter-mes" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px" onchange="renderNotasEntregaFiltrado()">
+                <option value="">Todos</option>
+                <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Día</label>
+              <input id="ne-filter-dia" type="number" min="1" max="31" placeholder="1–31" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:80px" oninput="renderNotasEntregaFiltrado()">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Hora (registro)</label>
+              <input id="ne-filter-hora" type="number" min="0" max="23" placeholder="0–23" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:80px" oninput="renderNotasEntregaFiltrado()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="limpiarFiltrosNE()" style="align-self:flex-end">✕ Limpiar</button>
+            <span id="ne-filter-count" style="align-self:flex-end;font-size:12px;color:var(--gray)"></span>
           </div>
           <div style="overflow-x:auto">
             <table id="ne-table">
@@ -8569,15 +8596,53 @@ window.generarCotizacionPDFById = function(id) {
 // ── NOTAS DE ENTREGA ──
 
 function renderNotasEntrega() {
+  // Populate client datalist for filter
+  var dl = document.getElementById('ne-filter-clientes-list');
+  if (dl) {
+    var notas = window.data.notasEntrega || [];
+    var clientesUnicos = [...new Set(notas.map(function(n){ return n.cliente || ''; }).filter(Boolean))].sort();
+    dl.innerHTML = clientesUnicos.map(function(c){ return '<option value="' + c + '">'; }).join('');
+  }
+  renderNotasEntregaFiltrado();
+}
+
+function renderNotasEntregaFiltrado() {
   var notas = window.data.notasEntrega || [];
   var tbody = document.getElementById('ne-body');
   if (!tbody) return;
   var isAdmin = window.currentRole === 'admin';
-  if (!notas.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>';
+
+  var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
+  var filtMes = (document.getElementById('ne-filter-mes') || {}).value || '';
+  var filtDia = (document.getElementById('ne-filter-dia') || {}).value || '';
+  var filtHora = (document.getElementById('ne-filter-hora') || {}).value || '';
+
+  var filtradas = notas.filter(function(n) {
+    if (filtCliente && !(n.cliente || '').toLowerCase().includes(filtCliente.toLowerCase())) return false;
+    if (filtMes || filtDia) {
+      var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
+      if (!fecha) return false;
+      if (filtMes && String(fecha.getMonth() + 1) !== String(filtMes)) return false;
+      if (filtDia && String(fecha.getDate()) !== String(filtDia)) return false;
+    }
+    if (filtHora !== '') {
+      var ts = n.creadoEn || n.createdAt || null;
+      if (ts) {
+        var d = ts.toDate ? ts.toDate() : new Date(ts);
+        if (String(d.getHours()) !== String(filtHora)) return false;
+      } else { return false; }
+    }
+    return true;
+  });
+
+  var countEl = document.getElementById('ne-filter-count');
+  if (countEl) countEl.textContent = filtradas.length + ' de ' + notas.length;
+
+  if (!filtradas.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (notas.length ? 'Sin resultados con esos filtros' : 'Sin notas de entrega') + '</div></div></td></tr>';
     return;
   }
-  tbody.innerHTML = notas.map(function(n, i) {
+  tbody.innerHTML = filtradas.map(function(n, i) {
     var total = '\$' + (n.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2});
     var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00').toLocaleDateString('es-MX') : '-';
     return '<tr>' +
@@ -8596,6 +8661,14 @@ function renderNotasEntrega() {
     '</tr>';
   }).join('');
 }
+
+window.limpiarFiltrosNE = function() {
+  ['ne-filter-cliente','ne-filter-mes','ne-filter-dia','ne-filter-hora'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  renderNotasEntregaFiltrado();
+};
 
 window.eliminarNotaEntrega = async function(id) {
   if (!confirm('¿Eliminar esta nota de entrega?')) return;
