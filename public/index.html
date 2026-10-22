@@ -1337,6 +1337,12 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               </select>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Año</label>
+              <select id="ne-filter-anio" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px" onchange="renderNotasEntregaFiltrado()">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Día</label>
               <input id="ne-filter-dia" type="number" min="1" max="31" placeholder="1–31" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:80px" oninput="renderNotasEntregaFiltrado()">
             </div>
@@ -1352,10 +1358,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="ne-table">
               <thead><tr>
-                <th>#</th><th>Nota</th><th>Fecha</th><th>Cliente</th><th>Siniestro</th><th>Vendedor</th><th>Total</th><th>Acciones</th>
+                <th>#</th><th>Nota</th><th>Fecha</th><th>Hora</th><th>Cliente</th><th>Siniestro</th><th>Vendedor</th><th>Total</th><th>Acciones</th>
               </tr></thead>
               <tbody id="ne-body">
-                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>
+                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -2597,7 +2603,7 @@ function startListeners() {
   listenCollection('clientes', 'cli-body', renderClientes);
   listenCollection('cotizaciones', 'cot-body', renderCotizaciones);
   listenCollection('proveedores', 'prov-body', renderProveedores);
-  listenCollection('notasEntrega', 'ne-body', renderNotasEntrega);
+  listenCollection('notasEntrega', 'ne-body', renderNotasEntrega, true);
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('visitasTalleres', 'vt-body', renderVisitasTalleres);
   listenCollection('usuarios', 'users-body', renderUsuarios);
@@ -2605,8 +2611,9 @@ function startListeners() {
   // startFinanzasListeners(); // Comentado - usar getDocs() en su lugar
 }
 
-function listenCollection(colName, bodyId, renderFn) {
-  const q = query(collection(db, colName), orderBy('createdAt', 'desc'));
+function listenCollection(colName, bodyId, renderFn, sinOrden) {
+  // orderBy() también excluye los documentos que no tienen ese campo; sinOrden trae todos y se ordena en pantalla
+  const q = sinOrden ? collection(db, colName) : query(collection(db, colName), orderBy('createdAt', 'desc'));
   const unsub = onSnapshot(q, (snap) => {
     // FIX: Create new objects from Firestore docs to avoid readonly property errors
     // Don't use spread operator with Firestore readonly objects
@@ -8597,64 +8604,212 @@ window.generarCotizacionPDFById = function(id) {
 
 // ── NOTAS DE ENTREGA ──
 
+var NE_MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function neEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
+// "Venta Público", "venta publico" y "VENTA  PUBLICO" se tratan como el mismo cliente
+function neNorm(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Montos en centavos enteros: las sumas no acumulan errores de decimales
+function neCentavos(v) {
+  var n = typeof v === 'number' ? v : parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, ''));
+  return isFinite(n) ? Math.round(n * 100) : 0;
+}
+
+function neDinero(centavos) {
+  return '$' + (centavos / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function neCantidad(x) {
+  return Math.round(x * 100) / 100;
+}
+
+function neCantidadTxt(x) {
+  return String(neCantidad(x));
+}
+
+function neCreada(n) {
+  if (!n.createdAt) return null;
+  var d = typeof n.createdAt.toDate === 'function' ? n.createdAt.toDate() : new Date(n.createdAt);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Fecha impresa en la nota; si quedó vacía, el día en que se registró
+function neFecha(n) {
+  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(n.fecha || ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], 12) : neCreada(n);
+}
+
+function neFmtFecha(d) {
+  return d ? String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear() : '-';
+}
+
+function neHora(n) {
+  var d = neCreada(n);
+  return d ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '-';
+}
+
+function neArticuloTxt(it) {
+  return (it.descripcion || '-') + (it.anio ? ' (' + it.anio + ')' : '');
+}
+
+// Lo guardado en la nota; lo único que se calcula es el importe de cada línea (cantidad × precio unitario)
+function neMontos(n) {
+  var items = (Array.isArray(n.items) ? n.items : []).map(function(it) {
+    var cantidad = Number(it.cantidad) || 1;
+    var pu = neCentavos(it.precioUnit);
+    return { descripcion: it.descripcion, anio: it.anio, siniestro: it.siniestro, cantidad: cantidad, pu: pu, importe: Math.round(cantidad * pu) };
+  });
+  var subtotal = n.subtotal != null ? neCentavos(n.subtotal) : items.reduce(function(s, it) { return s + it.importe; }, 0);
+  var iva = neCentavos(n.ivaTotal);
+  return {
+    items: items,
+    subtotal: subtotal,
+    iva: iva,
+    total: n.total != null ? neCentavos(n.total) : subtotal + iva,
+    piezas: items.reduce(function(s, it) { return s + it.cantidad; }, 0)
+  };
+}
+
+function neFiltrosActuales() {
+  var val = function(id) { var el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
+  return { cliente: val('ne-filter-cliente'), anio: val('ne-filter-anio'), mes: val('ne-filter-mes'), dia: val('ne-filter-dia'), hora: val('ne-filter-hora') };
+}
+
+function neNumeroNota(n) {
+  return parseInt(String(n.notaId || '').replace(/\D/g, ''), 10) || 0;
+}
+
+// Más recientes primero: fecha de la nota, luego hora de registro y número de nota
+function neCompararNotas(a, b) {
+  var fa = neFecha(a), fb = neFecha(b), ca = neCreada(a), cb = neCreada(b);
+  return ((fb ? fb.getTime() : 0) - (fa ? fa.getTime() : 0)) ||
+    ((cb ? cb.getTime() : 0) - (ca ? ca.getTime() : 0)) ||
+    (neNumeroNota(b) - neNumeroNota(a));
+}
+
+function neFiltrarNotas(f) {
+  var cliente = neNorm(f.cliente);
+  return (window.data.notasEntrega || []).filter(function(n) {
+    if (cliente && neNorm(n.cliente).indexOf(cliente) === -1) return false;
+    if (f.anio || f.mes || f.dia) {
+      var d = neFecha(n);
+      if (!d) return false;
+      if (f.anio && d.getFullYear() !== Number(f.anio)) return false;
+      if (f.mes && d.getMonth() + 1 !== Number(f.mes)) return false;
+      if (f.dia && d.getDate() !== Number(f.dia)) return false;
+    }
+    if (f.hora !== '') {
+      var c = neCreada(n);
+      if (!c || c.getHours() !== Number(f.hora)) return false;
+    }
+    return true;
+  }).sort(neCompararNotas);
+}
+
+function neResumen(notas) {
+  var r = { filas: [], subtotal: 0, iva: 0, total: 0, piezas: 0, articulos: 0, desde: null, hasta: null };
+  notas.forEach(function(n) {
+    var m = neMontos(n);
+    r.filas.push({ n: n, m: m });
+    r.subtotal += m.subtotal;
+    r.iva += m.iva;
+    r.total += m.total;
+    r.piezas += m.piezas;
+    r.articulos += m.items.length;
+    var d = neFecha(n);
+    if (d && (!r.desde || d < r.desde)) r.desde = d;
+    if (d && (!r.hasta || d > r.hasta)) r.hasta = d;
+  });
+  return r;
+}
+
+function neDescribirFiltros(f) {
+  var partes = [];
+  if (f.cliente) partes.push('Cliente: ' + f.cliente);
+  if (f.mes) partes.push('Mes: ' + NE_MESES[Number(f.mes)]);
+  if (f.anio) partes.push('Año: ' + f.anio);
+  if (f.dia) partes.push('Día: ' + f.dia);
+  if (f.hora !== '') {
+    var h = String(Number(f.hora)).padStart(2, '0');
+    partes.push('Hora: ' + h + ':00 a ' + h + ':59');
+  }
+  return partes.length ? partes.join('   •   ') : 'Todas las notas';
+}
+
+function neNombreArchivo(f, ext) {
+  var partes = ['Historial_NE', f.mes ? NE_MESES[Number(f.mes)] : 'Todos'];
+  if (f.anio) partes.push(f.anio);
+  if (f.cliente) partes.push(f.cliente);
+  return partes.join('_').normalize('NFD').replace(/\p{M}/gu, '').replace(/[^A-Za-z0-9_-]+/g, '_') + '.' + ext;
+}
+
+function neDescargarBlob(blob, nombre) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+}
+
 function renderNotasEntrega() {
-  // Populate client datalist for filter
+  var notas = window.data.notasEntrega || [];
   var dl = document.getElementById('ne-filter-clientes-list');
   if (dl) {
-    var notas = window.data.notasEntrega || [];
-    var clientesUnicos = [...new Set(notas.map(function(n){ return n.cliente || ''; }).filter(Boolean))].sort();
-    dl.innerHTML = clientesUnicos.map(function(c){ return '<option value="' + c + '">'; }).join('');
+    var vistos = {}, nombres = [];
+    notas.forEach(function(n) {
+      var k = neNorm(n.cliente);
+      if (k && !vistos[k]) { vistos[k] = true; nombres.push(String(n.cliente).trim()); }
+    });
+    nombres.sort(function(a, b) { return a.localeCompare(b, 'es'); });
+    dl.innerHTML = nombres.map(function(c) { return '<option value="' + neEsc(c) + '">'; }).join('');
+  }
+  var selAnio = document.getElementById('ne-filter-anio');
+  if (selAnio) {
+    var elegido = selAnio.value, anios = {};
+    notas.forEach(function(n) { var d = neFecha(n); if (d) anios[d.getFullYear()] = true; });
+    var lista = Object.keys(anios).sort().reverse();
+    selAnio.innerHTML = '<option value="">Todos</option>' + lista.map(function(a) { return '<option value="' + a + '">' + a + '</option>'; }).join('');
+    selAnio.value = lista.indexOf(elegido) !== -1 ? elegido : '';
   }
   renderNotasEntregaFiltrado();
 }
 
 function renderNotasEntregaFiltrado() {
-  var notas = window.data.notasEntrega || [];
   var tbody = document.getElementById('ne-body');
   if (!tbody) return;
-  var isAdmin = window.currentRole === 'admin';
-
-  var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
-  var filtMes = (document.getElementById('ne-filter-mes') || {}).value || '';
-  var filtDia = (document.getElementById('ne-filter-dia') || {}).value || '';
-  var filtHora = (document.getElementById('ne-filter-hora') || {}).value || '';
-
-  var filtradas = notas.filter(function(n) {
-    if (filtCliente && !(n.cliente || '').toLowerCase().includes(filtCliente.toLowerCase())) return false;
-    if (filtMes || filtDia) {
-      var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
-      if (!fecha) return false;
-      if (filtMes && String(fecha.getMonth() + 1) !== String(filtMes)) return false;
-      if (filtDia && String(fecha.getDate()) !== String(filtDia)) return false;
-    }
-    if (filtHora !== '') {
-      var ts = n.creadoEn || n.createdAt || null;
-      if (ts) {
-        var d = ts.toDate ? ts.toDate() : new Date(ts);
-        if (String(d.getHours()) !== String(filtHora)) return false;
-      } else { return false; }
-    }
-    return true;
-  });
+  var cuantas = (window.data.notasEntrega || []).length;
+  var r = neResumen(neFiltrarNotas(neFiltrosActuales()));
 
   var countEl = document.getElementById('ne-filter-count');
-  if (countEl) countEl.textContent = filtradas.length + ' de ' + notas.length;
+  if (countEl) countEl.textContent = r.filas.length + ' de ' + cuantas + ' notas  ·  Total ' + neDinero(r.total);
 
-  if (!filtradas.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (notas.length ? 'Sin resultados con esos filtros' : 'Sin notas de entrega') + '</div></div></td></tr>';
+  if (!r.filas.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (cuantas ? 'Sin resultados con esos filtros' : 'Sin notas de entrega') + '</div></div></td></tr>';
     return;
   }
-  tbody.innerHTML = filtradas.map(function(n, i) {
-    var total = '\$' + (n.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2});
-    var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00').toLocaleDateString('es-MX') : '-';
+  var isAdmin = window.currentRole === 'admin';
+  tbody.innerHTML = r.filas.map(function(x, i) {
+    var n = x.n;
     return '<tr>' +
       '<td>' + (i + 1) + '</td>' +
-      '<td><strong>' + (n.notaId || '-') + '</strong></td>' +
-      '<td>' + fecha + '</td>' +
-      '<td>' + (n.cliente || '-') + '</td>' +
-      '<td>' + (n.siniestro || '-') + '</td>' +
-      '<td>' + (n.vendedor || '-') + '</td>' +
-      '<td>' + total + '</td>' +
+      '<td><strong>' + neEsc(n.notaId || '-') + '</strong></td>' +
+      '<td>' + neFmtFecha(neFecha(n)) + '</td>' +
+      '<td>' + neHora(n) + '</td>' +
+      '<td>' + neEsc(n.cliente || '-') + '</td>' +
+      '<td>' + neEsc(n.siniestro || '-') + '</td>' +
+      '<td>' + neEsc(n.vendedor || '-') + '</td>' +
+      '<td>' + neDinero(x.m.total) + '</td>' +
       '<td style="white-space:nowrap">' +
         '<button class="btn btn-secondary btn-sm" onclick="window.previewNotaEntregaPDFById(\'' + n.id + '\')">👁 Ver</button>' +
         ' <button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + n.id + '\')">📄 PDF</button>' +
@@ -8665,262 +8820,456 @@ function renderNotasEntregaFiltrado() {
 }
 
 window.limpiarFiltrosNE = function() {
-  ['ne-filter-cliente','ne-filter-mes','ne-filter-dia','ne-filter-hora'].forEach(function(id){
+  ['ne-filter-cliente', 'ne-filter-anio', 'ne-filter-mes', 'ne-filter-dia', 'ne-filter-hora'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
   renderNotasEntregaFiltrado();
 };
 
-window.descargarHistorialNE = function() {
-  var notas = window.data.notasEntrega || [];
-  var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
-  var filtMes = (document.getElementById('ne-filter-mes') || {}).value || '';
-  var filtDia = (document.getElementById('ne-filter-dia') || {}).value || '';
-  var filtHora = (document.getElementById('ne-filter-hora') || {}).value || '';
+// Libro con formato (ExcelJS): "Notas Detalle" con cada artículo vendido y "Resumen por nota"
+function neLibroExcel(ExcelJS, f, r) {
+  var NAVY = 'FF0D2A4A', TEAL = 'FF1E8FA5', ZEBRA = 'FFF2F7FB', INFO = 'FFF1F5F9', SUB = 'FFD6E6F3';
+  var VERDE = 'FF10B981', BORDE = 'FFD5DEE6', BLANCO = 'FFFFFFFF', GRIS = 'FF64748B', TINTA = 'FF0F172A';
+  var MONEY = '"$"#,##0.00';
+  var relleno = function(argb) { return { type: 'pattern', pattern: 'solid', fgColor: { argb: argb } }; };
+  var fina = { style: 'thin', color: { argb: BORDE } };
+  var bordes = { top: fina, left: fina, bottom: fina, right: fina };
+  var pesos = function(c) { return c / 100; };
+  var soloFecha = function(d) { return d ? new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) : null; };
+  var hoja = { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 1 } };
+  var encabezados = function(ws, num, titulos, alinear) {
+    var row = ws.getRow(num);
+    row.height = 22;
+    titulos.forEach(function(t, i) {
+      var c = row.getCell(i + 1);
+      c.value = t;
+      c.font = { bold: true, size: 10, color: { argb: BLANCO } };
+      c.fill = relleno(TEAL);
+      c.alignment = { vertical: 'middle', horizontal: alinear[i] };
+      c.border = { top: fina, left: fina, right: fina, bottom: { style: 'medium', color: { argb: NAVY } } };
+    });
+  };
 
-  var filtradas = notas.filter(function(n) {
-    if (filtCliente && !(n.cliente || '').toLowerCase().includes(filtCliente.toLowerCase())) return false;
-    if (filtMes || filtDia) {
-      var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
-      if (!fecha) return false;
-      if (filtMes && String(fecha.getMonth() + 1) !== String(filtMes)) return false;
-      if (filtDia && String(fecha.getDate()) !== String(filtDia)) return false;
+  var wb = new ExcelJS.Workbook();
+  wb.creator = 'Maya Autopartes';
+  wb.created = new Date();
+
+  // ════ HOJA 1 — NOTAS DETALLE ════
+  var ws = wb.addWorksheet('Notas Detalle', hoja);
+  var ANCHOS = [5, 10, 12, 8, 26, 46, 16, 8, 14, 15];
+  var ALINEAR = ['center', 'left', 'center', 'center', 'left', 'left', 'left', 'center', 'right', 'right'];
+  var COLS = ANCHOS.length;
+  ANCHOS.forEach(function(w, i) { ws.getColumn(i + 1).width = w; });
+  ws.headerFooter = { oddFooter: '&LMaya Autopartes — Historial de notas de entrega&RPágina &P de &N' };
+
+  var fila = 0;
+  var banda = function(texto, font, fill, alto) {
+    fila++;
+    ws.mergeCells(fila, 1, fila, COLS);
+    var c = ws.getCell(fila, 1);
+    c.value = texto;
+    c.font = font;
+    c.fill = relleno(fill);
+    c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    ws.getRow(fila).height = alto;
+  };
+  var info = { size: 10, color: { argb: 'FF334155' } };
+  var ahora = new Date();
+  banda('MAYA AUTOPARTES  •  HISTORIAL DE NOTAS DE ENTREGA', { bold: true, size: 15, color: { argb: BLANCO } }, NAVY, 32);
+  banda(neDescribirFiltros(f) + '     |     Notas del ' + neFmtFecha(r.desde) + ' al ' + neFmtFecha(r.hasta), info, INFO, 20);
+  banda('Generado: ' + neFmtFecha(ahora) + ' ' + String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0') +
+    '     |     Notas: ' + r.filas.length + '     |     Piezas vendidas: ' + neCantidadTxt(r.piezas), info, INFO, 20);
+  banda('Subtotal: ' + neDinero(r.subtotal) + '     |     IVA: ' + neDinero(r.iva) + '     |     Total vendido: ' + neDinero(r.total),
+    { bold: true, size: 10, color: { argb: NAVY } }, INFO, 20);
+  fila++;
+  ws.getRow(fila).height = 8;
+
+  fila++;
+  encabezados(ws, fila, ['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Artículo', 'Siniestro', 'Cant.', 'P. Unit.', 'Importe'], ALINEAR);
+  ws.views = [{ state: 'frozen', ySplit: fila, showGridLines: false }];
+
+  var lineaResumen = function(izq, etiqueta, centavos, fondo, fuente) {
+    fila++;
+    ws.mergeCells(fila, 1, fila, 6);
+    ws.mergeCells(fila, 7, fila, 9);
+    var row = ws.getRow(fila);
+    row.height = 18;
+    for (var ci = 1; ci <= COLS; ci++) row.getCell(ci).fill = relleno(fondo);
+    var a = row.getCell(1), b = row.getCell(7), c = row.getCell(10);
+    a.value = izq;
+    a.font = { size: 9, color: { argb: GRIS } };
+    a.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    b.value = etiqueta;
+    b.font = fuente;
+    b.alignment = { vertical: 'middle', horizontal: 'right' };
+    c.value = pesos(centavos);
+    c.numFmt = MONEY;
+    c.font = fuente;
+    c.alignment = { vertical: 'middle', horizontal: 'right' };
+  };
+
+  r.filas.forEach(function(x, i) {
+    var n = x.n, m = x.m;
+    var fondo = i % 2 === 0 ? BLANCO : ZEBRA;
+    (m.items.length ? m.items : [null]).forEach(function(it, j) {
+      fila++;
+      var row = ws.getRow(fila);
+      var p = j === 0;
+      var vals = [
+        p ? i + 1 : null,
+        p ? (n.notaId || '') : null,
+        p ? soloFecha(neFecha(n)) : null,
+        p ? neHora(n) : null,
+        p ? (n.cliente || '') : null,
+        it ? neArticuloTxt(it) : '(sin artículos)',
+        it ? (it.siniestro || '') : null,
+        it ? it.cantidad : null,
+        it ? pesos(it.pu) : null,
+        it ? pesos(it.importe) : null
+      ];
+      vals.forEach(function(v, ci) {
+        var c = row.getCell(ci + 1);
+        if (v !== null) c.value = v;
+        c.font = { size: 9, color: { argb: TINTA }, bold: ci === 1 };
+        c.fill = relleno(fondo);
+        c.border = bordes;
+        c.alignment = { vertical: 'middle', wrapText: true, horizontal: ALINEAR[ci] };
+      });
+      row.getCell(3).numFmt = 'dd/mm/yyyy';
+      row.getCell(9).numFmt = MONEY;
+      row.getCell(10).numFmt = MONEY;
+      var renglones = Math.max(1, Math.ceil(String(vals[5]).length / 44), Math.ceil(String(vals[4] || '').length / 24));
+      row.height = Math.max(18, renglones * 12.5 + 5);
+    });
+    var tenue = { size: 9, color: { argb: GRIS } };
+    if (m.iva) {
+      lineaResumen('', 'Subtotal', m.subtotal, fondo, tenue);
+      lineaResumen('', 'IVA (16%)', m.iva, fondo, tenue);
     }
-    if (filtHora !== '') {
-      var ts = n.creadoEn || n.createdAt || null;
-      if (ts) {
-        var d = ts.toDate ? ts.toDate() : new Date(ts);
-        if (String(d.getHours()) !== String(filtHora)) return false;
-      } else { return false; }
-    }
-    return true;
+    lineaResumen(n.vendedor ? 'Vendedor: ' + n.vendedor : '', 'Total ' + (n.notaId || 'nota'), m.total, SUB, { bold: true, size: 10, color: { argb: NAVY } });
   });
 
-  if (!filtradas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
-
-  var meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  var labelMes = filtMes ? meses[parseInt(filtMes)] : 'Todos';
-  var nombreArchivo = 'Historial_NE_' + labelMes + (filtCliente ? '_' + filtCliente.replace(/\s+/g,'_') : '') + '.xlsx';
-
-  var filas = filtradas.map(function(n, i) {
-    var ts = n.creadoEn || n.createdAt || null;
-    var horaRegistro = ts ? (function(){ var d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('es-MX'); })() : '-';
-    return {
-      '#': i + 1,
-      'Nota': n.notaId || '-',
-      'Fecha': n.fecha || '-',
-      'Hora Registro': horaRegistro,
-      'Cliente': n.cliente || '-',
-      'Siniestro': n.siniestro || '-',
-      'Vendedor': n.vendedor || '-',
-      'Total': n.total || 0
-    };
+  fila++;
+  ws.getRow(fila).height = 8;
+  [['SUBTOTAL', r.subtotal, SUB, NAVY], ['IVA (16%)', r.iva, SUB, NAVY], ['TOTAL GENERAL', r.total, VERDE, BLANCO]].forEach(function(g) {
+    fila++;
+    ws.mergeCells(fila, 1, fila, 9);
+    var row = ws.getRow(fila);
+    row.height = 22;
+    for (var ci = 1; ci <= COLS; ci++) row.getCell(ci).fill = relleno(g[2]);
+    var fuente = { bold: true, size: g[2] === VERDE ? 11 : 10, color: { argb: g[3] } };
+    var a = row.getCell(1), c = row.getCell(10);
+    a.value = g[0];
+    a.font = fuente;
+    a.alignment = { vertical: 'middle', horizontal: 'right', indent: 1 };
+    c.value = pesos(g[1]);
+    c.numFmt = MONEY;
+    c.font = fuente;
+    c.alignment = { vertical: 'middle', horizontal: 'right' };
   });
 
+  // ════ HOJA 2 — RESUMEN POR NOTA ════
+  var rs = wb.addWorksheet('Resumen por nota', hoja);
+  var ANCHOS2 = [5, 10, 12, 8, 28, 20, 10, 9, 14, 13, 15];
+  var ALINEAR2 = ['center', 'left', 'center', 'center', 'left', 'left', 'center', 'center', 'right', 'right', 'right'];
+  ANCHOS2.forEach(function(w, i) { rs.getColumn(i + 1).width = w; });
+  encabezados(rs, 1, ['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Vendedor', 'Artículos', 'Piezas', 'Subtotal', 'IVA', 'Total'], ALINEAR2);
+  rs.views = [{ state: 'frozen', ySplit: 1, showGridLines: false }];
+  r.filas.forEach(function(x, i) {
+    var n = x.n, m = x.m;
+    var row = rs.getRow(i + 2);
+    row.height = 18;
+    [i + 1, n.notaId || '', soloFecha(neFecha(n)), neHora(n), n.cliente || '', n.vendedor || '', m.items.length, neCantidad(m.piezas),
+      pesos(m.subtotal), pesos(m.iva), pesos(m.total)].forEach(function(v, ci) {
+      var c = row.getCell(ci + 1);
+      if (v !== null) c.value = v;
+      c.font = { size: 9, color: { argb: TINTA }, bold: ci === 1 || ci === 10 };
+      c.fill = relleno(i % 2 === 0 ? BLANCO : ZEBRA);
+      c.border = bordes;
+      c.alignment = { vertical: 'middle', wrapText: true, horizontal: ALINEAR2[ci] };
+    });
+    row.getCell(3).numFmt = 'dd/mm/yyyy';
+    [9, 10, 11].forEach(function(ci) { row.getCell(ci).numFmt = MONEY; });
+  });
+  var filaTot = r.filas.length + 2;
+  rs.mergeCells(filaTot, 1, filaTot, 6);
+  var tr = rs.getRow(filaTot);
+  tr.height = 22;
+  [['TOTAL', 1, null], [r.articulos, 7, null], [neCantidad(r.piezas), 8, null], [pesos(r.subtotal), 9, MONEY], [pesos(r.iva), 10, MONEY], [pesos(r.total), 11, MONEY]].forEach(function(t) {
+    var c = tr.getCell(t[1]);
+    c.value = t[0];
+    if (t[2]) c.numFmt = t[2];
+    c.font = { bold: true, size: 10, color: { argb: BLANCO } };
+    c.alignment = { vertical: 'middle', horizontal: t[1] === 1 ? 'right' : ALINEAR2[t[1] - 1], indent: t[1] === 1 ? 1 : 0 };
+  });
+  for (var ci = 1; ci <= ANCHOS2.length; ci++) tr.getCell(ci).fill = relleno(VERDE);
+
+  return wb;
+}
+
+// Respaldo si ExcelJS no se pudo descargar: mismas hojas y cifras, sin colores
+function neLibroBasico(r) {
+  var p = function(c) { return c / 100; };
+  var det = [['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Artículo', 'Siniestro', 'Cant.', 'P. Unit.', 'Importe']];
+  var res = [['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Vendedor', 'Artículos', 'Piezas', 'Subtotal', 'IVA', 'Total']];
+  r.filas.forEach(function(x, i) {
+    var n = x.n, m = x.m;
+    (m.items.length ? m.items : [null]).forEach(function(it, j) {
+      var cab = j === 0 ? [i + 1, n.notaId || '', neFmtFecha(neFecha(n)), neHora(n), n.cliente || ''] : ['', '', '', '', ''];
+      det.push(cab.concat(it ? [neArticuloTxt(it), it.siniestro || '', it.cantidad, p(it.pu), p(it.importe)] : ['(sin artículos)', '', '', '', '']));
+    });
+    if (m.iva) {
+      det.push(['', '', '', '', '', '', '', '', 'Subtotal', p(m.subtotal)]);
+      det.push(['', '', '', '', '', '', '', '', 'IVA (16%)', p(m.iva)]);
+    }
+    det.push(['', '', '', '', '', n.vendedor ? 'Vendedor: ' + n.vendedor : '', '', '', 'Total ' + (n.notaId || 'nota'), p(m.total)]);
+    res.push([i + 1, n.notaId || '', neFmtFecha(neFecha(n)), neHora(n), n.cliente || '', n.vendedor || '', m.items.length, neCantidad(m.piezas), p(m.subtotal), p(m.iva), p(m.total)]);
+  });
+  det.push([]);
+  det.push(['', '', '', '', '', '', '', '', 'SUBTOTAL', p(r.subtotal)]);
+  det.push(['', '', '', '', '', '', '', '', 'IVA (16%)', p(r.iva)]);
+  det.push(['', '', '', '', '', '', '', '', 'TOTAL GENERAL', p(r.total)]);
+  res.push(['TOTAL', '', '', '', '', '', r.articulos, neCantidad(r.piezas), p(r.subtotal), p(r.iva), p(r.total)]);
   var wb = XLSX.utils.book_new();
-  var ws = XLSX.utils.json_to_sheet(filas);
-  ws['!cols'] = [{wch:4},{wch:12},{wch:12},{wch:14},{wch:28},{wch:16},{wch:18},{wch:14}];
-  XLSX.utils.book_append_sheet(wb, ws, 'Notas de Entrega');
-  XLSX.writeFile(wb, nombreArchivo);
-  window.toast('✅ Descargando ' + filtradas.length + ' notas', 'success');
+  var ws1 = XLSX.utils.aoa_to_sheet(det);
+  ws1['!cols'] = [5, 10, 12, 8, 26, 46, 16, 8, 14, 15].map(function(w) { return { wch: w }; });
+  XLSX.utils.book_append_sheet(wb, ws1, 'Notas Detalle');
+  var ws2 = XLSX.utils.aoa_to_sheet(res);
+  ws2['!cols'] = [5, 10, 12, 8, 28, 20, 10, 9, 14, 13, 15].map(function(w) { return { wch: w }; });
+  XLSX.utils.book_append_sheet(wb, ws2, 'Resumen por nota');
+  return new Blob([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+window.descargarHistorialNE = async function() {
+  var f = neFiltrosActuales();
+  var r = neResumen(neFiltrarNotas(f));
+  if (!r.filas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
+  window.toast('⏳ Preparando Excel...', 'info');
+  var blob;
+  try {
+    var ExcelJS = await window.cargarExcelJS();
+    var buf = await neLibroExcel(ExcelJS, f, r).xlsx.writeBuffer();
+    blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  } catch (e) {
+    console.warn('ExcelJS falló; se usa el formato básico:', e);
+    if (typeof XLSX === 'undefined') { window.toast('No se pudo generar el Excel: ' + e.message, 'error'); return; }
+    blob = neLibroBasico(r);
+    window.toast('Se generó una versión básica del Excel (sin colores)', 'info');
+  }
+  neDescargarBlob(blob, neNombreArchivo(f, 'xlsx'));
+  window.toast('✅ Excel con ' + r.filas.length + ' notas', 'success');
 };
 
 window.descargarHistorialNEPDF = function() {
-  var notas = window.data.notasEntrega || [];
-  var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
-  var filtMes    = (document.getElementById('ne-filter-mes')    || {}).value || '';
-  var filtDia    = (document.getElementById('ne-filter-dia')    || {}).value || '';
-  var filtHora   = (document.getElementById('ne-filter-hora')   || {}).value || '';
+  var f = neFiltrosActuales();
+  var r = neResumen(neFiltrarNotas(f));
+  if (!r.filas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
 
-  var filtradas = notas.filter(function(n) {
-    if (filtCliente && !(n.cliente||'').toLowerCase().includes(filtCliente.toLowerCase())) return false;
-    if (filtMes || filtDia) {
-      var fd = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
-      if (!fd) return false;
-      if (filtMes && String(fd.getMonth()+1) !== String(filtMes)) return false;
-      if (filtDia && String(fd.getDate())    !== String(filtDia))  return false;
-    }
-    if (filtHora !== '') {
-      var ts = n.creadoEn || n.createdAt || null;
-      if (!ts) return false;
-      var dh = ts.toDate ? ts.toDate() : new Date(ts);
-      if (String(dh.getHours()) !== String(filtHora)) return false;
-    }
-    return true;
-  });
-
-  if (!filtradas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
-
-  var MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  var labelMes = filtMes ? MESES[parseInt(filtMes)] : 'Todos';
-  var fmtMXN = function(n){ return '$'+(parseFloat(n)||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-
-  // ── Paleta (igual que Reporte de Ventas) ──────────────────────────────
-  var C_AZUL  = [13,42,74];
-  var C_TEAL  = [30,143,165];
-  var C_TEAL2 = [59,188,212];
-  var C_VERDE = [16,185,129];
-  var C_AMBER = [245,158,11];
-  var C_BLANC = [255,255,255];
-  var C_GRIS  = [100,116,139];
-  var C_FONDO = [245,249,252];
-
-  var jsPDFLib = window.jspdf || window.jsPDF;
-  var doc = new jsPDFLib.jsPDF({ orientation:'landscape', unit:'mm', format:'letter' });
+  var AZUL = [13, 42, 74], TEAL = [30, 143, 165], TEAL2 = [59, 188, 212], BLANCO = [255, 255, 255];
+  var GRIS = [100, 116, 139], TINTA = [15, 23, 42], FONDO = [245, 249, 252], FONDO_B = [242, 247, 251], FONDO_TOTAL = [214, 230, 243];
+  var doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
   var pageW = doc.internal.pageSize.getWidth();
+  var pageH = doc.internal.pageSize.getHeight();
+  var mg = 10;
+  var color = function(metodo, rgb) { doc[metodo](rgb[0], rgb[1], rgb[2]); };
+  var ahora = new Date();
 
-  // ── Métricas KPI ──────────────────────────────────────────────────────
-  var totalGeneral = filtradas.reduce(function(s,n){ return s+(parseFloat(n.total)||0); },0);
-  var promedio     = filtradas.length ? totalGeneral / filtradas.length : 0;
-  var maxNota      = filtradas.reduce(function(mx,n){ return (parseFloat(n.total)||0)>mx?parseFloat(n.total):mx; },0);
-  var clientesU    = Object.keys(filtradas.reduce(function(m,n){ m[n.cliente||'?']=1; return m; },{})).length;
-
-  // ── HEADER ────────────────────────────────────────────────────────────
-  doc.setFillColor(C_AZUL[0],C_AZUL[1],C_AZUL[2]);
-  doc.rect(0,0,pageW,32,'F');
-  doc.setFillColor(C_TEAL[0],C_TEAL[1],C_TEAL[2]);
-  doc.rect(0,29,pageW,3,'F');
-
+  // ── Encabezado ──
+  color('setFillColor', AZUL);
+  doc.rect(0, 0, pageW, 32, 'F');
+  color('setFillColor', TEAL);
+  doc.rect(0, 29, pageW, 3, 'F');
   try {
     var logoImg = document.querySelector('.sidebar-logo img');
     if (logoImg && logoImg.src) {
-      doc.setFillColor(255,255,255); doc.roundedRect(7,4,22,22,2,2,'F');
-      doc.addImage(logoImg.src,'JPEG',8,5,20,20);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(mg, 4, 22, 22, 2, 2, 'F');
+      doc.addImage(logoImg.src, 'JPEG', mg + 1, 5, 20, 20);
     }
-  } catch(e2){}
-
-  doc.setTextColor(C_BLANC[0],C_BLANC[1],C_BLANC[2]);
-  doc.setFontSize(15); doc.setFont(undefined,'bold');
-  doc.text('HISTORIAL DE NOTAS DE ENTREGA', 35, 13);
-  doc.setFontSize(9); doc.setFont(undefined,'normal');
-  var subtitulo = [
-    filtCliente ? 'Cliente: '+filtCliente : '',
-    'Mes: '+labelMes,
-    filtDia ? 'Día: '+filtDia : '',
-    filtHora !== '' ? 'Hora: '+filtHora+'h' : ''
-  ].filter(Boolean).join('   •   ');
-  doc.text(subtitulo, 35, 21);
+  } catch (e) {}
+  var xt = mg + 27;
+  color('setTextColor', BLANCO);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(15);
+  doc.text('HISTORIAL DE NOTAS DE ENTREGA', xt, 12);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.text(neDescribirFiltros(f), xt, 19);
   doc.setFontSize(8);
-  doc.text('Generado: '+new Date().toLocaleString('es-MX'), pageW-10, 13, {align:'right'});
-  doc.text('Notas: '+filtradas.length, pageW-10, 21, {align:'right'});
+  doc.text('Notas del ' + neFmtFecha(r.desde) + ' al ' + neFmtFecha(r.hasta), xt, 25);
+  doc.text('Generado: ' + neFmtFecha(ahora) + ' ' + String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0'), pageW - mg, 12, { align: 'right' });
+  doc.text(r.filas.length + (r.filas.length === 1 ? ' nota' : ' notas'), pageW - mg, 19, { align: 'right' });
 
-  // ── TARJETAS KPI ─────────────────────────────────────────────────────
-  var y0=36; var cardH=20; var cols=4;
-  var cardW=(pageW-16)/cols; var mx=8;
-  var kpis=[
-    {label:'TOTAL GENERAL', valor:fmtMXN(totalGeneral), color:C_VERDE},
-    {label:'PROMEDIO X NOTA',valor:fmtMXN(promedio),    color:C_TEAL2},
-    {label:'NOTA MÁS ALTA',  valor:fmtMXN(maxNota),     color:C_AMBER},
-    {label:'CLIENTES',        valor:String(clientesU),   color:[99,102,241]}
+  // ── Tarjetas: solo sumas de lo registrado ──
+  var kpis = [
+    { label: 'NOTAS', valor: String(r.filas.length), color: [99, 102, 241] },
+    { label: 'PIEZAS VENDIDAS', valor: neCantidadTxt(r.piezas), color: TEAL2 },
+    { label: 'SUBTOTAL', valor: neDinero(r.subtotal), color: TEAL },
+    { label: 'IVA', valor: neDinero(r.iva), color: [245, 158, 11] },
+    { label: 'TOTAL VENDIDO', valor: neDinero(r.total), color: [16, 185, 129] }
   ];
-  kpis.forEach(function(k,i){
-    var x=mx+i*cardW;
-    doc.setFillColor(C_FONDO[0],C_FONDO[1],C_FONDO[2]);
-    doc.roundedRect(x,y0,cardW-2,cardH,2,2,'F');
-    doc.setFillColor(k.color[0],k.color[1],k.color[2]);
-    doc.roundedRect(x,y0,3,cardH,1,1,'F');
-    doc.setTextColor(C_GRIS[0],C_GRIS[1],C_GRIS[2]);
-    doc.setFontSize(6.5); doc.setFont(undefined,'normal');
-    doc.text(k.label, x+6, y0+7);
-    doc.setTextColor(k.color[0],k.color[1],k.color[2]);
-    doc.setFontSize(10); doc.setFont(undefined,'bold');
-    doc.text(k.valor, x+6, y0+15);
+  var y0 = 36, cardH = 18, gap = 3;
+  var cardW = (pageW - mg * 2 - gap * (kpis.length - 1)) / kpis.length;
+  kpis.forEach(function(k, i) {
+    var x = mg + i * (cardW + gap);
+    color('setFillColor', FONDO);
+    doc.roundedRect(x, y0, cardW, cardH, 2, 2, 'F');
+    color('setFillColor', k.color);
+    doc.roundedRect(x, y0, 2.5, cardH, 1, 1, 'F');
+    color('setTextColor', GRIS);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(6.5);
+    doc.text(k.label, x + 6, y0 + 6.5);
+    color('setTextColor', k.color);
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(11);
+    doc.text(k.valor, x + 6, y0 + 14);
   });
 
-  // ── TABLA con sub-filas de items ──────────────────────────────────────
-  // Columnas: # | Nota | Fecha | Hora | Cliente | Descripción | Cant | P.Unit | Total
-  var C_NOTA_HDR = [220,232,245];   // fondo fila cabecera de nota
-  var C_ITEM_BG  = [248,251,255];   // fondo fila item par
-  var C_ITEM_ALT = [238,245,252];   // fondo fila item impar
-  var C_ITEM_TXT = [60,80,110];
-
-  var bodyRows = [];
-  var bodyStyles = [];
-
-  filtradas.forEach(function(n, i){
-    var ts = n.creadoEn || n.createdAt || null;
-    var hora = ts ? (function(){ var d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); })() : '-';
-    var items = n.items || [];
-
-    // Fila encabezado de la nota
-    bodyRows.push({
-      type:'nota', idx:i+1,
-      cells: [String(i+1), n.notaId||'-', n.fecha||'-', hora, n.cliente||'-', items.length ? items.length+' artículo(s)' : '-', '', '', fmtMXN(n.total||0)]
+  // ── Tabla: cada nota con sus artículos, IVA (si tiene) y su total ──
+  var ANCHOS = [9, 18, 20, 12, 38, 0, 26, 13, 25, 26];
+  ANCHOS[5] = pageW - mg * 2 - ANCHOS.reduce(function(s, w) { return s + w; }, 0);
+  var altoUtil = pageH - 14 - 16 - 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  var renglones = function(texto, ancho) { return doc.splitTextToSize(String(texto), ancho - 5).length; };
+  var body = [], meta = [];
+  r.filas.forEach(function(x, i) {
+    var n = x.n, m = x.m;
+    var notaId = n.notaId || '-';
+    var fondo = i % 2 === 0 ? BLANCO : FONDO_B;
+    var normal = { fillColor: fondo };
+    var items = m.items.length ? m.items : [null];
+    var filasDeLaNota = items.length + (m.iva ? 2 : 0) + 1;
+    var altoNota = (filasDeLaNota - items.length) * 7.5 + items.reduce(function(s, it) {
+      return s + 4 + 3.3 * Math.max(renglones(it ? neArticuloTxt(it) : '-', ANCHOS[5]), renglones(n.cliente || '-', ANCHOS[4]));
+    }, 0);
+    // El # abarca todas las filas de la nota para que autoTable no la parta entre páginas (si cabe en una)
+    var juntar = altoNota <= altoUtil;
+    items.forEach(function(it, j) {
+      var p = j === 0;
+      var fila = [
+        { content: p ? notaId : '', styles: { fillColor: fondo, fontStyle: 'bold', textColor: AZUL } },
+        { content: p ? neFmtFecha(neFecha(n)) : '', styles: normal },
+        { content: p ? neHora(n) : '', styles: normal },
+        { content: p ? (n.cliente || '-') : '', styles: normal },
+        { content: it ? neArticuloTxt(it) : '(sin artículos)', styles: normal },
+        { content: it ? (it.siniestro || '-') : '', styles: normal },
+        { content: it ? neCantidadTxt(it.cantidad) : '', styles: normal },
+        { content: it ? neDinero(it.pu) : '', styles: normal },
+        { content: it ? neDinero(it.importe) : '', styles: normal }
+      ];
+      if (p) fila.unshift({ content: String(i + 1), rowSpan: juntar ? filasDeLaNota : 1, styles: normal });
+      else if (!juntar) fila.unshift({ content: '', styles: normal });
+      body.push(fila);
+      meta.push({ tipo: 'item', primera: p, notaId: notaId });
     });
-
-    // Sub-filas de items
-    items.forEach(function(it, j){
-      var cant = parseFloat(it.cantidad)||1;
-      var pu   = parseFloat(it.precioUnit)||0;
-      bodyRows.push({
-        type:'item', odd: j%2===1,
-        cells: ['', '', '', '', '', '  '+( it.descripcion||'-'), it.siniestro||'-', String(cant), fmtMXN(pu), fmtMXN(cant*pu)]
-      });
-    });
-  });
-
-  // Construir arrays para autoTable
-  var tableBody = [];
-  var willDrawCellStyles = {};  // keyed by rowIndex
-
-  bodyRows.forEach(function(r, ri){
-    if (r.type === 'nota') {
-      tableBody.push([r.cells[0], r.cells[1], r.cells[2], r.cells[3], r.cells[4], {content:r.cells[5], colSpan:3}, r.cells[8]]);
-      willDrawCellStyles[ri] = {fillColor:C_NOTA_HDR, textColor:C_AZUL, fontStyle:'bold', fontSize:8};
-    } else {
-      tableBody.push(['','','','','', r.cells[5], r.cells[6], r.cells[7]+' u.', r.cells[9]]);
-      willDrawCellStyles[ri] = {fillColor: r.odd ? C_ITEM_ALT : C_ITEM_BG, textColor:C_ITEM_TXT, fontSize:7.5};
+    var linea = function(tipo, izq, etiqueta, centavos, estilo, estiloIzq) {
+      var fila = [
+        { content: izq, colSpan: 5, styles: Object.assign({ halign: 'left' }, estiloIzq) },
+        { content: etiqueta, colSpan: 3, styles: Object.assign({ halign: 'right' }, estilo) },
+        { content: neDinero(centavos), styles: Object.assign({ halign: 'right' }, estilo) }
+      ];
+      if (!juntar) fila.unshift({ content: '', styles: normal });
+      body.push(fila);
+      meta.push({ tipo: tipo, primera: false, notaId: notaId });
+    };
+    var tenue = { fillColor: fondo, textColor: GRIS };
+    if (m.iva) {
+      linea('sub', '', 'Subtotal', m.subtotal, tenue, tenue);
+      linea('iva', '', 'IVA (16%)', m.iva, tenue, tenue);
     }
+    linea('total', n.vendedor ? 'Vendedor: ' + n.vendedor : '', 'Total ' + notaId, m.total,
+      { fillColor: FONDO_TOTAL, textColor: AZUL, fontStyle: 'bold' }, { fillColor: FONDO_TOTAL, textColor: GRIS });
   });
 
+  var paginaVista = 0, primeraDeLaPagina = -1;
   doc.autoTable({
-    startY: y0+cardH+4,
-    head: [['#','Nota','Fecha','Hora','Cliente','Descripción del artículo','Siniestro','Cant','Total']],
-    body: tableBody,
-    foot: [['','','','','','','','TOTAL',fmtMXN(totalGeneral)]],
-    styles:     {fontSize:8, cellPadding:2.5, textColor:C_ITEM_TXT},
-    headStyles: {fillColor:C_AZUL, textColor:C_BLANC, fontStyle:'bold', fontSize:8},
-    footStyles: {fillColor:C_AZUL, textColor:C_TEAL2, fontStyle:'bold'},
-    rowPageBreak:'auto',
-    columnStyles:{
-      0:{cellWidth:7,  halign:'center'},
-      1:{cellWidth:20},
-      2:{cellWidth:20},
-      3:{cellWidth:14},
-      4:{cellWidth:38},
-      5:{cellWidth:68},
-      6:{cellWidth:22},
-      7:{cellWidth:13, halign:'center'},
-      8:{cellWidth:22, halign:'right', fontStyle:'bold'}
+    startY: y0 + cardH + 5,
+    margin: { left: mg, right: mg, top: 14, bottom: 16 },
+    theme: 'plain',
+    head: [[
+      { content: '#', styles: { halign: 'center' } }, 'Nota', 'Fecha', { content: 'Hora', styles: { halign: 'center' } }, 'Cliente', 'Artículo', 'Siniestro',
+      { content: 'Cant.', styles: { halign: 'center' } }, { content: 'P. Unit.', styles: { halign: 'right' } }, { content: 'Importe', styles: { halign: 'right' } }
+    ]],
+    body: body,
+    styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, textColor: TINTA, valign: 'top', overflow: 'linebreak' },
+    headStyles: { fillColor: AZUL, textColor: BLANCO, fontStyle: 'bold', valign: 'middle' },
+    columnStyles: {
+      0: { cellWidth: ANCHOS[0], halign: 'center' }, 1: { cellWidth: ANCHOS[1] }, 2: { cellWidth: ANCHOS[2] }, 3: { cellWidth: ANCHOS[3], halign: 'center' },
+      4: { cellWidth: ANCHOS[4] }, 5: { cellWidth: ANCHOS[5] }, 6: { cellWidth: ANCHOS[6] }, 7: { cellWidth: ANCHOS[7], halign: 'center' },
+      8: { cellWidth: ANCHOS[8], halign: 'right' }, 9: { cellWidth: ANCHOS[9], halign: 'right' }
     },
-    willDrawCell: function(data){
-      if (data.section === 'body') {
-        var s = willDrawCellStyles[data.row.index];
-        if (s) {
-          if (s.fillColor) doc.setFillColor(s.fillColor[0],s.fillColor[1],s.fillColor[2]);
-          // fillColor applied via cell styles override
-        }
-      }
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
+    willDrawCell: function(d) {
+      if (d.section !== 'body') return;
+      if (d.pageNumber !== paginaVista) { paginaVista = d.pageNumber; primeraDeLaPagina = d.row.index; }
+      var mt = meta[d.row.index];
+      // Una nota más alta que una página sí se parte; se repite su número arriba de la nueva página
+      if (!mt || d.row.index !== primeraDeLaPagina || mt.primera || mt.tipo === 'total' || d.column.index !== 1) return;
+      d.cell.text = [mt.tipo === 'item' ? mt.notaId : mt.notaId + ' (continuación)'];
+      color('setTextColor', GRIS);
     },
-    didParseCell: function(data){
-      if (data.section === 'body') {
-        var s = willDrawCellStyles[data.row.index];
-        if (s) Object.assign(data.cell.styles, s);
-      }
-    },
-    didDrawPage: function(){
-      var pg = doc.internal.getCurrentPageInfo().pageNumber;
-      var tot = doc.internal.getNumberOfPages();
-      doc.setFontSize(7); doc.setTextColor(C_GRIS[0],C_GRIS[1],C_GRIS[2]);
-      doc.text('Maya Autopartes  •  Historial Notas de Entrega  •  '+labelMes, mx, doc.internal.pageSize.getHeight()-5);
-      doc.text('Página '+pg+' / '+tot, pageW-mx, doc.internal.pageSize.getHeight()-5, {align:'right'});
+    didDrawCell: function(d) {
+      var mt = meta[d.row.index];
+      if (d.section !== 'body' || !mt || (mt.tipo !== 'total' && d.cell.rowSpan === 1)) return;
+      color('setDrawColor', TEAL);
+      doc.setLineWidth(0.3);
+      doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height);
     }
   });
 
-  var nombreArchivo = 'Historial_NE_'+labelMes+(filtCliente?'_'+filtCliente.replace(/\s+/g,'_'):'')+'.pdf';
-  doc.save(nombreArchivo);
-  window.toast('✅ PDF generado con '+filtradas.length+' notas', 'success');
+  // ── Totales generales ──
+  var y = doc.lastAutoTable.finalY + 6;
+  var boxW = 92, boxH = 31, boxX = pageW - mg - boxW;
+  if (y + boxH > pageH - 16) { doc.addPage(); y = 14; }
+  doc.setFillColor(210, 215, 220);
+  doc.roundedRect(boxX + 1, y + 1, boxW, boxH, 2, 2, 'F');
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(220, 225, 235);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'FD');
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8.5);
+  [['Subtotal', r.subtotal, 8], ['IVA (16%)', r.iva, 15]].forEach(function(l) {
+    color('setTextColor', GRIS);
+    doc.text(l[0], boxX + 5, y + l[2]);
+    color('setTextColor', TINTA);
+    doc.text(neDinero(l[1]), boxX + boxW - 5, y + l[2], { align: 'right' });
+  });
+  color('setFillColor', AZUL);
+  doc.rect(boxX, y + 21, boxW, 10, 'F');
+  color('setTextColor', BLANCO);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(10.5);
+  doc.text('TOTAL GENERAL', boxX + 5, y + 27.5);
+  doc.text(neDinero(r.total), boxX + boxW - 5, y + 27.5, { align: 'right' });
+  color('setTextColor', GRIS);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(7.5);
+  doc.text([
+    'Cant., P. Unit., Subtotal, IVA y Total son los capturados en cada nota.',
+    'Importe = Cant. × P. Unit.     Total general = suma de los totales de las ' + r.filas.length + ' notas.'
+  ], mg, y + 8);
+
+  // ── Pie de página: se escribe al final para saber cuántas páginas hay ──
+  var paginas = doc.internal.getNumberOfPages();
+  for (var pg = 1; pg <= paginas; pg++) {
+    doc.setPage(pg);
+    doc.setDrawColor(214, 222, 230);
+    doc.setLineWidth(0.3);
+    doc.line(mg, pageH - 10, pageW - mg, pageH - 10);
+    color('setTextColor', GRIS);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(7);
+    doc.text('Maya Autopartes  •  Historial de notas de entrega  •  ' + neDescribirFiltros(f), mg, pageH - 6);
+    doc.text('Página ' + pg + ' de ' + paginas, pageW - mg, pageH - 6, { align: 'right' });
+  }
+
+  doc.save(neNombreArchivo(f, 'pdf'));
+  window.toast('✅ PDF con ' + r.filas.length + ' notas', 'success');
 };
 
 window.eliminarNotaEntrega = async function(id) {
