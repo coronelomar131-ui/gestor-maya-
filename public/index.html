@@ -8828,40 +8828,93 @@ window.descargarHistorialNEPDF = function() {
     doc.text(k.valor, x+6, y0+15);
   });
 
-  // ── TABLA ─────────────────────────────────────────────────────────────
-  var filas = filtradas.map(function(n,i){
+  // ── TABLA con sub-filas de items ──────────────────────────────────────
+  // Columnas: # | Nota | Fecha | Hora | Cliente | Descripción | Cant | P.Unit | Total
+  var C_NOTA_HDR = [220,232,245];   // fondo fila cabecera de nota
+  var C_ITEM_BG  = [248,251,255];   // fondo fila item par
+  var C_ITEM_ALT = [238,245,252];   // fondo fila item impar
+  var C_ITEM_TXT = [60,80,110];
+
+  var bodyRows = [];
+  var bodyStyles = [];
+
+  filtradas.forEach(function(n, i){
     var ts = n.creadoEn || n.createdAt || null;
     var hora = ts ? (function(){ var d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); })() : '-';
-    return [i+1, n.notaId||'-', n.fecha||'-', hora, n.cliente||'-', n.siniestro||'-', n.vendedor||'-', fmtMXN(n.total||0)];
+    var items = n.items || [];
+
+    // Fila encabezado de la nota
+    bodyRows.push({
+      type:'nota', idx:i+1,
+      cells: [String(i+1), n.notaId||'-', n.fecha||'-', hora, n.cliente||'-', items.length ? items.length+' artículo(s)' : '-', '', '', fmtMXN(n.total||0)]
+    });
+
+    // Sub-filas de items
+    items.forEach(function(it, j){
+      var cant = parseFloat(it.cantidad)||1;
+      var pu   = parseFloat(it.precioUnit)||0;
+      bodyRows.push({
+        type:'item', odd: j%2===1,
+        cells: ['', '', '', '', '', '  '+( it.descripcion||'-'), it.siniestro||'-', String(cant), fmtMXN(pu), fmtMXN(cant*pu)]
+      });
+    });
+  });
+
+  // Construir arrays para autoTable
+  var tableBody = [];
+  var willDrawCellStyles = {};  // keyed by rowIndex
+
+  bodyRows.forEach(function(r, ri){
+    if (r.type === 'nota') {
+      tableBody.push([r.cells[0], r.cells[1], r.cells[2], r.cells[3], r.cells[4], {content:r.cells[5], colSpan:3}, r.cells[8]]);
+      willDrawCellStyles[ri] = {fillColor:C_NOTA_HDR, textColor:C_AZUL, fontStyle:'bold', fontSize:8};
+    } else {
+      tableBody.push(['','','','','', r.cells[5], r.cells[6], r.cells[7]+' u.', r.cells[9]]);
+      willDrawCellStyles[ri] = {fillColor: r.odd ? C_ITEM_ALT : C_ITEM_BG, textColor:C_ITEM_TXT, fontSize:7.5};
+    }
   });
 
   doc.autoTable({
     startY: y0+cardH+4,
-    head: [['#','Nota','Fecha','Hora','Cliente','Siniestro','Vendedor','Total']],
-    body: filas,
-    foot: [['','','','','','','TOTAL',fmtMXN(totalGeneral)]],
-    styles:          {fontSize:8, cellPadding:3, textColor:[40,55,75]},
-    headStyles:      {fillColor:C_AZUL, textColor:C_BLANC, fontStyle:'bold', fontSize:8.5},
-    footStyles:      {fillColor:C_AZUL, textColor:C_TEAL2, fontStyle:'bold'},
-    alternateRowStyles:{fillColor:[235,243,250]},
-    rowPageBreak:    'auto',
+    head: [['#','Nota','Fecha','Hora','Cliente','Descripción del artículo','Siniestro','Cant','Total']],
+    body: tableBody,
+    foot: [['','','','','','','','TOTAL',fmtMXN(totalGeneral)]],
+    styles:     {fontSize:8, cellPadding:2.5, textColor:C_ITEM_TXT},
+    headStyles: {fillColor:C_AZUL, textColor:C_BLANC, fontStyle:'bold', fontSize:8},
+    footStyles: {fillColor:C_AZUL, textColor:C_TEAL2, fontStyle:'bold'},
+    rowPageBreak:'auto',
     columnStyles:{
-      0:{cellWidth:8,  halign:'center'},
-      1:{cellWidth:24},
-      2:{cellWidth:22},
-      3:{cellWidth:16},
-      4:{cellWidth:52},
-      5:{cellWidth:28},
-      6:{cellWidth:34},
-      7:{cellWidth:24, halign:'right', fontStyle:'bold'}
+      0:{cellWidth:7,  halign:'center'},
+      1:{cellWidth:20},
+      2:{cellWidth:20},
+      3:{cellWidth:14},
+      4:{cellWidth:38},
+      5:{cellWidth:68},
+      6:{cellWidth:22},
+      7:{cellWidth:13, halign:'center'},
+      8:{cellWidth:22, halign:'right', fontStyle:'bold'}
     },
-    didDrawPage: function(data){
-      // Footer en cada página
+    willDrawCell: function(data){
+      if (data.section === 'body') {
+        var s = willDrawCellStyles[data.row.index];
+        if (s) {
+          if (s.fillColor) doc.setFillColor(s.fillColor[0],s.fillColor[1],s.fillColor[2]);
+          // fillColor applied via cell styles override
+        }
+      }
+    },
+    didParseCell: function(data){
+      if (data.section === 'body') {
+        var s = willDrawCellStyles[data.row.index];
+        if (s) Object.assign(data.cell.styles, s);
+      }
+    },
+    didDrawPage: function(){
       var pg = doc.internal.getCurrentPageInfo().pageNumber;
-      var total = doc.internal.getNumberOfPages();
+      var tot = doc.internal.getNumberOfPages();
       doc.setFontSize(7); doc.setTextColor(C_GRIS[0],C_GRIS[1],C_GRIS[2]);
       doc.text('Maya Autopartes  •  Historial Notas de Entrega  •  '+labelMes, mx, doc.internal.pageSize.getHeight()-5);
-      doc.text('Página '+pg+' / '+total, pageW-mx, doc.internal.pageSize.getHeight()-5, {align:'right'});
+      doc.text('Página '+pg+' / '+tot, pageW-mx, doc.internal.pageSize.getHeight()-5, {align:'right'});
     }
   });
 
