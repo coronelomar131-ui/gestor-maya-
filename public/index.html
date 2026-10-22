@@ -1345,6 +1345,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               <input id="ne-filter-hora" type="number" min="0" max="23" placeholder="0–23" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:80px" oninput="renderNotasEntregaFiltrado()">
             </div>
             <button class="btn btn-secondary btn-sm" onclick="limpiarFiltrosNE()" style="align-self:flex-end">✕ Limpiar</button>
+            <button class="btn btn-secondary btn-sm" onclick="descargarHistorialNE()" style="align-self:flex-end">⬇️ Descargar Excel</button>
             <span id="ne-filter-count" style="align-self:flex-end;font-size:12px;color:var(--gray)"></span>
           </div>
           <div style="overflow-x:auto">
@@ -8668,6 +8669,60 @@ window.limpiarFiltrosNE = function() {
     if (el) el.value = '';
   });
   renderNotasEntregaFiltrado();
+};
+
+window.descargarHistorialNE = function() {
+  var notas = window.data.notasEntrega || [];
+  var filtCliente = (document.getElementById('ne-filter-cliente') || {}).value || '';
+  var filtMes = (document.getElementById('ne-filter-mes') || {}).value || '';
+  var filtDia = (document.getElementById('ne-filter-dia') || {}).value || '';
+  var filtHora = (document.getElementById('ne-filter-hora') || {}).value || '';
+
+  var filtradas = notas.filter(function(n) {
+    if (filtCliente && !(n.cliente || '').toLowerCase().includes(filtCliente.toLowerCase())) return false;
+    if (filtMes || filtDia) {
+      var fecha = n.fecha ? new Date(n.fecha + 'T12:00:00') : null;
+      if (!fecha) return false;
+      if (filtMes && String(fecha.getMonth() + 1) !== String(filtMes)) return false;
+      if (filtDia && String(fecha.getDate()) !== String(filtDia)) return false;
+    }
+    if (filtHora !== '') {
+      var ts = n.creadoEn || n.createdAt || null;
+      if (ts) {
+        var d = ts.toDate ? ts.toDate() : new Date(ts);
+        if (String(d.getHours()) !== String(filtHora)) return false;
+      } else { return false; }
+    }
+    return true;
+  });
+
+  if (!filtradas.length) { window.toast('No hay notas con esos filtros', 'error'); return; }
+
+  var meses = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var labelMes = filtMes ? meses[parseInt(filtMes)] : 'Todos';
+  var nombreArchivo = 'Historial_NE_' + labelMes + (filtCliente ? '_' + filtCliente.replace(/\s+/g,'_') : '') + '.xlsx';
+
+  var filas = filtradas.map(function(n, i) {
+    var ts = n.creadoEn || n.createdAt || null;
+    var horaRegistro = ts ? (function(){ var d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('es-MX'); })() : '-';
+    return {
+      '#': i + 1,
+      'Nota': n.notaId || '-',
+      'Fecha': n.fecha || '-',
+      'Hora Registro': horaRegistro,
+      'Cliente': n.cliente || '-',
+      'Siniestro': n.siniestro || '-',
+      'Vendedor': n.vendedor || '-',
+      'Total': n.total || 0
+    };
+  });
+
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.json_to_sheet(filas);
+  ws['!cols'] = [{wch:4},{wch:12},{wch:12},{wch:14},{wch:28},{wch:16},{wch:18},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Notas de Entrega');
+  XLSX.writeFile(wb, nombreArchivo);
+  window.toast('✅ Descargando ' + filtradas.length + ' notas', 'success');
 };
 
 window.eliminarNotaEntrega = async function(id) {
