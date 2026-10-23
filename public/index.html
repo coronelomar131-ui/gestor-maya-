@@ -1322,6 +1322,14 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <!-- Filtros de Notas de Entrega -->
           <div id="ne-filters" style="display:flex;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border);align-items:flex-end">
             <div style="display:flex;flex-direction:column;gap:4px">
+              <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Tipo</label>
+              <select id="ne-filter-tipo" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px" onchange="renderNotasEntregaFiltrado()">
+                <option value="">Todas</option>
+                <option value="NE">Notas de entrega</option>
+                <option value="NV">Notas de venta</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Cliente</label>
               <input id="ne-filter-cliente" type="text" list="ne-filter-clientes-list" placeholder="Todos" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;width:160px" oninput="renderNotasEntregaFiltrado()">
               <datalist id="ne-filter-clientes-list"></datalist>
@@ -1355,6 +1363,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <button class="btn btn-secondary btn-sm" onclick="descargarHistorialNEPDF()" style="align-self:flex-end">📄 PDF</button>
             <span id="ne-filter-count" style="align-self:flex-end;font-size:12px;color:var(--gray)"></span>
           </div>
+          <div id="ne-filter-aviso" style="display:none;margin:10px 16px 0;padding:8px 12px;border-radius:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);color:#f59e0b;font-size:12px"></div>
           <div style="overflow-x:auto">
             <table id="ne-table">
               <thead><tr>
@@ -2598,7 +2607,7 @@ function showApp() {
 
 // ── FIRESTORE LISTENERS ──
 function startListeners() {
-  listenCollection('ventas', 'ventas-body', renderVentas);
+  listenCollection('ventas', 'ventas-body', () => { renderVentas(); renderNotasEntrega(); });
   listenCollection('productos', 'inv-body', renderProductos);
   listenCollection('clientes', 'cli-body', renderClientes);
   listenCollection('cotizaciones', 'cot-body', renderCotizaciones);
@@ -8635,100 +8644,177 @@ function neCantidadTxt(x) {
   return String(neCantidad(x));
 }
 
-function neCreada(n) {
-  if (!n.createdAt) return null;
-  var d = typeof n.createdAt.toDate === 'function' ? n.createdAt.toDate() : new Date(n.createdAt);
+// Date a partir de un Timestamp de Firestore, texto ISO o milisegundos
+function neAFecha(v) {
+  if (v == null || v === '') return null;
+  var d = typeof v.toDate === 'function' ? v.toDate() : new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
 
-// Fecha impresa en la nota; si quedó vacía, el día en que se registró
-function neFecha(n) {
-  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(n.fecha || ''));
-  return m ? new Date(+m[1], +m[2] - 1, +m[3], 12) : neCreada(n);
+function neMediodia(d) {
+  return d ? new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12) : null;
+}
+
+// Día de la nota. Ventas guarda new Date('AAAA-MM-DD').getTime(): medianoche UTC, que en México
+// cae en el día anterior; ese caso se lee en UTC para respetar el día que se capturó
+function neDia(v) {
+  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(typeof v === 'string' ? v.trim() : '');
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12);
+  var d = neAFecha(typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : v);
+  if (d && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0) {
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12);
+  }
+  return neMediodia(d);
 }
 
 function neFmtFecha(d) {
   return d ? String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear() : '-';
 }
 
-function neHora(n) {
-  var d = neCreada(n);
+function neHora(x) {
+  var d = x.creada;
   return d ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '-';
 }
 
-function neArticuloTxt(it) {
-  return (it.descripcion || '-') + (it.anio ? ' (' + it.anio + ')' : '');
+function neSuma(lista, campo) {
+  return lista.reduce(function(s, it) { return s + (Number(it[campo]) || 0); }, 0);
 }
 
-// Lo guardado en la nota; lo único que se calcula es el importe de cada línea (cantidad × precio unitario)
-function neMontos(n) {
+function neNumero(v) {
+  return parseInt(String(v || '').replace(/\D/g, ''), 10) || 0;
+}
+
+// Nota de entrega: lo único que se calcula es el importe de cada línea (cantidad × precio unitario)
+function neDesdeEntrega(n) {
   var items = (Array.isArray(n.items) ? n.items : []).map(function(it) {
     var cantidad = Number(it.cantidad) || 1;
     var pu = neCentavos(it.precioUnit);
-    return { descripcion: it.descripcion, anio: it.anio, siniestro: it.siniestro, cantidad: cantidad, pu: pu, importe: Math.round(cantidad * pu) };
+    return { texto: (it.descripcion || '-') + (it.anio ? ' (' + it.anio + ')' : ''), siniestro: it.siniestro || '', cantidad: cantidad, pu: pu, importe: Math.round(cantidad * pu) };
   });
-  var subtotal = n.subtotal != null ? neCentavos(n.subtotal) : items.reduce(function(s, it) { return s + it.importe; }, 0);
+  var subtotal = n.subtotal != null ? neCentavos(n.subtotal) : neSuma(items, 'importe');
   var iva = neCentavos(n.ivaTotal);
+  var creada = neAFecha(n.createdAt);
   return {
-    items: items,
-    subtotal: subtotal,
-    iva: iva,
-    total: n.total != null ? neCentavos(n.total) : subtotal + iva,
-    piezas: items.reduce(function(s, it) { return s + it.cantidad; }, 0)
+    tipo: 'NE', id: n.id, folio: n.notaId || 'NE', numero: neNumero(n.notaId),
+    fecha: neDia(n.fecha) || neMediodia(creada), creada: creada,
+    cliente: n.cliente || '', vendedor: n.vendedor || '', siniestro: n.siniestro || '',
+    items: items, subtotal: subtotal, iva: iva, ajuste: 0,
+    total: n.total != null ? neCentavos(n.total) : subtotal + iva
   };
+}
+
+// Nota de venta: cada partida trae su precio (sin cantidad), su IVA y su ajuste; total = subtotal + IVA − ajuste
+function neDesdeVenta(v) {
+  var partidas = Array.isArray(v.items) && v.items.length ? v.items : null;
+  var items = partidas ? partidas.map(function(it) {
+    return { texto: it.pedido || it.descripcion || '-', siniestro: it.numSiniestro || '', cantidad: null, pu: null, importe: neCentavos(it.precio) };
+  }) : [{ texto: v.descripcion || '-', siniestro: '', cantidad: null, pu: null, importe: neCentavos(v.total) }];
+  var porPartida = function(campo) { return partidas ? partidas.reduce(function(s, it) { return s + neCentavos(it[campo]); }, 0) : 0; };
+  var subtotal = v.subtotal != null ? neCentavos(v.subtotal) : neSuma(items, 'importe');
+  var iva = v.ivaTotal != null ? neCentavos(v.ivaTotal) : porPartida('iva');
+  var ajuste = v.ajusteTotal != null ? neCentavos(v.ajusteTotal) : porPartida('ajuste');
+  var creada = neAFecha(v.createdAt);
+  return {
+    tipo: 'NV', id: v.id, folio: v.notaId ? 'NV #' + v.notaId : (v.notaNumero || 'NV'), numero: neNumero(v.notaId || v.notaNumero),
+    fecha: neDia(v.fecha) || neMediodia(creada), creada: creada,
+    cliente: v.clienteNombre || v.cliente || '', vendedor: v.vendedor || '',
+    siniestro: String(v.siniestros || items.map(function(it) { return it.siniestro; }).filter(Boolean).join(' | ')),
+    items: items, subtotal: subtotal, iva: iva, ajuste: ajuste,
+    total: v.total != null ? neCentavos(v.total) : subtotal + iva - ajuste
+  };
+}
+
+function neRegistros() {
+  var lista = (window.data.notasEntrega || []).map(neDesdeEntrega);
+  (window.data.ventas || []).forEach(function(v) {
+    // Las ventas creadas desde una nota de entrega ya están como NE; las canceladas no son venta
+    if (v.fuente === 'nota_entrega' || v.notaEntregaId || /^cancel/.test(neNorm(v.estatus))) return;
+    lista.push(neDesdeVenta(v));
+  });
+  return lista;
 }
 
 function neFiltrosActuales() {
   var val = function(id) { var el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
-  return { cliente: val('ne-filter-cliente'), anio: val('ne-filter-anio'), mes: val('ne-filter-mes'), dia: val('ne-filter-dia'), hora: val('ne-filter-hora') };
+  return { tipo: val('ne-filter-tipo'), cliente: val('ne-filter-cliente'), anio: val('ne-filter-anio'), mes: val('ne-filter-mes'), dia: val('ne-filter-dia'), hora: val('ne-filter-hora') };
 }
 
-function neNumeroNota(n) {
-  return parseInt(String(n.notaId || '').replace(/\D/g, ''), 10) || 0;
-}
-
-// Más recientes primero: fecha de la nota, luego hora de registro y número de nota
+// Más recientes primero: día de la nota, luego hora de registro y número de nota
 function neCompararNotas(a, b) {
-  var fa = neFecha(a), fb = neFecha(b), ca = neCreada(a), cb = neCreada(b);
-  return ((fb ? fb.getTime() : 0) - (fa ? fa.getTime() : 0)) ||
-    ((cb ? cb.getTime() : 0) - (ca ? ca.getTime() : 0)) ||
-    (neNumeroNota(b) - neNumeroNota(a));
+  return ((b.fecha ? b.fecha.getTime() : 0) - (a.fecha ? a.fecha.getTime() : 0)) ||
+    ((b.creada ? b.creada.getTime() : 0) - (a.creada ? a.creada.getTime() : 0)) ||
+    (b.numero - a.numero);
 }
 
 function neFiltrarNotas(f) {
   var cliente = neNorm(f.cliente);
-  return (window.data.notasEntrega || []).filter(function(n) {
-    if (cliente && neNorm(n.cliente).indexOf(cliente) === -1) return false;
+  return neRegistros().filter(function(x) {
+    if (f.tipo && x.tipo !== f.tipo) return false;
+    if (cliente && neNorm(x.cliente).indexOf(cliente) === -1) return false;
     if (f.anio || f.mes || f.dia) {
-      var d = neFecha(n);
-      if (!d) return false;
-      if (f.anio && d.getFullYear() !== Number(f.anio)) return false;
-      if (f.mes && d.getMonth() + 1 !== Number(f.mes)) return false;
-      if (f.dia && d.getDate() !== Number(f.dia)) return false;
+      if (!x.fecha) return false;
+      if (f.anio && x.fecha.getFullYear() !== Number(f.anio)) return false;
+      if (f.mes && x.fecha.getMonth() + 1 !== Number(f.mes)) return false;
+      if (f.dia && x.fecha.getDate() !== Number(f.dia)) return false;
     }
-    if (f.hora !== '') {
-      var c = neCreada(n);
-      if (!c || c.getHours() !== Number(f.hora)) return false;
-    }
+    if (f.hora !== '' && (!x.creada || x.creada.getHours() !== Number(f.hora))) return false;
     return true;
   }).sort(neCompararNotas);
 }
 
-function neResumen(notas) {
-  var r = { filas: [], subtotal: 0, iva: 0, total: 0, piezas: 0, articulos: 0, desde: null, hasta: null };
-  notas.forEach(function(n) {
-    var m = neMontos(n);
-    r.filas.push({ n: n, m: m });
-    r.subtotal += m.subtotal;
-    r.iva += m.iva;
-    r.total += m.total;
-    r.piezas += m.piezas;
-    r.articulos += m.items.length;
-    var d = neFecha(n);
-    if (d && (!r.desde || d < r.desde)) r.desde = d;
-    if (d && (!r.hasta || d > r.hasta)) r.hasta = d;
+// Una venta capturada como nota de venta y aparte como nota de entrega (sin ligarlas) se sumaría dos veces:
+// se avisa cuando coinciden cliente, total y día (±1), sin quitar ninguna
+function neDuplicados(lista) {
+  var entregas = lista.filter(function(x) { return x.tipo === 'NE' && x.total > 0 && x.fecha; });
+  var usadas = {}, pares = [];
+  lista.forEach(function(v) {
+    if (v.tipo !== 'NV' || !(v.total > 0) || !v.fecha) return;
+    var mejor = null;
+    entregas.forEach(function(e) {
+      if (usadas[e.id] || e.total !== v.total || neNorm(e.cliente) !== neNorm(v.cliente)) return;
+      var dif = Math.abs(e.fecha - v.fecha);
+      if (dif <= 1296e5 && (!mejor || dif < mejor.dif)) mejor = { e: e, dif: dif };
+    });
+    if (mejor) {
+      usadas[mejor.e.id] = true;
+      pares.push(v.folio + ' y ' + mejor.e.folio);
+    }
   });
+  return pares;
+}
+
+function neResumen(lista) {
+  var r = { filas: lista, subtotal: 0, iva: 0, ajuste: 0, total: 0, piezas: 0, articulos: 0, entregas: 0, ventas: 0, desde: null, hasta: null };
+  lista.forEach(function(x) {
+    r.subtotal += x.subtotal;
+    r.iva += x.iva;
+    r.ajuste += x.ajuste;
+    r.total += x.total;
+    r.articulos += x.items.length;
+    if (x.tipo === 'NE') { r.entregas++; r.piezas += neSuma(x.items, 'cantidad'); } else { r.ventas++; }
+    if (x.fecha && (!r.desde || x.fecha < r.desde)) r.desde = x.fecha;
+    if (x.fecha && (!r.hasta || x.fecha > r.hasta)) r.hasta = x.fecha;
+  });
+  r.duplicados = neDuplicados(lista);
   return r;
+}
+
+function neAjusteTxt(c) {
+  return (c < 0 ? '+' : '-') + neDinero(Math.abs(c));
+}
+
+function neConteoTxt(r) {
+  return r.filas.length + (r.filas.length === 1 ? ' nota' : ' notas') + (r.entregas && r.ventas ? ' (' + r.entregas + ' NE · ' + r.ventas + ' NV)' : '');
+}
+
+function neTitulo(f) {
+  return f.tipo === 'NE' ? 'Historial de notas de entrega' : f.tipo === 'NV' ? 'Historial de notas de venta' : 'Historial de notas de entrega y venta';
+}
+
+function neAvisoDuplicados(r) {
+  if (!r.duplicados.length) return '';
+  var pares = r.duplicados.slice(0, 4).join(', ') + (r.duplicados.length > 4 ? ' y ' + (r.duplicados.length - 4) + ' más' : '');
+  return 'Posible venta repetida (mismo cliente, total y día): ' + pares + '. Si son la misma venta, el total la suma dos veces; filtra por un solo tipo.';
 }
 
 function neDescribirFiltros(f) {
@@ -8745,7 +8831,7 @@ function neDescribirFiltros(f) {
 }
 
 function neNombreArchivo(f, ext) {
-  var partes = ['Historial_NE', f.mes ? NE_MESES[Number(f.mes)] : 'Todos'];
+  var partes = [f.tipo === 'NE' ? 'Historial_NE' : f.tipo === 'NV' ? 'Historial_NV' : 'Historial_Notas', f.mes ? NE_MESES[Number(f.mes)] : 'Todos'];
   if (f.anio) partes.push(f.anio);
   if (f.cliente) partes.push(f.cliente);
   return partes.join('_').normalize('NFD').replace(/\p{M}/gu, '').replace(/[^A-Za-z0-9_-]+/g, '_') + '.' + ext;
@@ -8763,13 +8849,13 @@ function neDescargarBlob(blob, nombre) {
 }
 
 function renderNotasEntrega() {
-  var notas = window.data.notasEntrega || [];
+  var registros = neRegistros();
   var dl = document.getElementById('ne-filter-clientes-list');
   if (dl) {
     var vistos = {}, nombres = [];
-    notas.forEach(function(n) {
-      var k = neNorm(n.cliente);
-      if (k && !vistos[k]) { vistos[k] = true; nombres.push(String(n.cliente).trim()); }
+    registros.forEach(function(x) {
+      var k = neNorm(x.cliente);
+      if (k && !vistos[k]) { vistos[k] = true; nombres.push(String(x.cliente).trim()); }
     });
     nombres.sort(function(a, b) { return a.localeCompare(b, 'es'); });
     dl.innerHTML = nombres.map(function(c) { return '<option value="' + neEsc(c) + '">'; }).join('');
@@ -8777,7 +8863,7 @@ function renderNotasEntrega() {
   var selAnio = document.getElementById('ne-filter-anio');
   if (selAnio) {
     var elegido = selAnio.value, anios = {};
-    notas.forEach(function(n) { var d = neFecha(n); if (d) anios[d.getFullYear()] = true; });
+    registros.forEach(function(x) { if (x.fecha) anios[x.fecha.getFullYear()] = true; });
     var lista = Object.keys(anios).sort().reverse();
     selAnio.innerHTML = '<option value="">Todos</option>' + lista.map(function(a) { return '<option value="' + a + '">' + a + '</option>'; }).join('');
     selAnio.value = lista.indexOf(elegido) !== -1 ? elegido : '';
@@ -8788,39 +8874,45 @@ function renderNotasEntrega() {
 function renderNotasEntregaFiltrado() {
   var tbody = document.getElementById('ne-body');
   if (!tbody) return;
-  var cuantas = (window.data.notasEntrega || []).length;
+  var cuantas = neRegistros().length;
   var r = neResumen(neFiltrarNotas(neFiltrosActuales()));
 
   var countEl = document.getElementById('ne-filter-count');
-  if (countEl) countEl.textContent = r.filas.length + ' de ' + cuantas + ' notas  ·  Total ' + neDinero(r.total);
+  if (countEl) countEl.textContent = r.filas.length + ' de ' + cuantas + ' notas' + (r.entregas && r.ventas ? ' (' + r.entregas + ' NE · ' + r.ventas + ' NV)' : '') + '  ·  Total ' + neDinero(r.total);
+  var avisoEl = document.getElementById('ne-filter-aviso');
+  if (avisoEl) {
+    avisoEl.textContent = r.duplicados.length ? '⚠ ' + neAvisoDuplicados(r) : '';
+    avisoEl.style.display = r.duplicados.length ? 'block' : 'none';
+  }
 
   if (!r.filas.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (cuantas ? 'Sin resultados con esos filtros' : 'Sin notas de entrega') + '</div></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (cuantas ? 'Sin resultados con esos filtros' : 'Sin notas') + '</div></div></td></tr>';
     return;
   }
   var isAdmin = window.currentRole === 'admin';
   tbody.innerHTML = r.filas.map(function(x, i) {
-    var n = x.n;
+    var acciones = x.tipo === 'NE'
+      ? '<button class="btn btn-secondary btn-sm" onclick="window.previewNotaEntregaPDFById(\'' + x.id + '\')">👁 Ver</button>' +
+        ' <button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + x.id + '\')">📄 PDF</button>' +
+        (isAdmin ? ' <button class="btn btn-danger btn-sm" onclick="eliminarNotaEntrega(\'' + x.id + '\')">🗑</button>' : '')
+      : '<button class="btn btn-secondary btn-sm" onclick="window.abrirDetallesVenta(\'' + x.id + '\')">👁 Ver</button>' +
+        ' <button class="btn btn-secondary btn-sm" onclick="window.descargarNotaPorId(\'' + x.id + '\')">📄 PDF</button>';
     return '<tr>' +
       '<td>' + (i + 1) + '</td>' +
-      '<td><strong>' + neEsc(n.notaId || '-') + '</strong></td>' +
-      '<td>' + neFmtFecha(neFecha(n)) + '</td>' +
-      '<td>' + neHora(n) + '</td>' +
-      '<td>' + neEsc(n.cliente || '-') + '</td>' +
-      '<td>' + neEsc(n.siniestro || '-') + '</td>' +
-      '<td>' + neEsc(n.vendedor || '-') + '</td>' +
-      '<td>' + neDinero(x.m.total) + '</td>' +
-      '<td style="white-space:nowrap">' +
-        '<button class="btn btn-secondary btn-sm" onclick="window.previewNotaEntregaPDFById(\'' + n.id + '\')">👁 Ver</button>' +
-        ' <button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + n.id + '\')">📄 PDF</button>' +
-        (isAdmin ? ' <button class="btn btn-danger btn-sm" onclick="eliminarNotaEntrega(\'' + n.id + '\')">🗑</button>' : '') +
-      '</td>' +
+      '<td><strong>' + neEsc(x.folio) + '</strong></td>' +
+      '<td>' + neFmtFecha(x.fecha) + '</td>' +
+      '<td>' + neHora(x) + '</td>' +
+      '<td>' + neEsc(x.cliente || '-') + '</td>' +
+      '<td>' + neEsc(x.siniestro || '-') + '</td>' +
+      '<td>' + neEsc(x.vendedor || '-') + '</td>' +
+      '<td>' + neDinero(x.total) + '</td>' +
+      '<td style="white-space:nowrap">' + acciones + '</td>' +
     '</tr>';
   }).join('');
 }
 
 window.limpiarFiltrosNE = function() {
-  ['ne-filter-cliente', 'ne-filter-anio', 'ne-filter-mes', 'ne-filter-dia', 'ne-filter-hora'].forEach(function(id) {
+  ['ne-filter-tipo', 'ne-filter-cliente', 'ne-filter-anio', 'ne-filter-mes', 'ne-filter-dia', 'ne-filter-hora'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -8861,7 +8953,7 @@ function neLibroExcel(ExcelJS, f, r) {
   var ALINEAR = ['center', 'left', 'center', 'center', 'left', 'left', 'left', 'center', 'right', 'right'];
   var COLS = ANCHOS.length;
   ANCHOS.forEach(function(w, i) { ws.getColumn(i + 1).width = w; });
-  ws.headerFooter = { oddFooter: '&LMaya Autopartes — Historial de notas de entrega&RPágina &P de &N' };
+  ws.headerFooter = { oddFooter: '&LMaya Autopartes — ' + neTitulo(f) + '&RPágina &P de &N' };
 
   var fila = 0;
   var banda = function(texto, font, fill, alto) {
@@ -8871,17 +8963,18 @@ function neLibroExcel(ExcelJS, f, r) {
     c.value = texto;
     c.font = font;
     c.fill = relleno(fill);
-    c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1, wrapText: true };
     ws.getRow(fila).height = alto;
   };
   var info = { size: 10, color: { argb: 'FF334155' } };
   var ahora = new Date();
-  banda('MAYA AUTOPARTES  •  HISTORIAL DE NOTAS DE ENTREGA', { bold: true, size: 15, color: { argb: BLANCO } }, NAVY, 32);
+  banda('MAYA AUTOPARTES  •  ' + neTitulo(f).toUpperCase(), { bold: true, size: 15, color: { argb: BLANCO } }, NAVY, 32);
   banda(neDescribirFiltros(f) + '     |     Notas del ' + neFmtFecha(r.desde) + ' al ' + neFmtFecha(r.hasta), info, INFO, 20);
   banda('Generado: ' + neFmtFecha(ahora) + ' ' + String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0') +
-    '     |     Notas: ' + r.filas.length + '     |     Piezas vendidas: ' + neCantidadTxt(r.piezas), info, INFO, 20);
-  banda('Subtotal: ' + neDinero(r.subtotal) + '     |     IVA: ' + neDinero(r.iva) + '     |     Total vendido: ' + neDinero(r.total),
-    { bold: true, size: 10, color: { argb: NAVY } }, INFO, 20);
+    '     |     ' + neConteoTxt(r) + '     |     ' + (r.ventas ? 'Artículos: ' + r.articulos : 'Piezas vendidas: ' + neCantidadTxt(r.piezas)), info, INFO, 20);
+  banda('Subtotal: ' + neDinero(r.subtotal) + '     |     IVA: ' + neDinero(r.iva) + (r.ajuste ? '     |     Ajustes: ' + neAjusteTxt(r.ajuste) : '') +
+    '     |     Total vendido: ' + neDinero(r.total), { bold: true, size: 10, color: { argb: NAVY } }, INFO, 20);
+  if (r.duplicados.length) banda('⚠ ' + neAvisoDuplicados(r), { bold: true, size: 10, color: { argb: 'FF92400E' } }, 'FFFEF3C7', 32);
   fila++;
   ws.getRow(fila).height = 8;
 
@@ -8889,7 +8982,7 @@ function neLibroExcel(ExcelJS, f, r) {
   encabezados(ws, fila, ['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Artículo', 'Siniestro', 'Cant.', 'P. Unit.', 'Importe'], ALINEAR);
   ws.views = [{ state: 'frozen', ySplit: fila, showGridLines: false }];
 
-  var lineaResumen = function(izq, etiqueta, centavos, fondo, fuente) {
+  var lineaResumen = function(izq, etiqueta, valor, fondo, fuente) {
     fila++;
     ws.mergeCells(fila, 1, fila, 6);
     ws.mergeCells(fila, 7, fila, 9);
@@ -8903,29 +8996,28 @@ function neLibroExcel(ExcelJS, f, r) {
     b.value = etiqueta;
     b.font = fuente;
     b.alignment = { vertical: 'middle', horizontal: 'right' };
-    c.value = pesos(centavos);
+    c.value = valor;
     c.numFmt = MONEY;
     c.font = fuente;
     c.alignment = { vertical: 'middle', horizontal: 'right' };
   };
 
   r.filas.forEach(function(x, i) {
-    var n = x.n, m = x.m;
     var fondo = i % 2 === 0 ? BLANCO : ZEBRA;
-    (m.items.length ? m.items : [null]).forEach(function(it, j) {
+    (x.items.length ? x.items : [null]).forEach(function(it, j) {
       fila++;
       var row = ws.getRow(fila);
       var p = j === 0;
       var vals = [
         p ? i + 1 : null,
-        p ? (n.notaId || '') : null,
-        p ? soloFecha(neFecha(n)) : null,
-        p ? neHora(n) : null,
-        p ? (n.cliente || '') : null,
-        it ? neArticuloTxt(it) : '(sin artículos)',
-        it ? (it.siniestro || '') : null,
-        it ? it.cantidad : null,
-        it ? pesos(it.pu) : null,
+        p ? x.folio : null,
+        p ? soloFecha(x.fecha) : null,
+        p ? neHora(x) : null,
+        p ? x.cliente : null,
+        it ? it.texto : '(sin artículos)',
+        it ? it.siniestro : null,
+        it && it.cantidad != null ? it.cantidad : null,
+        it && it.pu != null ? pesos(it.pu) : null,
         it ? pesos(it.importe) : null
       ];
       vals.forEach(function(v, ci) {
@@ -8943,16 +9035,20 @@ function neLibroExcel(ExcelJS, f, r) {
       row.height = Math.max(18, renglones * 12.5 + 5);
     });
     var tenue = { size: 9, color: { argb: GRIS } };
-    if (m.iva) {
-      lineaResumen('', 'Subtotal', m.subtotal, fondo, tenue);
-      lineaResumen('', 'IVA (16%)', m.iva, fondo, tenue);
+    if (x.iva || x.ajuste) {
+      lineaResumen('', 'Subtotal', pesos(x.subtotal), fondo, tenue);
+      if (x.iva) lineaResumen('', x.tipo === 'NE' ? 'IVA (16%)' : 'IVA', pesos(x.iva), fondo, tenue);
+      if (x.ajuste) lineaResumen('', 'Ajuste', -pesos(x.ajuste), fondo, tenue);
     }
-    lineaResumen(n.vendedor ? 'Vendedor: ' + n.vendedor : '', 'Total ' + (n.notaId || 'nota'), m.total, SUB, { bold: true, size: 10, color: { argb: NAVY } });
+    lineaResumen(x.vendedor ? 'Vendedor: ' + x.vendedor : '', 'Total ' + x.folio, pesos(x.total), SUB, { bold: true, size: 10, color: { argb: NAVY } });
   });
 
   fila++;
   ws.getRow(fila).height = 8;
-  [['SUBTOTAL', r.subtotal, SUB, NAVY], ['IVA (16%)', r.iva, SUB, NAVY], ['TOTAL GENERAL', r.total, VERDE, BLANCO]].forEach(function(g) {
+  var gran = [['SUBTOTAL', pesos(r.subtotal), SUB, NAVY], [r.ventas ? 'IVA' : 'IVA (16%)', pesos(r.iva), SUB, NAVY]];
+  if (r.ajuste) gran.push(['AJUSTES', -pesos(r.ajuste), SUB, NAVY]);
+  gran.push(['TOTAL GENERAL', pesos(r.total), VERDE, BLANCO]);
+  gran.forEach(function(g) {
     fila++;
     ws.mergeCells(fila, 1, fila, 9);
     var row = ws.getRow(fila);
@@ -8963,7 +9059,7 @@ function neLibroExcel(ExcelJS, f, r) {
     a.value = g[0];
     a.font = fuente;
     a.alignment = { vertical: 'middle', horizontal: 'right', indent: 1 };
-    c.value = pesos(g[1]);
+    c.value = g[1];
     c.numFmt = MONEY;
     c.font = fuente;
     c.alignment = { vertical: 'middle', horizontal: 'right' };
@@ -8971,32 +9067,32 @@ function neLibroExcel(ExcelJS, f, r) {
 
   // ════ HOJA 2 — RESUMEN POR NOTA ════
   var rs = wb.addWorksheet('Resumen por nota', hoja);
-  var ANCHOS2 = [5, 10, 12, 8, 28, 20, 10, 9, 14, 13, 15];
-  var ALINEAR2 = ['center', 'left', 'center', 'center', 'left', 'left', 'center', 'center', 'right', 'right', 'right'];
+  var ANCHOS2 = [5, 10, 12, 8, 28, 20, 10, 9, 14, 13, 12, 15];
+  var ALINEAR2 = ['center', 'left', 'center', 'center', 'left', 'left', 'center', 'center', 'right', 'right', 'right', 'right'];
   ANCHOS2.forEach(function(w, i) { rs.getColumn(i + 1).width = w; });
-  encabezados(rs, 1, ['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Vendedor', 'Artículos', 'Piezas', 'Subtotal', 'IVA', 'Total'], ALINEAR2);
+  encabezados(rs, 1, ['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Vendedor', 'Artículos', 'Piezas', 'Subtotal', 'IVA', 'Ajuste', 'Total'], ALINEAR2);
   rs.views = [{ state: 'frozen', ySplit: 1, showGridLines: false }];
   r.filas.forEach(function(x, i) {
-    var n = x.n, m = x.m;
     var row = rs.getRow(i + 2);
     row.height = 18;
-    [i + 1, n.notaId || '', soloFecha(neFecha(n)), neHora(n), n.cliente || '', n.vendedor || '', m.items.length, neCantidad(m.piezas),
-      pesos(m.subtotal), pesos(m.iva), pesos(m.total)].forEach(function(v, ci) {
+    [i + 1, x.folio, soloFecha(x.fecha), neHora(x), x.cliente, x.vendedor, x.items.length, x.tipo === 'NE' ? neCantidad(neSuma(x.items, 'cantidad')) : null,
+      pesos(x.subtotal), pesos(x.iva), x.ajuste ? -pesos(x.ajuste) : null, pesos(x.total)].forEach(function(v, ci) {
       var c = row.getCell(ci + 1);
       if (v !== null) c.value = v;
-      c.font = { size: 9, color: { argb: TINTA }, bold: ci === 1 || ci === 10 };
+      c.font = { size: 9, color: { argb: TINTA }, bold: ci === 1 || ci === 11 };
       c.fill = relleno(i % 2 === 0 ? BLANCO : ZEBRA);
       c.border = bordes;
       c.alignment = { vertical: 'middle', wrapText: true, horizontal: ALINEAR2[ci] };
     });
     row.getCell(3).numFmt = 'dd/mm/yyyy';
-    [9, 10, 11].forEach(function(ci) { row.getCell(ci).numFmt = MONEY; });
+    [9, 10, 11, 12].forEach(function(ci) { row.getCell(ci).numFmt = MONEY; });
   });
   var filaTot = r.filas.length + 2;
   rs.mergeCells(filaTot, 1, filaTot, 6);
   var tr = rs.getRow(filaTot);
   tr.height = 22;
-  [['TOTAL', 1, null], [r.articulos, 7, null], [neCantidad(r.piezas), 8, null], [pesos(r.subtotal), 9, MONEY], [pesos(r.iva), 10, MONEY], [pesos(r.total), 11, MONEY]].forEach(function(t) {
+  [['TOTAL', 1, null], [r.articulos, 7, null], [r.entregas ? neCantidad(r.piezas) : null, 8, null], [pesos(r.subtotal), 9, MONEY], [pesos(r.iva), 10, MONEY],
+    [r.ajuste ? -pesos(r.ajuste) : null, 11, MONEY], [pesos(r.total), 12, MONEY]].forEach(function(t) {
     var c = tr.getCell(t[1]);
     c.value = t[0];
     if (t[2]) c.numFmt = t[2];
@@ -9012,31 +9108,35 @@ function neLibroExcel(ExcelJS, f, r) {
 function neLibroBasico(r) {
   var p = function(c) { return c / 100; };
   var det = [['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Artículo', 'Siniestro', 'Cant.', 'P. Unit.', 'Importe']];
-  var res = [['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Vendedor', 'Artículos', 'Piezas', 'Subtotal', 'IVA', 'Total']];
+  var res = [['#', 'Nota', 'Fecha', 'Hora', 'Cliente', 'Vendedor', 'Artículos', 'Piezas', 'Subtotal', 'IVA', 'Ajuste', 'Total']];
+  var resumen = function(etiqueta, valor) { det.push(['', '', '', '', '', '', '', '', etiqueta, valor]); };
   r.filas.forEach(function(x, i) {
-    var n = x.n, m = x.m;
-    (m.items.length ? m.items : [null]).forEach(function(it, j) {
-      var cab = j === 0 ? [i + 1, n.notaId || '', neFmtFecha(neFecha(n)), neHora(n), n.cliente || ''] : ['', '', '', '', ''];
-      det.push(cab.concat(it ? [neArticuloTxt(it), it.siniestro || '', it.cantidad, p(it.pu), p(it.importe)] : ['(sin artículos)', '', '', '', '']));
+    (x.items.length ? x.items : [null]).forEach(function(it, j) {
+      var cab = j === 0 ? [i + 1, x.folio, neFmtFecha(x.fecha), neHora(x), x.cliente] : ['', '', '', '', ''];
+      det.push(cab.concat(it ? [it.texto, it.siniestro, it.cantidad != null ? it.cantidad : '', it.pu != null ? p(it.pu) : '', p(it.importe)] : ['(sin artículos)', '', '', '', '']));
     });
-    if (m.iva) {
-      det.push(['', '', '', '', '', '', '', '', 'Subtotal', p(m.subtotal)]);
-      det.push(['', '', '', '', '', '', '', '', 'IVA (16%)', p(m.iva)]);
+    if (x.iva || x.ajuste) {
+      resumen('Subtotal', p(x.subtotal));
+      if (x.iva) resumen(x.tipo === 'NE' ? 'IVA (16%)' : 'IVA', p(x.iva));
+      if (x.ajuste) resumen('Ajuste', -p(x.ajuste));
     }
-    det.push(['', '', '', '', '', n.vendedor ? 'Vendedor: ' + n.vendedor : '', '', '', 'Total ' + (n.notaId || 'nota'), p(m.total)]);
-    res.push([i + 1, n.notaId || '', neFmtFecha(neFecha(n)), neHora(n), n.cliente || '', n.vendedor || '', m.items.length, neCantidad(m.piezas), p(m.subtotal), p(m.iva), p(m.total)]);
+    det.push(['', '', '', '', '', x.vendedor ? 'Vendedor: ' + x.vendedor : '', '', '', 'Total ' + x.folio, p(x.total)]);
+    res.push([i + 1, x.folio, neFmtFecha(x.fecha), neHora(x), x.cliente, x.vendedor, x.items.length, x.tipo === 'NE' ? neCantidad(neSuma(x.items, 'cantidad')) : '',
+      p(x.subtotal), p(x.iva), x.ajuste ? -p(x.ajuste) : '', p(x.total)]);
   });
   det.push([]);
-  det.push(['', '', '', '', '', '', '', '', 'SUBTOTAL', p(r.subtotal)]);
-  det.push(['', '', '', '', '', '', '', '', 'IVA (16%)', p(r.iva)]);
-  det.push(['', '', '', '', '', '', '', '', 'TOTAL GENERAL', p(r.total)]);
-  res.push(['TOTAL', '', '', '', '', '', r.articulos, neCantidad(r.piezas), p(r.subtotal), p(r.iva), p(r.total)]);
+  resumen('SUBTOTAL', p(r.subtotal));
+  resumen(r.ventas ? 'IVA' : 'IVA (16%)', p(r.iva));
+  if (r.ajuste) resumen('AJUSTES', -p(r.ajuste));
+  resumen('TOTAL GENERAL', p(r.total));
+  if (r.duplicados.length) det.push(['', neAvisoDuplicados(r)]);
+  res.push(['TOTAL', '', '', '', '', '', r.articulos, r.entregas ? neCantidad(r.piezas) : '', p(r.subtotal), p(r.iva), r.ajuste ? -p(r.ajuste) : '', p(r.total)]);
   var wb = XLSX.utils.book_new();
   var ws1 = XLSX.utils.aoa_to_sheet(det);
   ws1['!cols'] = [5, 10, 12, 8, 26, 46, 16, 8, 14, 15].map(function(w) { return { wch: w }; });
   XLSX.utils.book_append_sheet(wb, ws1, 'Notas Detalle');
   var ws2 = XLSX.utils.aoa_to_sheet(res);
-  ws2['!cols'] = [5, 10, 12, 8, 28, 20, 10, 9, 14, 13, 15].map(function(w) { return { wch: w }; });
+  ws2['!cols'] = [5, 10, 12, 8, 28, 20, 10, 9, 14, 13, 12, 15].map(function(w) { return { wch: w }; });
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumen por nota');
   return new Blob([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
@@ -9092,23 +9192,24 @@ window.descargarHistorialNEPDF = function() {
   color('setTextColor', BLANCO);
   doc.setFont(undefined, 'bold');
   doc.setFontSize(15);
-  doc.text('HISTORIAL DE NOTAS DE ENTREGA', xt, 12);
+  doc.text(neTitulo(f).toUpperCase(), xt, 12);
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
   doc.text(neDescribirFiltros(f), xt, 19);
   doc.setFontSize(8);
   doc.text('Notas del ' + neFmtFecha(r.desde) + ' al ' + neFmtFecha(r.hasta), xt, 25);
   doc.text('Generado: ' + neFmtFecha(ahora) + ' ' + String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0'), pageW - mg, 12, { align: 'right' });
-  doc.text(r.filas.length + (r.filas.length === 1 ? ' nota' : ' notas'), pageW - mg, 19, { align: 'right' });
+  doc.text(neConteoTxt(r), pageW - mg, 19, { align: 'right' });
 
-  // ── Tarjetas: solo sumas de lo registrado ──
+  // ── Tarjetas: solo sumas de lo registrado (las notas de venta no guardan cantidad: ahí se cuentan artículos) ──
   var kpis = [
     { label: 'NOTAS', valor: String(r.filas.length), color: [99, 102, 241] },
-    { label: 'PIEZAS VENDIDAS', valor: neCantidadTxt(r.piezas), color: TEAL2 },
+    r.ventas ? { label: 'ARTÍCULOS', valor: String(r.articulos), color: TEAL2 } : { label: 'PIEZAS VENDIDAS', valor: neCantidadTxt(r.piezas), color: TEAL2 },
     { label: 'SUBTOTAL', valor: neDinero(r.subtotal), color: TEAL },
-    { label: 'IVA', valor: neDinero(r.iva), color: [245, 158, 11] },
-    { label: 'TOTAL VENDIDO', valor: neDinero(r.total), color: [16, 185, 129] }
+    { label: 'IVA', valor: neDinero(r.iva), color: [245, 158, 11] }
   ];
+  if (r.ajuste) kpis.push({ label: 'AJUSTES', valor: neAjusteTxt(r.ajuste), color: [239, 68, 68] });
+  kpis.push({ label: 'TOTAL VENDIDO', valor: neDinero(r.total), color: [16, 185, 129] });
   var y0 = 36, cardH = 18, gap = 3;
   var cardW = (pageW - mg * 2 - gap * (kpis.length - 1)) / kpis.length;
   kpis.forEach(function(k, i) {
@@ -9136,51 +9237,51 @@ window.descargarHistorialNEPDF = function() {
   var renglones = function(texto, ancho) { return doc.splitTextToSize(String(texto), ancho - 5).length; };
   var body = [], meta = [];
   r.filas.forEach(function(x, i) {
-    var n = x.n, m = x.m;
-    var notaId = n.notaId || '-';
     var fondo = i % 2 === 0 ? BLANCO : FONDO_B;
     var normal = { fillColor: fondo };
-    var items = m.items.length ? m.items : [null];
-    var filasDeLaNota = items.length + (m.iva ? 2 : 0) + 1;
-    var altoNota = (filasDeLaNota - items.length) * 7.5 + items.reduce(function(s, it) {
-      return s + 4 + 3.3 * Math.max(renglones(it ? neArticuloTxt(it) : '-', ANCHOS[5]), renglones(n.cliente || '-', ANCHOS[4]));
+    var items = x.items.length ? x.items : [null];
+    var extras = (x.iva || x.ajuste) ? 1 + (x.iva ? 1 : 0) + (x.ajuste ? 1 : 0) : 0;
+    var filasDeLaNota = items.length + extras + 1;
+    var altoNota = (extras + 1) * 7.5 + items.reduce(function(s, it) {
+      return s + 4 + 3.3 * Math.max(renglones(it ? it.texto : '-', ANCHOS[5]), renglones(x.cliente || '-', ANCHOS[4]));
     }, 0);
     // El # abarca todas las filas de la nota para que autoTable no la parta entre páginas (si cabe en una)
     var juntar = altoNota <= altoUtil;
     items.forEach(function(it, j) {
       var p = j === 0;
       var fila = [
-        { content: p ? notaId : '', styles: { fillColor: fondo, fontStyle: 'bold', textColor: AZUL } },
-        { content: p ? neFmtFecha(neFecha(n)) : '', styles: normal },
-        { content: p ? neHora(n) : '', styles: normal },
-        { content: p ? (n.cliente || '-') : '', styles: normal },
-        { content: it ? neArticuloTxt(it) : '(sin artículos)', styles: normal },
+        { content: p ? x.folio : '', styles: { fillColor: fondo, fontStyle: 'bold', textColor: AZUL } },
+        { content: p ? neFmtFecha(x.fecha) : '', styles: normal },
+        { content: p ? neHora(x) : '', styles: normal },
+        { content: p ? (x.cliente || '-') : '', styles: normal },
+        { content: it ? it.texto : '(sin artículos)', styles: normal },
         { content: it ? (it.siniestro || '-') : '', styles: normal },
-        { content: it ? neCantidadTxt(it.cantidad) : '', styles: normal },
-        { content: it ? neDinero(it.pu) : '', styles: normal },
+        { content: it ? (it.cantidad != null ? neCantidadTxt(it.cantidad) : '-') : '', styles: normal },
+        { content: it ? (it.pu != null ? neDinero(it.pu) : '-') : '', styles: normal },
         { content: it ? neDinero(it.importe) : '', styles: normal }
       ];
       if (p) fila.unshift({ content: String(i + 1), rowSpan: juntar ? filasDeLaNota : 1, styles: normal });
       else if (!juntar) fila.unshift({ content: '', styles: normal });
       body.push(fila);
-      meta.push({ tipo: 'item', primera: p, notaId: notaId });
+      meta.push({ tipo: 'item', primera: p, notaId: x.folio });
     });
-    var linea = function(tipo, izq, etiqueta, centavos, estilo, estiloIzq) {
+    var linea = function(tipo, izq, etiqueta, monto, estilo, estiloIzq) {
       var fila = [
         { content: izq, colSpan: 5, styles: Object.assign({ halign: 'left' }, estiloIzq) },
         { content: etiqueta, colSpan: 3, styles: Object.assign({ halign: 'right' }, estilo) },
-        { content: neDinero(centavos), styles: Object.assign({ halign: 'right' }, estilo) }
+        { content: monto, styles: Object.assign({ halign: 'right' }, estilo) }
       ];
       if (!juntar) fila.unshift({ content: '', styles: normal });
       body.push(fila);
-      meta.push({ tipo: tipo, primera: false, notaId: notaId });
+      meta.push({ tipo: tipo, primera: false, notaId: x.folio });
     };
     var tenue = { fillColor: fondo, textColor: GRIS };
-    if (m.iva) {
-      linea('sub', '', 'Subtotal', m.subtotal, tenue, tenue);
-      linea('iva', '', 'IVA (16%)', m.iva, tenue, tenue);
+    if (extras) {
+      linea('sub', '', 'Subtotal', neDinero(x.subtotal), tenue, tenue);
+      if (x.iva) linea('iva', '', x.tipo === 'NE' ? 'IVA (16%)' : 'IVA', neDinero(x.iva), tenue, tenue);
+      if (x.ajuste) linea('ajuste', '', 'Ajuste', neAjusteTxt(x.ajuste), tenue, tenue);
     }
-    linea('total', n.vendedor ? 'Vendedor: ' + n.vendedor : '', 'Total ' + notaId, m.total,
+    linea('total', x.vendedor ? 'Vendedor: ' + x.vendedor : '', 'Total ' + x.folio, neDinero(x.total),
       { fillColor: FONDO_TOTAL, textColor: AZUL, fontStyle: 'bold' }, { fillColor: FONDO_TOTAL, textColor: GRIS });
   });
 
@@ -9222,37 +9323,52 @@ window.descargarHistorialNEPDF = function() {
   });
 
   // ── Totales generales ──
+  var lineasCaja = [['Subtotal', neDinero(r.subtotal)], [r.ventas ? 'IVA' : 'IVA (16%)', neDinero(r.iva)]];
+  if (r.ajuste) lineasCaja.push(['Ajustes', neAjusteTxt(r.ajuste)]);
+  var notas = ['Cant., P. Unit., Subtotal, IVA y Total son los capturados en cada nota. Importe = Cant. × P. Unit.'];
+  if (r.ventas) notas.push('En las notas de venta (NV) el importe es el precio capturado en cada partida; ahí no se guarda cantidad.');
+  if (f.tipo !== 'NE') notas.push('No incluye notas de venta canceladas ni las creadas desde una nota de entrega (esas ya aparecen como NE).');
+  notas.push('Total general = suma de los totales de las ' + r.filas.length + ' notas.');
+  var boxW = 92, bandaY = 7 + lineasCaja.length * 7, boxH = bandaY + 10, boxX = pageW - mg - boxW;
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(7.5);
+  var anchoNotas = boxX - mg - 8;
+  var textoNotas = doc.splitTextToSize(notas, anchoNotas);
+  doc.setFont(undefined, 'bold');
+  var textoAviso = r.duplicados.length ? doc.splitTextToSize('Revisar: ' + neAvisoDuplicados(r), anchoNotas) : [];
+  doc.setFont(undefined, 'normal');
+  var altoNotas = 8 + (textoNotas.length + textoAviso.length) * 3.3 + 2;
   var y = doc.lastAutoTable.finalY + 6;
-  var boxW = 92, boxH = 31, boxX = pageW - mg - boxW;
-  if (y + boxH > pageH - 16) { doc.addPage(); y = 14; }
+  if (y + Math.max(boxH, altoNotas) > pageH - 16) { doc.addPage(); y = 14; }
   doc.setFillColor(210, 215, 220);
   doc.roundedRect(boxX + 1, y + 1, boxW, boxH, 2, 2, 'F');
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(220, 225, 235);
   doc.setLineWidth(0.3);
   doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'FD');
-  doc.setFont(undefined, 'normal');
   doc.setFontSize(8.5);
-  [['Subtotal', r.subtotal, 8], ['IVA (16%)', r.iva, 15]].forEach(function(l) {
+  lineasCaja.forEach(function(l, k) {
     color('setTextColor', GRIS);
-    doc.text(l[0], boxX + 5, y + l[2]);
+    doc.text(l[0], boxX + 5, y + 8 + k * 7);
     color('setTextColor', TINTA);
-    doc.text(neDinero(l[1]), boxX + boxW - 5, y + l[2], { align: 'right' });
+    doc.text(l[1], boxX + boxW - 5, y + 8 + k * 7, { align: 'right' });
   });
   color('setFillColor', AZUL);
-  doc.rect(boxX, y + 21, boxW, 10, 'F');
+  doc.rect(boxX, y + bandaY, boxW, 10, 'F');
   color('setTextColor', BLANCO);
   doc.setFont(undefined, 'bold');
   doc.setFontSize(10.5);
-  doc.text('TOTAL GENERAL', boxX + 5, y + 27.5);
-  doc.text(neDinero(r.total), boxX + boxW - 5, y + 27.5, { align: 'right' });
+  doc.text('TOTAL GENERAL', boxX + 5, y + bandaY + 6.5);
+  doc.text(neDinero(r.total), boxX + boxW - 5, y + bandaY + 6.5, { align: 'right' });
   color('setTextColor', GRIS);
   doc.setFont(undefined, 'normal');
   doc.setFontSize(7.5);
-  doc.text([
-    'Cant., P. Unit., Subtotal, IVA y Total son los capturados en cada nota.',
-    'Importe = Cant. × P. Unit.     Total general = suma de los totales de las ' + r.filas.length + ' notas.'
-  ], mg, y + 8);
+  doc.text(textoNotas, mg, y + 8);
+  if (textoAviso.length) {
+    doc.setTextColor(180, 83, 9);
+    doc.setFont(undefined, 'bold');
+    doc.text(textoAviso, mg, y + 8 + textoNotas.length * 3.3 + 2);
+  }
 
   // ── Pie de página: se escribe al final para saber cuántas páginas hay ──
   var paginas = doc.internal.getNumberOfPages();
@@ -9264,7 +9380,7 @@ window.descargarHistorialNEPDF = function() {
     color('setTextColor', GRIS);
     doc.setFont(undefined, 'normal');
     doc.setFontSize(7);
-    doc.text('Maya Autopartes  •  Historial de notas de entrega  •  ' + neDescribirFiltros(f), mg, pageH - 6);
+    doc.text('Maya Autopartes  •  ' + neTitulo(f) + '  •  ' + neDescribirFiltros(f), mg, pageH - 6);
     doc.text('Página ' + pg + ' de ' + paginas, pageW - mg, pageH - 6, { align: 'right' });
   }
 
