@@ -184,6 +184,7 @@ function resumen(lista) {
 
 function notaJSON(x, conArticulos) {
   const o = {
+    id: x.id,
     folio: x.folio,
     tipo: x.tipo === 'NE' ? 'nota de entrega' : 'nota de venta',
     fecha: fechaISO(x.fecha),
@@ -261,6 +262,7 @@ async function clientes(texto, limite) {
     .filter(c => !q || norm([c.razonSocial, c.nombre, c.rfc, c.codigoCliente, c.codigo, c.email, c.telefono].join(' ')).includes(q))
     .slice(0, limite)
     .map(c => ({
+      id: c.id,
       codigo: c.codigoCliente || c.codigo || null,
       nombre: c.razonSocial || c.nombre || '',
       rfc: c.rfc || null,
@@ -280,6 +282,7 @@ async function productos(texto, soloBajoStock, limite) {
       const stock = Number(p.stock) || 0;
       const minimo = Number(p.stockMin) || 0;
       return {
+        id: p.id,
         codigo: p.codigo || null,
         descripcion: p.descripcion || '',
         marca: p.marca || null,
@@ -296,7 +299,75 @@ async function productos(texto, soloBajoStock, limite) {
     .slice(0, limite);
 }
 
+// Todas las ventas tal cual (también canceladas y las creadas desde una NE), con su estatus y factura
+async function ventas(f, limite) {
+  const q = norm(f.texto);
+  const desde = f.desde ? diaLocal(f.desde, false) : null;
+  const hasta = f.hasta ? diaLocal(f.hasta, true) : null;
+  const lista = (await fb().leerColeccion('ventas'))
+    .map(v => ({ v, x: desdeVenta(v) }))
+    .filter(({ v, x }) => {
+      if (f.estatus && norm(v.estatus || 'Pendiente') !== norm(f.estatus)) return false;
+      if (f.con_factura != null && !!v.tieneFactura !== f.con_factura) return false;
+      if (q && !norm([x.folio, v.notaNumero, v.notaEntregaId, x.cliente, x.vendedor, x.siniestro].concat(x.items.map(i => i.texto)).join(' ')).includes(q)) return false;
+      if ((desde || hasta) && !x.fecha) return false;
+      if (desde && x.fecha < desde) return false;
+      if (hasta && x.fecha > hasta) return false;
+      return true;
+    })
+    .sort((a, b) => comparar(a.x, b.x));
+  const vigentes = lista.filter(({ v }) => !/^cancel/.test(norm(v.estatus)));
+  return {
+    encontradas: lista.length,
+    total_sin_canceladas: pesos(vigentes.reduce((s, e) => s + e.x.total, 0)),
+    mostrando: Math.min(limite, lista.length),
+    ventas: lista.slice(0, limite).map(({ v, x }) => Object.assign(notaJSON(x, f.incluir_articulos), {
+      estatus: v.estatus || 'Pendiente',
+      folio_en_tabla: v.notaNumero || null,
+      factura: {
+        tiene_factura: !!v.tieneFactura,
+        numero: v.facturaNumero || null,
+        archivo: v.facturaURL || null,
+        lleva_factura: v.llevaFactura == null ? null : !!v.llevaFactura,
+        estatus: v.estatusFactura || null
+      },
+      creada_desde_nota_entrega: v.notaEntregaId || null,
+      observaciones: v.observaciones || v.notas || null
+    }))
+  };
+}
+
+// Módulos que se consultan tal cual. Los textos muy largos (fotos en base64, firmas) se recortan.
+const MODULOS = {
+  entregas: 'entregas', envios: 'envios', visitas_talleres: 'visitasTalleres', cotizaciones: 'cotizaciones',
+  proveedores: 'proveedores', prestamos: 'finanzas_prestamos', pagos: 'finanzas_pagos', usuarios: 'usuarios'
+};
+
+function limpiar(valor) {
+  if (valor == null) return valor;
+  if (typeof valor.toDate === 'function') return valor.toDate().toISOString();
+  if (valor instanceof Date) return valor.toISOString();
+  if (typeof valor === 'string') return valor.length > 1500 ? '[omitido: ' + valor.length + ' caracteres]' : valor;
+  if (Array.isArray(valor)) return valor.slice(0, 100).map(limpiar);
+  if (typeof valor === 'object') {
+    const o = {};
+    Object.keys(valor).forEach(k => { o[k] = limpiar(valor[k]); });
+    return o;
+  }
+  return valor;
+}
+
+async function registros(modulo, texto, limite) {
+  const q = norm(texto);
+  const cuando = d => { const f = aFecha(d.createdAt) || aFecha(d.fecha); return f ? f.getTime() : 0; };
+  const lista = (await fb().leerColeccion(MODULOS[modulo]))
+    .map(limpiar)
+    .filter(d => !q || norm(JSON.stringify(d)).includes(q))
+    .sort((a, b) => cuando(b) - cuando(a));
+  return { modulo, encontrados: lista.length, mostrando: Math.min(limite, lista.length), registros: lista.slice(0, limite) };
+}
+
 module.exports = {
-  cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos,
-  armarRegistros, norm
+  cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, ventas, registros,
+  armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };

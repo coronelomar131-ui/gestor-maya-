@@ -158,7 +158,7 @@ function paginaLogin(v, mensaje, nonce) {
 <body><form class="tarjeta" id="f" method="post" action="/oauth/authorize">
   <div class="marca">MAYA AUTOPARTES</div>
   <h1>Conectar con ${esc(v.cliente.nombre)}</h1>
-  <p>${esc(v.cliente.nombre)} podrá <strong>consultar</strong> notas, ventas, clientes e inventario según tu rol. No puede crear, cambiar ni borrar nada.</p>
+  <p>${esc(v.cliente.nombre)} podrá consultar y registrar notas, ventas, clientes, inventario y lo demás de la app con los mismos permisos que tiene tu cuenta. Siempre te pedirá confirmar antes de guardar o borrar.</p>
   ${Object.keys(ocultos).map(k => `<input type="hidden" name="${k}" value="${esc(ocultos[k])}">`).join('\n  ')}
   <label for="correo">Correo de la app</label>
   <input id="correo" type="email" autocomplete="username" required>
@@ -210,12 +210,14 @@ function encabezadosPagina(v, nonce) {
     'X-Frame-Options': 'DENY',
     // Solo el origen: la API key web de Firebase puede estar restringida por dominio y lo revisa en el Referer
     'Referrer-Policy': 'strict-origin',
+    // strict-dynamic: Firebase puede cargar lo que necesite (p. ej. reCAPTCHA) a partir del script con nonce
     'Content-Security-Policy': [
       "default-src 'none'",
-      "script-src 'nonce-" + nonce + "' https://www.gstatic.com",
-      'connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com',
+      "script-src 'nonce-" + nonce + "' 'strict-dynamic' https:",
+      'connect-src https:',
       "style-src 'unsafe-inline'",
-      'frame-src https://' + CONFIG_WEB.authDomain,
+      'img-src https: data:',
+      'frame-src https:',
       "form-action 'self' " + new URL(v.redirectUri).origin,
       "frame-ancestors 'none'",
       "base-uri 'none'"
@@ -258,6 +260,9 @@ async function emitir(req, datos, clientId) {
 
 async function token(req, p) {
   const error = (codigo, descripcion, status) => ({ status: status || 400, cuerpo: { error: codigo, error_description: descripcion } });
+  // Algunos clientes mandan el client_id en Authorization: Basic en lugar del cuerpo
+  const basica = /^Basic\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
+  if (!p.client_id && basica) p = Object.assign({}, p, { client_id: decodeURIComponent(Buffer.from(basica[1], 'base64').toString('utf8').split(':')[0]) });
   if (!leerCliente(p.client_id)) return error('invalid_client', 'Unknown client_id', 401);
   if (!mismoRecurso(req, p.resource)) return error('invalid_target', 'Unknown resource');
 
