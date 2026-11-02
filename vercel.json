@@ -3,9 +3,16 @@
   "functions": {
     "api/ml.js": {
       "maxDuration": 60
+    },
+    "api/mcp.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
+    { "source": "/.well-known/oauth-protected-resource/:resto*", "destination": "/api/mcp?ruta=recurso" },
+    { "source": "/.well-known/oauth-authorization-server/:resto*", "destination": "/api/mcp?ruta=servidor" },
+    { "source": "/.well-known/openid-configuration/:resto*", "destination": "/api/mcp?ruta=servidor" },
+    { "source": "/oauth/:accion", "destination": "/api/mcp?ruta=:accion" },
     { "source": "/callback", "destination": "/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
