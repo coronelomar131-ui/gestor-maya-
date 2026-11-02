@@ -51,10 +51,13 @@ location.reload();
 
 ---
 
-## 📝 Credenciales (guárdalo seguro)
+## 📝 Credenciales
 
-**App ID:** `6541042286481524`
-**Secret:** `0YCTfgEqnDE8tvQqpKDdq2i0A9tUrXwr`
+No guardes credenciales reales en este archivo: el repositorio es público.
+Los valores reales están en Vercel → Settings → Environment Variables (`ML_APP_ID` y `ML_SECRET_KEY`).
+
+**App ID:** `tu-app-id`
+**Secret:** `tu-secret-de-mercado-libre`
 **Redirect URI:** `https://gestor-maya.vercel.app`
 
 ---
