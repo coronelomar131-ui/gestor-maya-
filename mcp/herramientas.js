@@ -1,15 +1,30 @@
-// Herramientas MCP (solo lectura). Cada rol ve solo las de los módulos que puede abrir en la app.
+// Herramientas MCP. Cada rol ve solo las de los módulos que puede abrir en la app; admin ve todas.
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { z } = require('zod');
 const datos = require('./datos');
+const escritura = require('./escritura');
 
+// Los mismos roles por módulo que showModule() en public/index.html; borrar es solo de admin
 const PERMISOS = {
   notas: ['admin', 'vendedor', 'almacen'],
+  ventas: ['admin', 'vendedor'],
   clientes: ['admin', 'vendedor'],
-  productos: ['admin', 'almacen']
+  inventario: ['admin', 'almacen'],
+  entregas: ['admin', 'vendedor', 'almacen'],
+  envios: ['admin', 'vendedor', 'almacen'],
+  visitas_talleres: ['admin', 'vendedor', 'almacen'],
+  cotizaciones: ['admin', 'vendedor'],
+  proveedores: ['admin', 'almacen'],
+  pagos: ['admin', 'vendedor', 'almacen'],
+  prestamos: ['admin'],
+  usuarios: ['admin'],
+  borrar: ['admin']
 };
 
-const SOLO_LECTURA = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const LECTURA = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const ESCRITURA = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+const BORRADO = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+
 const FECHA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usa el formato AAAA-MM-DD');
 const FILTROS = {
   tipo: z.enum(['todas', 'entrega', 'venta']).default('todas').describe('todas = notas de entrega (NE) y de venta (NV); entrega = solo NE; venta = solo NV'),
@@ -18,27 +33,48 @@ const FILTROS = {
   desde: FECHA.optional().describe('Primer día incluido (AAAA-MM-DD)'),
   hasta: FECHA.optional().describe('Último día incluido (AAAA-MM-DD)')
 };
+const ESTATUS_VENTA = ['Pendiente', 'Conseguir', 'En Proceso', 'Entregado', 'Cancelado'];
+const PARTIDA = z.object({
+  descripcion: z.string().min(1).describe('Pieza o servicio'),
+  precio: z.number().min(0).describe('Precio de la partida completa, sin IVA'),
+  iva_porcentaje: z.number().min(0).max(100).default(16).describe('IVA en % sobre el precio: 16 por omisión como en la app; 0 si no lleva'),
+  ajuste: z.number().min(0).default(0).describe('Descuento en pesos que se resta'),
+  siniestro: z.string().optional()
+});
+const opcional = z.string().optional();
 
 const responder = obj => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
 const filtrosUsados = a => ({ tipo: a.tipo, cliente: a.cliente || null, vendedor: a.vendedor || null, desde: a.desde || null, hasta: a.hasta || null });
 
+// Errores del usuario (no existe, faltan datos) regresan como mensaje para Claude, no como falla del servidor
+const ejecutar = fn => async a => {
+  try {
+    return responder(await fn(a));
+  } catch (e) {
+    if (e instanceof escritura.ErrorUsuario) return { isError: true, content: [{ type: 'text', text: e.message }] };
+    throw e;
+  }
+};
+
 function instrucciones(usuario) {
-  const hoy = new Date();
-  const fecha = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+  const hoy = datos.fechaISO(new Date());
   return [
-    'Datos de Maya Autopartes (refaccionaria en la Ciudad de México). Conectado como ' + usuario.nombre + ' (rol: ' + usuario.rol + '). Hoy es ' + fecha + '.',
+    'Datos de Maya Autopartes (refaccionaria en la Ciudad de México). Conectado como ' + usuario.nombre + ' (rol: ' + usuario.rol + '). Hoy es ' + hoy + '.',
     'Montos en pesos mexicanos (MXN). Fechas AAAA-MM-DD en hora de la Ciudad de México.',
     'Hay dos tipos de nota: nota de entrega (folio NE-123) y nota de venta (folio NV #123). Salvo que se pida un tipo, el historial y el resumen incluyen ambas; no incluyen notas de venta canceladas ni las que se crean solas al guardar una nota de entrega (esa venta ya aparece como su NE).',
     'En cada nota: total = subtotal + iva - ajuste. Los totales del resumen son la suma exacta de las notas. Usa solo montos que vengan de las herramientas; no estimes ni inventes cifras.',
     'En las notas de venta no se guarda cantidad: cantidad y precio_unitario vienen en null y el importe es el precio capturado de la partida.',
-    'Si resumen.posibles_duplicados no está vacío, avísale al usuario: podría ser la misma venta capturada como nota de venta y como nota de entrega, y el total la estaría sumando dos veces.'
+    'Si resumen.posibles_duplicados no está vacío, avísale al usuario: podría ser la misma venta capturada como nota de venta y como nota de entrega, y el total la estaría sumando dos veces.',
+    'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos.',
+    'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
 }
 
 function crearServidor(usuario) {
   const puede = modulo => PERMISOS[modulo].includes(usuario.rol);
-  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '1.0.0' }, { instructions: instrucciones(usuario) });
+  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.0.0' }, { instructions: instrucciones(usuario) });
 
+  // ── Consultas ──
   if (puede('notas')) {
     servidor.registerTool('historial_notas', {
       title: 'Historial de notas',
@@ -48,27 +84,27 @@ function crearServidor(usuario) {
         incluir_articulos: z.boolean().default(true).describe('Incluir el detalle de artículos de cada nota'),
         limite: z.number().int().min(1).max(200).default(50).describe('Máximo de notas a mostrar')
       }),
-      annotations: SOLO_LECTURA
-    }, async a => {
+      annotations: LECTURA
+    }, ejecutar(async a => {
       const lista = datos.filtrar(await datos.cargarRegistros(), a);
-      return responder({
+      return {
         filtros: filtrosUsados(a),
         resumen: datos.resumen(lista),
         mostrando: Math.min(a.limite, lista.length),
         notas: lista.slice(0, a.limite).map(x => datos.notaJSON(x, a.incluir_articulos))
-      });
-    });
+      };
+    }));
 
     servidor.registerTool('ver_nota', {
       title: 'Ver una nota',
       description: 'Detalle completo de una nota por su folio, por ejemplo "NE-203", "NV #350" o solo "203".',
       inputSchema: { folio: z.string().min(1).describe('Folio o número de la nota') },
-      annotations: SOLO_LECTURA
-    }, async ({ folio }) => {
+      annotations: LECTURA
+    }, ejecutar(async ({ folio }) => {
       const encontradas = datos.buscarFolio(await datos.cargarRegistros(), folio);
-      if (!encontradas.length) return responder({ encontrada: false, mensaje: 'No hay ninguna nota con el folio ' + folio });
-      return responder({ encontradas: encontradas.length, notas: encontradas.slice(0, 5).map(x => datos.notaJSON(x, true)) });
-    });
+      if (!encontradas.length) return { encontrada: false, mensaje: 'No hay ninguna nota con el folio ' + folio };
+      return { encontradas: encontradas.length, notas: encontradas.slice(0, 5).map(x => datos.notaJSON(x, true)) };
+    }));
 
     servidor.registerTool('resumen_ventas', {
       title: 'Resumen de ventas',
@@ -78,18 +114,30 @@ function crearServidor(usuario) {
         agrupar_por: z.enum(['cliente', 'vendedor', 'dia', 'mes', 'articulo']).default('cliente'),
         limite: z.number().int().min(1).max(400).default(50).describe('Máximo de grupos a mostrar')
       }),
-      annotations: SOLO_LECTURA
-    }, async a => {
+      annotations: LECTURA
+    }, ejecutar(async a => {
       const lista = datos.filtrar(await datos.cargarRegistros(), a);
       const grupos = datos.agrupar(lista, a.agrupar_por);
-      return responder({
-        filtros: filtrosUsados(a),
-        resumen: datos.resumen(lista),
-        agrupado_por: a.agrupar_por,
-        total_grupos: grupos.length,
-        grupos: grupos.slice(0, a.limite)
-      });
-    });
+      return { filtros: filtrosUsados(a), resumen: datos.resumen(lista), agrupado_por: a.agrupar_por, total_grupos: grupos.length, grupos: grupos.slice(0, a.limite) };
+    }));
+  }
+
+  if (puede('ventas')) {
+    servidor.registerTool('buscar_ventas', {
+      title: 'Buscar ventas',
+      description: 'Ventas (notas de venta) como están en el módulo Ventas, incluidas las canceladas y las creadas desde una nota de entrega, ' +
+        'con su estatus y datos de factura. Úsala para dar seguimiento, facturación o para cambiar el estatus de una venta.',
+      inputSchema: {
+        texto: z.string().optional().describe('Folio (NV o la NE de la que salió), cliente, vendedor, siniestro o pieza'),
+        estatus: z.enum(ESTATUS_VENTA).optional(),
+        con_factura: z.boolean().optional().describe('true = solo facturadas; false = solo sin factura'),
+        desde: FECHA.optional(),
+        hasta: FECHA.optional(),
+        incluir_articulos: z.boolean().default(false),
+        limite: z.number().int().min(1).max(200).default(30)
+      },
+      annotations: LECTURA
+    }, ejecutar(a => datos.ventas(a, a.limite)));
   }
 
   if (puede('clientes')) {
@@ -100,11 +148,11 @@ function crearServidor(usuario) {
         texto: z.string().optional().describe('Texto a buscar; vacío lista todos'),
         limite: z.number().int().min(1).max(100).default(20)
       },
-      annotations: SOLO_LECTURA
-    }, async ({ texto, limite }) => responder({ clientes: await datos.clientes(texto, limite) }));
+      annotations: LECTURA
+    }, ejecutar(async ({ texto, limite }) => ({ clientes: await datos.clientes(texto, limite) })));
   }
 
-  if (puede('productos')) {
+  if (puede('inventario')) {
     servidor.registerTool('buscar_productos', {
       title: 'Buscar en inventario',
       description: 'Productos del inventario con precio y existencias. Busca por código, descripción, marca o compatibilidad; ' +
@@ -114,8 +162,148 @@ function crearServidor(usuario) {
         solo_bajo_stock: z.boolean().default(false),
         limite: z.number().int().min(1).max(200).default(50)
       },
-      annotations: SOLO_LECTURA
-    }, async ({ texto, solo_bajo_stock, limite }) => responder({ productos: await datos.productos(texto, solo_bajo_stock, limite) }));
+      annotations: LECTURA
+    }, ejecutar(async ({ texto, solo_bajo_stock, limite }) => ({ productos: await datos.productos(texto, solo_bajo_stock, limite) })));
+  }
+
+  const modulos = Object.keys(datos.MODULOS).filter(puede);
+  if (modulos.length) {
+    servidor.registerTool('buscar_registros', {
+      title: 'Consultar otros módulos',
+      description: 'Registros de ' + modulos.join(', ') + ' tal como están guardados (del más reciente al más antiguo). ' +
+        'Entregas usa estatus pending (pendiente), delivered (entregado) y cancelled (cancelado).',
+      inputSchema: {
+        modulo: z.enum(modulos),
+        texto: z.string().optional().describe('Texto a buscar en cualquier campo'),
+        limite: z.number().int().min(1).max(200).default(30)
+      },
+      annotations: LECTURA
+    }, ejecutar(({ modulo, texto, limite }) => datos.registros(modulo, texto, limite)));
+  }
+
+  // ── Altas y cambios ──
+  if (puede('notas')) {
+    servidor.registerTool('crear_nota_entrega', {
+      title: 'Crear nota de entrega',
+      description: 'Crea una nota de entrega (folio NE-consecutivo) igual que el botón "Guardar" de la app; por omisión también registra la venta, ' +
+        'como la casilla "Registrar también como venta". Confirma con el usuario cliente, artículos, cantidades, precios e IVA antes de usarla.',
+      inputSchema: {
+        cliente: z.string().min(1).describe('Si coincide con un cliente registrado se usa su nombre exacto'),
+        fecha: FECHA.optional().describe('Por omisión hoy'),
+        vendedor: opcional,
+        con_iva: z.boolean().default(false).describe('Suma 16% de IVA al subtotal (casilla "Incluye IVA 16%")'),
+        registrar_venta: z.boolean().default(true).describe('false si esa venta ya se capturó en Ventas'),
+        articulos: z.array(z.object({
+          descripcion: z.string().min(1),
+          cantidad: z.number().positive().default(1),
+          precio_unitario: z.number().min(0).describe('Precio por pieza, sin IVA'),
+          siniestro: opcional,
+          anio: z.string().optional().describe('Año del auto')
+        })).min(1)
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.crearNotaEntrega(usuario, a)));
+  }
+
+  if (puede('ventas')) {
+    servidor.registerTool('crear_venta', {
+      title: 'Crear nota de venta',
+      description: 'Registra una venta (nota de venta, folio consecutivo) igual que el módulo Ventas: cada partida con su precio, IVA y ajuste. ' +
+        'Confirma con el usuario antes de usarla.',
+      inputSchema: {
+        cliente: z.string().min(1),
+        fecha: FECHA.optional().describe('Por omisión hoy'),
+        vendedor: z.string().optional().describe('Por omisión el usuario conectado'),
+        estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
+        incluye_datos_fiscales: z.boolean().default(false),
+        partidas: z.array(PARTIDA).min(1)
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.crearVenta(usuario, a)));
+
+    servidor.registerTool('cambiar_estatus_venta', {
+      title: 'Cambiar estatus de venta',
+      description: 'Cambia el estatus de una venta (Pendiente, Conseguir, En Proceso, Entregado, Cancelado). Busca la venta por id o por folio ("NV #350", "350" o "NV-120").',
+      inputSchema: { id: opcional, folio: opcional, estatus: z.enum(ESTATUS_VENTA) },
+      annotations: ESCRITURA
+    }, ejecutar(a => {
+      if (!a.id && !a.folio) throw new escritura.ErrorUsuario('Indica el id o el folio de la venta');
+      return escritura.cambiarEstatusVenta(usuario, a);
+    }));
+  }
+
+  if (puede('clientes')) {
+    servidor.registerTool('guardar_cliente', {
+      title: 'Alta o cambio de cliente',
+      description: 'Sin id da de alta un cliente (código CL consecutivo, como la app; si ya existe uno con ese nombre no lo duplica). ' +
+        'Con id (de buscar_clientes) cambia solo los campos que mandes.',
+      inputSchema: {
+        id: opcional, nombre: z.string().optional().describe('Nombre o razón social; obligatorio para alta'), codigo: opcional, rfc: opcional,
+        email: opcional, telefono: opcional, calle: opcional, numero_exterior: opcional, numero_interior: opcional, colonia: opcional,
+        municipio: opcional, ciudad: opcional, estado: opcional, pais: opcional, codigo_postal: opcional,
+        venta_publica_redes: z.boolean().optional().describe('Cliente de venta pública (redes sociales)')
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.guardarCliente(usuario, a)));
+  }
+
+  if (puede('inventario')) {
+    servidor.registerTool('guardar_producto', {
+      title: 'Alta o cambio de producto',
+      description: 'Da de alta un producto o cambia uno existente (por id, o por código si ya existe). ' +
+        'stock pone las existencias en un número; ajuste_stock suma o resta (ej. -2 al vender dos piezas).',
+      inputSchema: {
+        id: opcional, codigo: opcional, descripcion: opcional, marca: opcional, compatibilidad: opcional,
+        precio: z.number().min(0).optional(), stock: z.number().int().optional(), stock_minimo: z.number().int().min(0).optional(),
+        clase: opcional, ajuste_stock: z.number().int().optional()
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.guardarProducto(usuario, a)));
+  }
+
+  if (puede('entregas')) {
+    servidor.registerTool('guardar_entrega', {
+      title: 'Alta o cambio de entrega',
+      description: 'Sin id registra una entrega a domicilio como el módulo Control de Entregas; con id (de buscar_registros, módulo entregas) cambia su estatus u otros datos.',
+      inputSchema: {
+        id: opcional, cliente: opcional, direccion: opcional, monto: z.number().min(0).optional(),
+        metodo_pago: z.enum(['Efectivo', 'Transferencia', 'Tarjeta', 'Ya pagado']).optional(),
+        estatus: z.enum(['pendiente', 'entregado', 'cancelado']).optional(), notas: opcional
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.guardarEntrega(usuario, a)));
+  }
+
+  if (puede('cotizaciones')) {
+    servidor.registerTool('crear_cotizacion', {
+      title: 'Crear cotización',
+      description: 'Crea una cotización (COT-consecutivo, estatus vigente) igual que el módulo Cotizaciones. Confirma con el usuario antes de usarla.',
+      inputSchema: { cliente: z.string().min(1), fecha: FECHA.optional(), vendedor: opcional, partidas: z.array(PARTIDA).min(1) },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.crearCotizacion(usuario, a)));
+  }
+
+  if (puede('proveedores')) {
+    servidor.registerTool('guardar_proveedor', {
+      title: 'Alta o cambio de proveedor',
+      description: 'Sin id da de alta un proveedor; con id cambia los campos que mandes.',
+      inputSchema: { id: opcional, nombre: opcional, contacto: opcional, telefono: opcional, email: opcional, productos: z.string().optional().describe('Qué surte') },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.guardarProveedor(usuario, a)));
+  }
+
+  if (puede('borrar')) {
+    servidor.registerTool('eliminar_registro', {
+      title: 'Eliminar registro',
+      description: 'Borra un registro de la app (como el botón 🗑). Antes guarda una copia en la colección "papelera" de Firebase. ' +
+        'Úsala solo después de que el usuario confirme explícitamente qué se borra.',
+      inputSchema: {
+        coleccion: z.enum(escritura.BORRABLES),
+        id: z.string().min(1).describe('id del registro (sale en las búsquedas)'),
+        confirmar: z.literal(true).describe('true solo si el usuario ya confirmó el borrado')
+      },
+      annotations: BORRADO
+    }, ejecutar(a => escritura.eliminarRegistro(usuario, a)));
   }
 
   return servidor;

@@ -29,6 +29,19 @@ const real = {
   async guardar(coleccion, id, datos) {
     await app().firestore().collection(coleccion).doc(id).set(datos);
   },
+  async agregar(coleccion, datos) {
+    return (await app().firestore().collection(coleccion).add(datos)).id;
+  },
+  async actualizar(coleccion, id, cambios) {
+    await app().firestore().collection(coleccion).doc(id).update(cambios);
+  },
+  async incrementar(coleccion, id, campo, cantidad) {
+    await app().firestore().collection(coleccion).doc(id).update({ [campo]: admin.firestore.FieldValue.increment(cantidad) });
+  },
+  // Como serverTimestamp() de la app
+  marcaTiempo() {
+    return admin.firestore.FieldValue.serverTimestamp();
+  },
   async borrar(coleccion, id) {
     await app().firestore().collection(coleccion).doc(id).delete();
   },
