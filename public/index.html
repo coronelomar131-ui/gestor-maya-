@@ -899,6 +899,22 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 </head>
 <body>
 <script>
+// Día capturado de una venta o cotización, como Date a mediodía local.
+// Las guardadas antes con new Date('AAAA-MM-DD').getTime() quedaron en medianoche UTC
+// (en México es el día anterior): ese caso se lee con las partes UTC. Lo demás, en hora local.
+function ventaDia(f) {
+  if (f == null || f === '') return null;
+  var m = typeof f === 'string' && /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(f.trim());
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12);
+  var d = typeof f.toDate === 'function' ? f.toDate() : new Date(typeof f === 'string' && /^\d+$/.test(f) ? Number(f) : f);
+  if (isNaN(d.getTime())) return d;
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0) {
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12);
+  }
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+}
+</script>
+<script>
 (function() {
   // Extract URL parameters safely (avoid readonly issues by extracting values immediately)
   const urlParams = new URLSearchParams(window.location.search);
@@ -2798,7 +2814,7 @@ function renderCotizaciones() {
   }
   body.innerHTML = data.cotizaciones.map(c => {
     const piezasCount = c.items ? c.items.length : (c.descripcion ? 1 : 0);
-    const fechaStr = c.fecha ? new Date(c.fecha).toLocaleDateString('es-MX') : '—';
+    const fechaStr = c.fecha ? ventaDia(c.fecha).toLocaleDateString('es-MX') : '—';
     const cJson = encodeURIComponent(JSON.stringify(c));
     return `
     <tr>
@@ -2820,7 +2836,7 @@ function renderCotizaciones() {
   if (notasBody) {
     notasBody.innerHTML = data.cotizaciones.map(c => {
       const siniestros = c.siniestros || (c.items ? c.items.map(i=>i.numSiniestro||'').filter(s=>s).join(' | ') : '');
-      const fechaStr = c.fecha ? new Date(c.fecha).toLocaleDateString('es-MX') : '—';
+      const fechaStr = c.fecha ? ventaDia(c.fecha).toLocaleDateString('es-MX') : '—';
       return `<tr>
         <td><code style="color:#3BBCD4;font-size:12px">COT-${c.notaId || folio('',c.id)}</code></td>
         <td>${c.clienteNombre || c.cliente || '—'}</td>
@@ -3288,7 +3304,7 @@ window.saveVentaMultiLinea = async function() {
 
   const venta = {
     notaId,
-    fecha: new Date(fecha).getTime(),
+    fecha: new Date(fecha + 'T12:00:00').getTime(),
     clienteId,
     clienteNombre,
     vendedor,
@@ -4225,7 +4241,7 @@ window.saveCotizacion = async function() {
 
   const obj = {
     notaId,
-    fecha: new Date(fecha).getTime(),
+    fecha: new Date(fecha + 'T12:00:00').getTime(),
     clienteId,
     clienteNombre,
     vendedor,
@@ -5112,7 +5128,7 @@ window.cargarDocumentos = async function() {
         fact: v.facturaURL || '',
         obs: v.observaciones || '',
         items: v.items || [],
-        fecha: v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX')
+        fecha: v.fecha ? ventaDia(v.fecha).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX')
       };
     });
 
@@ -5385,7 +5401,7 @@ window.abrirDetallesVenta = async function(ventaId) {
     }
 
     const v = ventaSnap.data();
-    const fecha = v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '—';
+    const fecha = v.fecha ? ventaDia(v.fecha).toLocaleDateString('es-MX') : '—';
 
     // Generar HTML de detalles
     let html = `
@@ -6200,7 +6216,7 @@ function updateChartVentasPorMes(ventas) {
     const y = d.getFullYear(), m = d.getMonth();
     const total = (ventas || []).reduce((sum, v) => {
       let fecha;
-      if (v.fecha) fecha = new Date(v.fecha);
+      if (v.fecha) fecha = ventaDia(v.fecha);
       else if (v.createdAt && v.createdAt.toDate) fecha = v.createdAt.toDate();
       else if (v.createdAt) fecha = new Date(v.createdAt);
       else return sum;
@@ -6287,7 +6303,7 @@ window.filtrarVentasVendedor = function() {
   if (vendedor) ventas = ventas.filter(v => (v.vendedor || "") === vendedor);
 
   const parseFecha = v => {
-    if (v.fecha) return new Date(v.fecha);
+    if (v.fecha) return ventaDia(v.fecha) || new Date(0);
     if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
@@ -6404,7 +6420,7 @@ window.exportarVendedorPDF = function() {
   var C_BORDE  = [214, 228, 240];
 
   var parseFecha = function(v) {
-    if (v.fecha) return new Date(v.fecha);
+    if (v.fecha) return ventaDia(v.fecha) || new Date(0);
     if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
@@ -6631,7 +6647,7 @@ function repVendConstruirLibro(ExcelJS, ventas, f) {
   const fmt  = n => parseFloat(n) || 0;
   const fmtP = n => fmt(n).toLocaleString("es-MX", {minimumFractionDigits:2, maximumFractionDigits:2});
   const parseFecha = v => {
-    if (v.fecha) return new Date(v.fecha);
+    if (v.fecha) return ventaDia(v.fecha) || new Date(0);
     if (v.createdAt && v.createdAt.toDate) return v.createdAt.toDate();
     if (v.createdAt) return new Date(v.createdAt);
     return new Date(0);
@@ -6895,7 +6911,7 @@ function repVendExcelBasico(ventas) {
   ventas.forEach(v => {
     const piezas = v.items ? v.items.map(it=>it.pedido||it.descripcion||"").filter(Boolean).join(", ") : (v.descripcion||"");
     const sin    = v.siniestros || (v.items ? v.items.map(it=>it.numSiniestro||"").filter(Boolean).join(" | ") : "") || "";
-    const d = v.fecha ? new Date(v.fecha) : (v.createdAt && v.createdAt.toDate ? v.createdAt.toDate() : new Date(v.createdAt || 0));
+    const d = v.fecha ? ventaDia(v.fecha) : (v.createdAt && v.createdAt.toDate ? v.createdAt.toDate() : new Date(v.createdAt || 0));
     aoa.push([v.vendedor||'Sin asignar', v.notaId||v.notaNumero||'', d.toLocaleDateString('es-MX'), v.clienteNombre||v.cliente||'', piezas, sin, fmt(v.subtotal), fmt(v.ivaTotal), fmt(v.ajusteTotal), fmt(v.total)]);
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -8050,7 +8066,7 @@ window.generarNotaPDF = async function(venta) {
     doc.setFontSize(8); doc.setFont(undefined, 'normal');
     doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg + 38, 27);
     // fecha y numero
-    var fechaStr = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    var fechaStr = venta.fecha ? ventaDia(venta.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: ' + fechaStr, pageW - mg - 44, 18);
@@ -8299,7 +8315,7 @@ window.descargarNota = async function(venta) {
     doc.setFont(undefined, 'normal');
     doc.setTextColor(0, 0, 0);
 
-    const fecha = new Date(venta.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+    const fecha = (ventaDia(venta.fecha) || new Date()).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
     const col2 = W / 2 + 5;
 
     doc.text(`Nota #: ${venta.notaId}`, M, y);
@@ -8510,7 +8526,7 @@ window.generarCotizacionPDFById = function(id) {
     doc.setTextColor(tealCl[0],tealCl[1],tealCl[2]);
     doc.setFontSize(8); doc.setFont(undefined,'normal');
     doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg+38, 27);
-    var fechaStr = cot.fecha ? new Date(cot.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    var fechaStr = cot.fecha ? ventaDia(cot.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: '+fechaStr, pageW-mg-44, 18);
