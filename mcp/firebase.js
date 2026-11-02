@@ -17,51 +17,39 @@ function app() {
   return admin;
 }
 
-// Firestore por REST (HTTP/1.1) y no por gRPC: en Vercel la función se congela entre llamadas y la
-// conexión gRPC puede quedar muerta; la siguiente consulta se cuelga hasta que Vercel corta la función.
-// REST también arranca más rápido. Solo onSnapshot necesita gRPC y el MCP no lo usa.
-let base = null;
-function db() {
-  if (!base) {
-    base = app().firestore();
-    base.settings({ preferRest: true });
-  }
-  return base;
-}
-
 const real = {
   async leerColeccion(nombre) {
-    const snap = await db().collection(nombre).get();
+    const snap = await app().firestore().collection(nombre).get();
     return snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
   },
   async obtener(coleccion, id) {
-    const snap = await db().collection(coleccion).doc(id).get();
+    const snap = await app().firestore().collection(coleccion).doc(id).get();
     return snap.exists ? snap.data() : null;
   },
   async guardar(coleccion, id, datos) {
-    await db().collection(coleccion).doc(id).set(datos);
+    await app().firestore().collection(coleccion).doc(id).set(datos);
   },
   async agregar(coleccion, datos) {
-    return (await db().collection(coleccion).add(datos)).id;
+    return (await app().firestore().collection(coleccion).add(datos)).id;
   },
   async actualizar(coleccion, id, cambios) {
-    await db().collection(coleccion).doc(id).update(cambios);
+    await app().firestore().collection(coleccion).doc(id).update(cambios);
   },
   async incrementar(coleccion, id, campo, cantidad) {
-    await db().collection(coleccion).doc(id).update({ [campo]: admin.firestore.FieldValue.increment(cantidad) });
+    await app().firestore().collection(coleccion).doc(id).update({ [campo]: admin.firestore.FieldValue.increment(cantidad) });
   },
   // Como serverTimestamp() de la app
   marcaTiempo() {
     return admin.firestore.FieldValue.serverTimestamp();
   },
   async borrar(coleccion, id) {
-    await db().collection(coleccion).doc(id).delete();
+    await app().firestore().collection(coleccion).doc(id).delete();
   },
   // Lee y borra en una transacción: los códigos y refresh tokens sirven una sola vez
   async tomar(coleccion, id) {
-    const firestore = db();
-    const ref = firestore.collection(coleccion).doc(id);
-    return firestore.runTransaction(async t => {
+    const db = app().firestore();
+    const ref = db.collection(coleccion).doc(id);
+    return db.runTransaction(async t => {
       const snap = await t.get(ref);
       if (!snap.exists) return null;
       t.delete(ref);
@@ -70,7 +58,7 @@ const real = {
   },
   // Igual que loadUserProfile() de la app
   async perfil(uid) {
-    const snap = await db().collection('usuarios').where('uid', '==', uid).limit(1).get();
+    const snap = await app().firestore().collection('usuarios').where('uid', '==', uid).limit(1).get();
     return snap.empty ? null : snap.docs[0].data();
   },
   // Token de Firebase Auth de la página de inicio de sesión; checkRevoked también rechaza cuentas desactivadas
