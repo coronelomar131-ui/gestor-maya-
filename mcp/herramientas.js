@@ -46,10 +46,22 @@ const opcional = z.string().optional();
 const responder = obj => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
 const filtrosUsados = a => ({ tipo: a.tipo, cliente: a.cliente || null, vendedor: a.vendedor || null, desde: a.desde || null, hasta: a.hasta || null });
 
+// Si Firebase no contesta, se avisa con un mensaje claro antes de que Vercel corte la función
+// (maxDuration de api/mcp.js en vercel.json); si no, Claude solo ve "error de conexión".
+const LIMITE_MS = 40000;
+function conLimite(promesa) {
+  let reloj;
+  const limite = new Promise((_, rechazar) => {
+    reloj = setTimeout(() => rechazar(new Error('La base de datos de la app (Firebase) tardó más de ' + LIMITE_MS / 1000 +
+      ' segundos en responder. Intenta de nuevo en un momento. Si era un alta o un cambio, primero revisa si sí se guardó para no duplicarlo.')), LIMITE_MS);
+  });
+  return Promise.race([promesa, limite]).finally(() => clearTimeout(reloj));
+}
+
 // Errores del usuario (no existe, faltan datos) regresan como mensaje para Claude, no como falla del servidor
 const ejecutar = fn => async a => {
   try {
-    return responder(await fn(a));
+    return responder(await conLimite(fn(a)));
   } catch (e) {
     if (e instanceof escritura.ErrorUsuario) return { isError: true, content: [{ type: 'text', text: e.message }] };
     throw e;
