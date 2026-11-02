@@ -192,7 +192,7 @@ function resumen(lista) {
     if (x.fecha && (!desde || x.fecha < desde)) desde = x.fecha;
     if (x.fecha && (!hasta || x.fecha > hasta)) hasta = x.fecha;
   });
-  // Notas en $0 (sin precio capturado): cuentan como nota pero no suman; se avisan para no dar un total incompleto sin saberlo
+  // Notas en $0: algunos clientes piden la nota sin precio. Cuentan como nota pero no suman al total; se informan para que el total se entienda
   const sinImporte = lista.filter(x => x.total === 0);
   return Object.assign(r, {
     subtotal: pesos(r.subtotal), iva: pesos(r.iva), ajustes: pesos(r.ajustes), total: pesos(r.total),

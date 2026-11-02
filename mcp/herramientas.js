@@ -77,7 +77,7 @@ function instrucciones(usuario) {
     'En cada nota: total = subtotal + iva - ajuste. Los totales del resumen son la suma exacta de las notas. Usa solo montos que vengan de las herramientas; no estimes ni inventes cifras.',
     'En las notas de venta no se guarda cantidad: cantidad y precio_unitario vienen en null y el importe es el precio capturado de la partida.',
     'Si resumen.posibles_duplicados no está vacío, avísale al usuario: podría ser la misma venta capturada como nota de venta y como nota de entrega, y el total la estaría sumando dos veces.',
-    'Si resumen.notas_sin_importe es mayor que 0, avisa cuántas notas están en $0 (sin precio capturado, folios en folios_sin_importe): cuentan como nota pero no suman al total.',
+    'Algunas notas van sin precio a propósito (así las piden algunos clientes): resumen.notas_sin_importe dice cuántas están en $0 (folios en folios_sin_importe). Cuentan como nota pero no suman al total; menciónalo en una línea al dar totales, sin tratarlo como error.',
     'Una venta puede tener tres folios: NV #243 (su número en Ventas), NV-219 (el de Facturas) y F-219 (el de su factura). Si una nota trae otros_folios, son los de la venta ligada; úsalos al responder para que el usuario la reconozca.',
     'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
