@@ -49,12 +49,21 @@ function desdeEntrega(n) {
   const iva = centavos(n.ivaTotal);
   const creada = aFecha(n.createdAt);
   return {
-    tipo: 'NE', id: n.id, folio: n.notaId || 'NE', numero: numero(n.notaId),
+    tipo: 'NE', id: n.id, folio: n.notaId || 'NE', numero: numero(n.notaId), otrosFolios: [],
     fecha: dia(n.fecha) || mediodia(creada), creada,
     cliente: n.cliente || '', vendedor: n.vendedor || '', siniestro: n.siniestro || '',
     items, subtotal, iva, ajuste: 0,
     total: n.total != null ? centavos(n.total) : subtotal + iva
   };
+}
+
+// Una venta tiene hasta tres folios: su número (NV #243, el de la tabla de Ventas), el de Facturas (NV-219) y el de la factura (F-219)
+function foliosVenta(v) {
+  const lista = [];
+  if (v.notaId) lista.push({ tipo: 'NV', folio: 'NV #' + v.notaId, numero: numero(v.notaId) });
+  if (v.notaNumero) lista.push({ tipo: 'NV', folio: String(v.notaNumero), numero: numero(v.notaNumero) });
+  if (v.facturaNumero) lista.push({ tipo: 'F', folio: String(v.facturaNumero), numero: numero(v.facturaNumero) });
+  return lista;
 }
 
 // En Ventas cada partida trae su precio (sin cantidad), su IVA y su ajuste; total = subtotal + IVA − ajuste
@@ -68,8 +77,10 @@ function desdeVenta(v) {
   const iva = v.ivaTotal != null ? centavos(v.ivaTotal) : porPartida('iva');
   const ajuste = v.ajusteTotal != null ? centavos(v.ajusteTotal) : porPartida('ajuste');
   const creada = aFecha(v.createdAt);
+  const folio = v.notaId ? 'NV #' + v.notaId : (v.notaNumero || 'NV');
   return {
-    tipo: 'NV', id: v.id, folio: v.notaId ? 'NV #' + v.notaId : (v.notaNumero || 'NV'), numero: numero(v.notaId || v.notaNumero),
+    tipo: 'NV', id: v.id, folio, numero: numero(v.notaId || v.notaNumero),
+    otrosFolios: foliosVenta(v).filter(f => f.folio !== folio),
     fecha: dia(v.fecha) || mediodia(creada), creada,
     cliente: v.clienteNombre || v.cliente || '', vendedor: v.vendedor || '',
     siniestro: String(v.siniestros || items.map(it => it.siniestro).filter(Boolean).join(' | ')),
@@ -80,9 +91,16 @@ function desdeVenta(v) {
 
 function armarRegistros(notasEntrega, ventas) {
   const lista = notasEntrega.map(desdeEntrega);
+  const porFolio = new Map(lista.map(x => [x.folio, x]));
   ventas.forEach(v => {
-    // Las ventas creadas desde una nota de entrega ya están como NE; las canceladas no son venta
-    if (v.fuente === 'nota_entrega' || v.notaEntregaId || /^cancel/.test(norm(v.estatus))) return;
+    // Las ventas creadas desde una nota de entrega ya están como NE: sus folios quedan en la NE para encontrarla
+    // también como "NV-219" o "F-219". Las canceladas no son venta.
+    if (v.fuente === 'nota_entrega' || v.notaEntregaId) {
+      const ne = porFolio.get(v.notaEntregaId);
+      if (ne) ne.otrosFolios = ne.otrosFolios.concat(foliosVenta(v));
+      return;
+    }
+    if (/^cancel/.test(norm(v.estatus))) return;
     lista.push(desdeVenta(v));
   });
   return lista;
@@ -174,11 +192,15 @@ function resumen(lista) {
     if (x.fecha && (!desde || x.fecha < desde)) desde = x.fecha;
     if (x.fecha && (!hasta || x.fecha > hasta)) hasta = x.fecha;
   });
+  // Notas en $0 (sin precio capturado): cuentan como nota pero no suman; se avisan para no dar un total incompleto sin saberlo
+  const sinImporte = lista.filter(x => x.total === 0);
   return Object.assign(r, {
     subtotal: pesos(r.subtotal), iva: pesos(r.iva), ajustes: pesos(r.ajustes), total: pesos(r.total),
     piezas_notas_entrega: Math.round(r.piezas_notas_entrega * 100) / 100,
     desde: fechaISO(desde), hasta: fechaISO(hasta),
-    posibles_duplicados: duplicados(lista)
+    posibles_duplicados: duplicados(lista),
+    notas_sin_importe: sinImporte.length,
+    folios_sin_importe: sinImporte.slice(0, 30).map(x => x.folio)
   });
 }
 
@@ -186,6 +208,7 @@ function notaJSON(x, conArticulos) {
   const o = {
     id: x.id,
     folio: x.folio,
+    ...(x.otrosFolios && x.otrosFolios.length ? { otros_folios: x.otrosFolios.map(f => f.folio) } : {}),
     tipo: x.tipo === 'NE' ? 'nota de entrega' : 'nota de venta',
     fecha: fechaISO(x.fecha),
     hora_registro: horaTxt(x.creada),
@@ -211,12 +234,18 @@ function notaJSON(x, conArticulos) {
   return o;
 }
 
-// "NE-203", "ne 203", "NV #350", "350", "NV-020": se compara tipo (si viene) y número
+// "NE-203", "ne 203", "NV #350", "350", "NV-219", "F-219". Primero el folio exacto, incluidos los otros folios de cada nota
+// (la venta que generó una NE, el folio de Facturas y el de la factura), porque NV #243 y NV-219 pueden ser la misma venta
+// y NV-219 otra distinta de NV #219. Si no hay exacto, por número, respetando el tipo si viene.
 function buscarFolio(lista, folio) {
-  const texto = norm(folio).replace(/\s+/g, '');
-  const tipo = /^ne/.test(texto) ? 'NE' : /^nv/.test(texto) ? 'NV' : '';
+  const clave = s => norm(s).replace(/\s+/g, '');
+  const texto = clave(folio);
+  const tipo = /^ne/.test(texto) ? 'NE' : /^nv/.test(texto) ? 'NV' : /^f\W*\d/.test(texto) ? 'F' : '';
   const num = numero(texto);
-  return lista.filter(x => (!tipo || x.tipo === tipo) && (norm(x.folio).replace(/\s+/g, '') === texto || (num && x.numero === num)));
+  const folios = x => [{ tipo: x.tipo, folio: x.folio, numero: x.numero }].concat(x.otrosFolios || []);
+  const exactas = lista.filter(x => folios(x).some(f => clave(f.folio) === texto));
+  if (exactas.length || !num) return exactas;
+  return lista.filter(x => folios(x).some(f => (!tipo || f.tipo === tipo) && f.numero === num));
 }
 
 function agrupar(lista, por) {
@@ -255,12 +284,13 @@ function agrupar(lista, por) {
   return salida.sort((a, b) => monto(b) - monto(a));
 }
 
+// Algunos clientes importados de Excel traen "activo" en la columna de estado (entidad); eso no es parte de la dirección
+const esEstatus = v => /^(activo|inactivo)$/.test(norm(v));
+
 async function clientes(texto, limite) {
   const q = norm(texto);
-  const todos = await fb().leerColeccion('clientes');
-  return todos
+  const lista = (await fb().leerColeccion('clientes'))
     .filter(c => !q || norm([c.razonSocial, c.nombre, c.rfc, c.codigoCliente, c.codigo, c.email, c.telefono].join(' ')).includes(q))
-    .slice(0, limite)
     .map(c => ({
       id: c.id,
       codigo: c.codigoCliente || c.codigo || null,
@@ -268,16 +298,18 @@ async function clientes(texto, limite) {
       rfc: c.rfc || null,
       telefono: c.telefono || c.tel || null,
       email: c.email || null,
-      direccion: [[c.calle, c.numeroExterior, c.numeroInterior && 'int. ' + c.numeroInterior].filter(Boolean).join(' '), c.colonia, c.municipio, c.ciudad, c.estado, c.codigoPostal && 'C.P. ' + c.codigoPostal]
+      direccion: [[c.calle, c.numeroExterior, c.numeroInterior && 'int. ' + c.numeroInterior].filter(Boolean).join(' '), c.colonia, c.municipio, c.ciudad,
+        esEstatus(c.estado) ? '' : c.estado, c.codigoPostal && 'C.P. ' + c.codigoPostal]
         .filter(Boolean).join(', ') || null,
       venta_publica_redes: !!c.redesSociales
-    }));
+    }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  return { encontrados: lista.length, mostrando: Math.min(limite, lista.length), clientes: lista.slice(0, limite) };
 }
 
 async function productos(texto, soloBajoStock, limite) {
   const q = norm(texto);
-  const todos = await fb().leerColeccion('productos');
-  return todos
+  const lista = (await fb().leerColeccion('productos'))
     .map(p => {
       const stock = Number(p.stock) || 0;
       const minimo = Number(p.stockMin) || 0;
@@ -295,8 +327,40 @@ async function productos(texto, soloBajoStock, limite) {
       };
     })
     .filter(p => (!soloBajoStock || p.bajo_stock) && (!q || norm([p.codigo, p.descripcion, p.marca, p.compatibilidad].join(' ')).includes(q)))
-    .sort((a, b) => (soloBajoStock ? a.stock - a.stock_minimo - (b.stock - b.stock_minimo) : a.descripcion.localeCompare(b.descripcion, 'es')))
-    .slice(0, limite);
+    .sort((a, b) => (soloBajoStock ? a.stock - a.stock_minimo - (b.stock - b.stock_minimo) : a.descripcion.localeCompare(b.descripcion, 'es')));
+  return { encontrados: lista.length, mostrando: Math.min(limite, lista.length), productos: lista.slice(0, limite) };
+}
+
+// Publicaciones de Mercado Libre tal como quedaron en la última sincronización de la app (Inventario → Sincronizar ML).
+// No consulta Mercado Libre en vivo. Los tokens de ML (ml_tokens) nunca se leen aquí.
+async function productosML(f, limite) {
+  const q = norm(f.texto);
+  const todos = await fb().leerColeccion('ml_productos');
+  let ultima = null;
+  const lista = todos
+    .map(p => {
+      const sync = aFecha(p.ultimaSync);
+      if (sync && (!ultima || sync > ultima)) ultima = sync;
+      return {
+        id: p.id,
+        titulo: p.title || '',
+        precio: pesos(centavos(p.price)),
+        disponibles: Number(p.available_quantity) || 0,
+        estatus: p.status || null,
+        link: p.permalink || null
+      };
+    })
+    .filter(p => (!q || norm(p.titulo + ' ' + p.id).includes(q)) && (!f.estatus || p.estatus === f.estatus) && (!f.solo_sin_existencias || p.disponibles <= 0))
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, 'es'));
+  const r = {
+    ultima_sincronizacion: ultima ? fechaISO(ultima) + ' ' + horaTxt(ultima) : null,
+    encontrados: lista.length,
+    piezas_disponibles: lista.reduce((s, p) => s + p.disponibles, 0),
+    mostrando: Math.min(limite, lista.length),
+    productos: lista.slice(0, limite)
+  };
+  if (!todos.length) r.aviso = 'No hay publicaciones guardadas. Para verlas, sincroniza desde la app: Inventario → Sincronizar ML.';
+  return r;
 }
 
 // Todas las ventas tal cual (también canceladas y las creadas desde una NE), con su estatus y factura
@@ -361,13 +425,18 @@ async function registros(modulo, texto, limite) {
   const q = norm(texto);
   const cuando = d => { const f = aFecha(d.createdAt) || aFecha(d.fecha); return f ? f.getTime() : 0; };
   const lista = (await fb().leerColeccion(MODULOS[modulo]))
-    .map(limpiar)
+    .map(d => {
+      const o = limpiar(d);
+      // Cotizaciones y otros guardan la fecha en milisegundos (1782432000000): se entrega como AAAA-MM-DD
+      if (typeof o.fecha === 'number') o.fecha = fechaISO(dia(o.fecha));
+      return o;
+    })
     .filter(d => !q || norm(JSON.stringify(d)).includes(q))
     .sort((a, b) => cuando(b) - cuando(a));
   return { modulo, encontrados: lista.length, mostrando: Math.min(limite, lista.length), registros: lista.slice(0, limite) };
 }
 
 module.exports = {
-  cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, ventas, registros,
+  cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, registros,
   armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };

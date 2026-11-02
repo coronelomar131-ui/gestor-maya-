@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
+    "test": "node --test mcp/mcp.test.js",
     "postinstall": "cd backend && npm install"
   },
   "dependencies": {

@@ -77,6 +77,8 @@ function instrucciones(usuario) {
     'En cada nota: total = subtotal + iva - ajuste. Los totales del resumen son la suma exacta de las notas. Usa solo montos que vengan de las herramientas; no estimes ni inventes cifras.',
     'En las notas de venta no se guarda cantidad: cantidad y precio_unitario vienen en null y el importe es el precio capturado de la partida.',
     'Si resumen.posibles_duplicados no está vacío, avísale al usuario: podría ser la misma venta capturada como nota de venta y como nota de entrega, y el total la estaría sumando dos veces.',
+    'Si resumen.notas_sin_importe es mayor que 0, avisa cuántas notas están en $0 (sin precio capturado, folios en folios_sin_importe): cuentan como nota pero no suman al total.',
+    'Una venta puede tener tres folios: NV #243 (su número en Ventas), NV-219 (el de Facturas) y F-219 (el de su factura). Si una nota trae otros_folios, son los de la venta ligada; úsalos al responder para que el usuario la reconozca.',
     'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
@@ -84,7 +86,7 @@ function instrucciones(usuario) {
 
 function crearServidor(usuario) {
   const puede = modulo => PERMISOS[modulo].includes(usuario.rol);
-  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.0.0' }, { instructions: instrucciones(usuario) });
+  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.1.0' }, { instructions: instrucciones(usuario) });
 
   // ── Consultas ──
   if (puede('notas')) {
@@ -109,12 +111,15 @@ function crearServidor(usuario) {
 
     servidor.registerTool('ver_nota', {
       title: 'Ver una nota',
-      description: 'Detalle completo de una nota por su folio, por ejemplo "NE-203", "NV #350" o solo "203".',
+      description: 'Detalle completo de una nota por su folio: "NE-203", "NV #350", el folio de Facturas "NV-219", el de factura "F-219" o solo "203". ' +
+        'Una venta creada desde una nota de entrega se muestra como esa NE, con los folios de la venta en otros_folios.',
       inputSchema: { folio: z.string().min(1).describe('Folio o número de la nota') },
       annotations: LECTURA
     }, ejecutar(async ({ folio }) => {
       const encontradas = datos.buscarFolio(await datos.cargarRegistros(), folio);
-      if (!encontradas.length) return { encontrada: false, mensaje: 'No hay ninguna nota con el folio ' + folio };
+      if (!encontradas.length) {
+        return { encontrada: false, mensaje: 'No hay ninguna nota con el folio ' + folio + ' en el historial. Si es una venta cancelada, búscala con buscar_ventas.' };
+      }
       return { encontradas: encontradas.length, notas: encontradas.slice(0, 5).map(x => datos.notaJSON(x, true)) };
     }));
 
@@ -161,7 +166,7 @@ function crearServidor(usuario) {
         limite: z.number().int().min(1).max(100).default(20)
       },
       annotations: LECTURA
-    }, ejecutar(async ({ texto, limite }) => ({ clientes: await datos.clientes(texto, limite) })));
+    }, ejecutar(({ texto, limite }) => datos.clientes(texto, limite)));
   }
 
   if (puede('inventario')) {
@@ -175,7 +180,20 @@ function crearServidor(usuario) {
         limite: z.number().int().min(1).max(200).default(50)
       },
       annotations: LECTURA
-    }, ejecutar(async ({ texto, solo_bajo_stock, limite }) => ({ productos: await datos.productos(texto, solo_bajo_stock, limite) })));
+    }, ejecutar(({ texto, solo_bajo_stock, limite }) => datos.productos(texto, solo_bajo_stock, limite)));
+
+    servidor.registerTool('buscar_productos_ml', {
+      title: 'Publicaciones de Mercado Libre',
+      description: 'Publicaciones de Mercado Libre con precio, piezas disponibles, estatus y link, según la última sincronización de la app ' +
+        '(Inventario → Sincronizar ML); no consulta Mercado Libre en vivo, así que di la fecha de ultima_sincronizacion al responder. Busca por título o id (MLM...).',
+      inputSchema: {
+        texto: z.string().optional().describe('Parte del título o id de la publicación; vacío lista todas'),
+        estatus: z.enum(['active', 'paused', 'closed', 'under_review', 'inactive']).optional().describe('active = activa, paused = pausada, closed = finalizada'),
+        solo_sin_existencias: z.boolean().default(false).describe('Solo publicaciones con 0 piezas disponibles'),
+        limite: z.number().int().min(1).max(200).default(50)
+      },
+      annotations: LECTURA
+    }, ejecutar(a => datos.productosML(a, a.limite)));
   }
 
   const modulos = Object.keys(datos.MODULOS).filter(puede);

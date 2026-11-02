@@ -188,7 +188,8 @@ async function guardarProducto(u, a) {
 
   if (existente) {
     if (cambios.stock !== undefined && a.ajuste_stock) throw new ErrorUsuario('Manda stock (nuevo total) o ajuste_stock (sumar/restar), no los dos');
-    delete cambios.codigo;
+    // Si se encontró por código, ese código es la búsqueda y no cambia; con id sí se puede cambiar el código
+    if (!a.id) delete cambios.codigo;
     if (Object.keys(cambios).length) await fb().actualizar('productos', existente.id, cambios);
     if (a.ajuste_stock) await fb().incrementar('productos', existente.id, 'stock', a.ajuste_stock);
     const despues = await fb().obtener('productos', existente.id);
@@ -246,6 +247,7 @@ async function guardarProveedor(u, a) {
   });
   if (a.id) {
     if (!(await fb().obtener('proveedores', a.id))) throw new ErrorUsuario('No existe un proveedor con id ' + a.id);
+    if (!Object.keys(cambios).length) throw new ErrorUsuario('No mandaste ningún dato para cambiar');
     await fb().actualizar('proveedores', a.id, cambios);
     return { actualizado: a.id, campos: Object.keys(cambios) };
   }
