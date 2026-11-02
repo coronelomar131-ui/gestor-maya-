@@ -85,7 +85,11 @@ function firestoreFalsa(inicial) {
   let n = 0;
   return {
     cols,
-    async leerColeccion(c) { return [...col(c)].map(([id, d]) => Object.assign({ id }, structuredClone(d))); },
+    lecturas: {},
+    async leerColeccion(c) {
+      this.lecturas[c] = (this.lecturas[c] || 0) + 1;
+      return [...col(c)].map(([id, d]) => Object.assign({ id }, structuredClone(d)));
+    },
     async obtener(c, id) { const d = col(c).get(id); return d ? structuredClone(d) : null; },
     async guardar(c, id, d) { col(c).set(id, structuredClone(d)); },
     async agregar(c, d) { const id = 'nuevo' + (++n); col(c).set(id, structuredClone(d)); return id; },
@@ -258,5 +262,21 @@ test('crear_nota_entrega guarda como la app y su venta se encuentra por cualquie
   assert.equal(venta.items[0].pedido, 'Faro Izquierdo Kia K3 x2');
   const vista = await c.llamar('ver_nota', { folio: 'NV #251' });
   assert.deepEqual(vista.notas.map(n => n.folio), ['NE-230']);
+  await c.cerrar();
+});
+
+test('varias preguntas seguidas leen cada colección de Firebase una sola vez (límite diario del plan Spark)', async () => {
+  const c = await conectar(ADMIN);
+  await c.llamar('resumen_ventas', { agrupar_por: 'cliente' });
+  await c.llamar('resumen_ventas', { agrupar_por: 'mes' });
+  await c.llamar('historial_notas', { desde: '2026-10-01', hasta: '2026-10-31' });
+  await c.llamar('ver_nota', { folio: 'NV-219' });
+  await c.llamar('buscar_ventas', { texto: 'NV-219' });
+  await c.llamar('buscar_clientes', {});
+  await c.llamar('buscar_clientes', { texto: 'zeta' });
+  assert.deepEqual(db.lecturas, { notasEntrega: 1, ventas: 1, clientes: 1 });
+  // Un alta desde Claude limpia el caché: la siguiente consulta ya la ve
+  await c.llamar('crear_nota_entrega', { cliente: 'Zeta Autopartes', articulos: [{ descripcion: 'Espejo', cantidad: 1, precio_unitario: 500 }] });
+  assert.equal((await c.llamar('ver_nota', { folio: 'NE-230' })).notas[0].folio, 'NE-230');
   await c.cerrar();
 });

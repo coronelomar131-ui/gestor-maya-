@@ -106,22 +106,28 @@ function armarRegistros(notasEntrega, ventas) {
   return lista;
 }
 
-// Varias llamadas seguidas de Claude (una misma pregunta) reutilizan la lectura unos segundos
-const VIGENCIA_MS = 20000;
-let cache = { hasta: 0, promesa: null };
+// Cada colección se lee completa una vez y se reutiliza unos minutos. En el plan Spark de Firebase hay 50,000
+// lecturas al día y leer notas + ventas cuesta ~450; leyendo en cada pregunta, unos cuantos informes agotaron el
+// límite y la app y el MCP dejaron de leer hasta el día siguiente. Las altas y cambios desde Claude limpian el caché
+// (olvidarCache) y la numeración de folios en escritura.js siempre lee de Firebase, sin caché.
+const VIGENCIA_MS = 5 * 60 * 1000;
+let cache = new Map();
+
+function leer(nombre) {
+  const guardado = cache.get(nombre);
+  if (guardado && Date.now() <= guardado.hasta) return guardado.promesa;
+  const promesa = fb().leerColeccion(nombre);
+  promesa.catch(() => { if (cache.get(nombre) && cache.get(nombre).promesa === promesa) cache.delete(nombre); });
+  cache.set(nombre, { hasta: Date.now() + VIGENCIA_MS, promesa });
+  return promesa;
+}
 
 function cargarRegistros() {
-  if (!cache.promesa || Date.now() > cache.hasta) {
-    const promesa = Promise.all([fb().leerColeccion('notasEntrega'), fb().leerColeccion('ventas')])
-      .then(([ne, nv]) => armarRegistros(ne, nv));
-    promesa.catch(() => { if (cache.promesa === promesa) cache = { hasta: 0, promesa: null }; });
-    cache = { hasta: Date.now() + VIGENCIA_MS, promesa };
-  }
-  return cache.promesa;
+  return Promise.all([leer('notasEntrega'), leer('ventas')]).then(([ne, nv]) => armarRegistros(ne, nv));
 }
 
 function olvidarCache() {
-  cache = { hasta: 0, promesa: null };
+  cache = new Map();
 }
 
 const comparar = (a, b) =>
@@ -289,7 +295,7 @@ const esEstatus = v => /^(activo|inactivo)$/.test(norm(v));
 
 async function clientes(texto, limite) {
   const q = norm(texto);
-  const lista = (await fb().leerColeccion('clientes'))
+  const lista = (await leer('clientes'))
     .filter(c => !q || norm([c.razonSocial, c.nombre, c.rfc, c.codigoCliente, c.codigo, c.email, c.telefono].join(' ')).includes(q))
     .map(c => ({
       id: c.id,
@@ -309,7 +315,7 @@ async function clientes(texto, limite) {
 
 async function productos(texto, soloBajoStock, limite) {
   const q = norm(texto);
-  const lista = (await fb().leerColeccion('productos'))
+  const lista = (await leer('productos'))
     .map(p => {
       const stock = Number(p.stock) || 0;
       const minimo = Number(p.stockMin) || 0;
@@ -335,7 +341,7 @@ async function productos(texto, soloBajoStock, limite) {
 // No consulta Mercado Libre en vivo. Los tokens de ML (ml_tokens) nunca se leen aquí.
 async function productosML(f, limite) {
   const q = norm(f.texto);
-  const todos = await fb().leerColeccion('ml_productos');
+  const todos = await leer('ml_productos');
   let ultima = null;
   const lista = todos
     .map(p => {
@@ -368,7 +374,7 @@ async function ventas(f, limite) {
   const q = norm(f.texto);
   const desde = f.desde ? diaLocal(f.desde, false) : null;
   const hasta = f.hasta ? diaLocal(f.hasta, true) : null;
-  const lista = (await fb().leerColeccion('ventas'))
+  const lista = (await leer('ventas'))
     .map(v => ({ v, x: desdeVenta(v) }))
     .filter(({ v, x }) => {
       if (f.estatus && norm(v.estatus || 'Pendiente') !== norm(f.estatus)) return false;
@@ -424,7 +430,7 @@ function limpiar(valor) {
 async function registros(modulo, texto, limite) {
   const q = norm(texto);
   const cuando = d => { const f = aFecha(d.createdAt) || aFecha(d.fecha); return f ? f.getTime() : 0; };
-  const lista = (await fb().leerColeccion(MODULOS[modulo]))
+  const lista = (await leer(MODULOS[modulo]))
     .map(d => {
       const o = limpiar(d);
       // Cotizaciones y otros guardan la fecha en milisegundos (1782432000000): se entrega como AAAA-MM-DD
