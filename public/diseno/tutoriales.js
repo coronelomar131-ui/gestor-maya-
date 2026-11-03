@@ -142,6 +142,15 @@ export const TUTORIALES = {
     ]
   },
 
+  pepito: {
+    titulo: 'Pepito',
+    pasos: [
+      { el: '#buzon-texto', titulo: 'Escribe tu pedido', texto: 'Pregunta lo que necesites o pide una tarea: ventas de un cliente, buscar una nota, preparar una cotización.' },
+      { el: '#buzon-enviar', titulo: 'Envíalo', texto: 'Pepito revisa el buzón y te contesta aquí mismo; no tienes que recargar.' },
+      { el: '#buzon-estado', titulo: 'Cuándo pasó Pepito', texto: 'Aquí ves la última vez que Pepito revisó. Si va a guardar algo, primero te dice qué y espera que confirmes con “Responder”.' }
+    ]
+  },
+
   documentos: {
     titulo: 'Documentos',
     pasos: [

@@ -1680,6 +1680,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
       </div>
 
+      <!-- PEPITO (buzón; lo arma /diseno/buzon.js) -->
+      <div class="module-view" id="mod-pepito"></div>
+
       <!-- DOCUMENTOS MODULE -->
       <div class="module-view" id="mod-documentos">
         <div style="margin-bottom:20px">
@@ -4428,6 +4431,7 @@ window.showModule = function(name) {
   // Define module permissions
   const permissions = {
     dashboard: ['admin', 'vendedor', 'almacen'],
+    pepito: ['admin', 'vendedor', 'almacen', 'entregas'],
     ventas: ['admin', 'vendedor'],
     inventario: ['admin', 'almacen'],
     clientes: ['admin', 'vendedor'],
@@ -4461,6 +4465,7 @@ window.showModule = function(name) {
 
   const titles = {
     dashboard: ['Dashboard', 'Resumen general del negocio'],
+    pepito: ['Pepito', 'Pídele consultas y tareas; te contesta aquí'],
     ventas: ['Ventas', 'Registro y control de ventas'],
     inventario: ['Inventario', 'Control de piezas y refacciones'],
     clientes: ['Clientes', 'Directorio de clientes'],
@@ -9965,5 +9970,6 @@ window.previewNotaEntregaPDFById = function(id) {
 </div>
 
 <script type="module" src="/diseno/maya.js"></script>
+<script type="module" src="/diseno/buzon.js"></script>
 </body>
 </html>

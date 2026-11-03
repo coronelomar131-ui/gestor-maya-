@@ -15,6 +15,7 @@ const escapar = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':
 // ── Módulos. Los permisos son los mismos que showModule() en index.html: si cambian allá, cámbialos aquí ──
 const MODULOS = [
   { id: 'dashboard', nombre: 'Resumen', corto: 'Resumen', icono: 'layout-dashboard', grupo: 'Principal', desc: 'Cómo va el negocio hoy' },
+  { id: 'pepito', nombre: 'Pepito', corto: 'Pepito', icono: 'bot', grupo: 'Principal', desc: 'Pídele consultas y tareas a Pepito' },
   { id: 'notas-entrega', nombre: 'Notas de entrega', corto: 'Notas', icono: 'clipboard-check', grupo: 'Ventas', desc: 'Crea, busca y descarga notas de entrega' },
   { id: 'ventas', nombre: 'Ventas', corto: 'Ventas', icono: 'receipt', grupo: 'Ventas', desc: 'Registra ventas y da seguimiento a su estatus' },
   { id: 'cotizaciones', nombre: 'Cotizaciones', corto: 'Cotizar', icono: 'clipboard-list', grupo: 'Ventas', desc: 'Prepara cotizaciones para tus clientes' },
@@ -33,16 +34,16 @@ const MODULOS = [
   { id: 'configuracion', nombre: 'Configuración', corto: 'Ajustes', icono: 'settings', grupo: 'Administración', desc: 'Datos fiscales y ajustes generales' }
 ];
 const PERMISOS = {
-  dashboard: ['admin', 'vendedor', 'almacen'], ventas: ['admin', 'vendedor'], inventario: ['admin', 'almacen'],
+  dashboard: ['admin', 'vendedor', 'almacen'], pepito: ['admin', 'vendedor', 'almacen', 'entregas'], ventas: ['admin', 'vendedor'], inventario: ['admin', 'almacen'],
   clientes: ['admin', 'vendedor'], cotizaciones: ['admin', 'vendedor'], proveedores: ['admin', 'almacen'],
   entregas: ['admin', 'vendedor', 'almacen'], envios: ['admin', 'vendedor', 'almacen'], 'visitas-talleres': ['admin', 'vendedor', 'almacen'],
   reportes: ['admin'], mercadolibre: ['admin'], documentos: ['admin', 'vendedor'], 'notas-entrega': ['admin', 'vendedor', 'almacen'],
   'busqueda-ventas': ['admin', 'vendedor', 'almacen'], usuarios: ['admin'], finanzas: ['admin', 'vendedor', 'almacen'], configuracion: ['admin']
 };
 const FIJADOS_INICIALES = {
-  admin: ['dashboard', 'notas-entrega', 'ventas', 'clientes', 'inventario', 'reportes'],
-  vendedor: ['dashboard', 'notas-entrega', 'ventas', 'clientes', 'cotizaciones'],
-  almacen: ['dashboard', 'notas-entrega', 'inventario', 'entregas', 'envios']
+  admin: ['dashboard', 'pepito', 'notas-entrega', 'ventas', 'clientes', 'inventario', 'reportes'],
+  vendedor: ['dashboard', 'pepito', 'notas-entrega', 'ventas', 'clientes', 'cotizaciones'],
+  almacen: ['dashboard', 'pepito', 'notas-entrega', 'inventario', 'entregas', 'envios']
 };
 const MAX_FIJADOS = 8;
 const EN_BARRA = 4;

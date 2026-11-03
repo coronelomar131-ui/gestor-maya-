@@ -3,6 +3,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { z } = require('zod');
 const datos = require('./datos');
 const escritura = require('./escritura');
+const buzon = require('./buzon');
 
 // Los mismos roles por módulo que showModule() en public/index.html; borrar es solo de admin
 const PERMISOS = {
@@ -20,6 +21,8 @@ const PERMISOS = {
   usuarios: ['admin'],
   borrar: ['admin']
 };
+// El buzón de Pepito lo atiende una cuenta admin; no es un módulo del equipo
+const ATIENDE_BUZON = ['admin'];
 
 const LECTURA = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const ESCRITURA = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -87,7 +90,7 @@ function instrucciones(usuario) {
 
 function crearServidor(usuario) {
   const puede = modulo => PERMISOS[modulo].includes(usuario.rol);
-  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.1.0' }, { instructions: instrucciones(usuario) });
+  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.2.0' }, { instructions: instrucciones(usuario) });
 
   // ── Consultas ──
   if (puede('notas')) {
@@ -335,6 +338,33 @@ function crearServidor(usuario) {
       },
       annotations: BORRADO
     }, ejecutar(a => escritura.eliminarRegistro(usuario, a)));
+  }
+
+  // ── Buzón de Pepito ──
+  if (ATIENDE_BUZON.includes(usuario.rol)) {
+    servidor.registerTool('revisar_buzon', {
+      title: 'Revisar el buzón de Pepito',
+      description: 'Pedidos que el equipo dejó en el buzón de la app (módulo Pepito), del más viejo al más nuevo. ' +
+        'Contesta cada uno con responder_buzon, en español, breve y claro, como Pepito. Reglas: ' +
+        '1) Atiende cada pedido con el rol de quien lo hizo: usa solo herramientas de los módulos en puede_usar; si pide algo fuera de eso, contesta que no tiene permiso y que lo pida a un admin. ' +
+        '2) Para consultas, busca los datos y contesta con cifras exactas de las herramientas. ' +
+        '3) Para crear, cambiar o borrar: si el pedido NO es la confirmación de una propuesta tuya (ver contexto), NO guardes nada; contesta con exactamente lo que guardarías (cliente, artículos, precios, IVA, total) y marca espera_confirmacion. ' +
+        'Si el pedido confirma claramente la propuesta del contexto, hazlo y contesta con el folio. ' +
+        '4) Si falta un dato (precio, cantidad, cliente), pregúntalo en la respuesta; nunca lo inventes.',
+      inputSchema: {},
+      annotations: LECTURA
+    }, ejecutar(() => buzon.revisar(PERMISOS)));
+
+    servidor.registerTool('responder_buzon', {
+      title: 'Contestar un pedido del buzón',
+      description: 'Guarda la respuesta de Pepito a un pedido del buzón; quien lo pidió la ve en la app al momento.',
+      inputSchema: {
+        id: z.string().min(1).describe('id del pedido (sale en revisar_buzon)'),
+        respuesta: z.string().min(1).describe('Lo que verá la persona en la app'),
+        espera_confirmacion: z.boolean().default(false).describe('true si propones guardar algo y esperas que confirme')
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => buzon.responder(usuario, a)));
   }
 
   return servidor;

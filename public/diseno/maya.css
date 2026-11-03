@@ -955,3 +955,49 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .m-vidrio, .sidebar, .topbar, .modal, .toast, .login-card, #m-tabbar, #m-hoja, .m-tour-pop, .m-aviso-tour { background-color: rgba(13, 28, 49, 0.96); }
 }
+
+/* ── Pepito: buzón de pedidos del equipo (diseno/buzon.js) ── */
+.m-buzon { display: grid; gap: 16px; max-width: 820px; margin: 0 auto; }
+.m-buzon-intro { display: flex; gap: 16px; align-items: flex-start; padding: 20px; border-radius: var(--m-r-lg); }
+.m-buzon-intro h2 { font-family: var(--m-f-titulo); font-size: 21px; font-weight: 600; color: var(--m-niebla); margin: 0 0 4px; }
+.m-buzon-intro p { margin: 0; color: var(--m-texto-2); line-height: 1.5; font-size: 14.5px; }
+.m-buzon-intro .m-buzon-estado { margin-top: 8px; color: var(--m-texto-3); font-size: 13px; }
+.m-buzon-avatar { flex: none; width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
+  color: var(--m-faro-tinta); background: linear-gradient(160deg, var(--m-faro-claro), var(--m-faro)); box-shadow: 0 8px 20px -8px rgba(59, 188, 212, 0.6); }
+.m-buzon-form { padding: 14px; border-radius: var(--m-r-lg); display: grid; gap: 10px; }
+.m-buzon-form textarea { width: 100%; resize: vertical; min-height: 84px; padding: 12px 14px; border-radius: var(--m-r);
+  background: var(--m-relleno); border: 1px solid var(--m-panel-borde); color: var(--m-niebla); font: 15px/1.5 var(--m-f-texto); }
+.m-buzon-form textarea:focus { outline: none; border-color: var(--m-faro); box-shadow: 0 0 0 3px rgba(59, 188, 212, 0.18); }
+.m-buzon-acciones { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.m-buzon-acciones .btn { display: inline-flex; align-items: center; gap: 8px; width: auto; }
+.m-buzon-todos { margin-right: auto; display: inline-flex; gap: 8px; align-items: center; color: var(--m-texto-2); font-size: 13.5px; cursor: pointer; }
+.m-buzon-respondiendo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: var(--m-r-sm);
+  background: rgba(59, 188, 212, 0.1); color: var(--m-faro-claro); font-size: 13px; }
+.m-buzon-respondiendo span { display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+.m-buzon-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 4px; border-radius: 6px; display: grid; }
+.m-buzon-lista { display: grid; gap: 12px; }
+.m-buzon-hilo { padding: 14px 16px; border-radius: var(--m-r-lg); animation: m-buzon-entra var(--m-dur) var(--m-ease) both; }
+.m-buzon-hilo header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--m-texto-3); }
+.m-buzon-hilo header strong { color: var(--m-niebla); font-weight: 600; font-size: 14px; }
+.m-buzon-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.m-buzon-chip.espera { background: rgba(245, 185, 66, 0.13); color: var(--m-ambar); }
+.m-buzon-chip.confirma { background: rgba(59, 188, 212, 0.14); color: var(--m-faro-claro); }
+.m-buzon-chip.listo { background: rgba(61, 214, 140, 0.12); color: var(--m-verde); }
+.m-buzon-hilo.pendiente .m-buzon-chip.espera .m-icono { animation: m-buzon-pulso 1.6s ease-in-out infinite; }
+.m-buzon-pedido { margin: 8px 0 0; color: var(--m-niebla); white-space: pre-wrap; line-height: 1.5; overflow-wrap: anywhere; }
+.m-buzon-contexto { margin: 8px 0 0; color: var(--m-texto-3); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.m-buzon-respuesta { margin-top: 12px; padding: 12px 14px; border-radius: var(--m-r); background: var(--m-relleno); border-left: 3px solid var(--m-faro); }
+.m-buzon-respuesta p { margin: 4px 0 10px; color: var(--m-niebla); white-space: pre-wrap; line-height: 1.55; overflow-wrap: anywhere; }
+.m-buzon-respuesta .btn { display: inline-flex; align-items: center; gap: 6px; width: auto; }
+.m-buzon-quien { display: flex; align-items: center; gap: 6px; color: var(--m-faro-claro); font-size: 13px; font-weight: 600; }
+.m-buzon-vacio { text-align: center; padding: 32px 16px; color: var(--m-texto-3); display: grid; justify-items: center; gap: 8px; }
+@keyframes m-buzon-entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes m-buzon-pulso { 50% { opacity: 0.45; } }
+@media (max-width: 640px) {
+  .m-buzon-intro { padding: 16px; }
+  .m-buzon-chip { margin-left: 0; }
+  .m-buzon-acciones .btn { flex: 1; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-buzon-hilo, .m-buzon-hilo.pendiente .m-buzon-chip.espera .m-icono { animation: none; }
+}

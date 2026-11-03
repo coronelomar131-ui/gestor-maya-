@@ -92,6 +92,10 @@ function firestoreFalsa(inicial) {
       this.lecturas[c] = (this.lecturas[c] || 0) + 1;
       return [...col(c)].map(([id, d]) => Object.assign({ id }, structuredClone(d)));
     },
+    async buscarIgual(c, campo, valor) {
+      this.lecturas[c] = (this.lecturas[c] || 0) + 1;
+      return [...col(c)].filter(([, d]) => d[campo] === valor).map(([id, d]) => Object.assign({ id }, structuredClone(d)));
+    },
     async obtener(c, id) { const d = col(c).get(id); return d ? structuredClone(d) : null; },
     async guardar(c, id, d) { col(c).set(id, structuredClone(d)); },
     async agregar(c, d) { const id = 'nuevo' + (++n); col(c).set(id, structuredClone(d)); return id; },
@@ -301,4 +305,33 @@ test('OAuth: una cuenta sin perfil en usuarios ya no entra (antes entraba como a
   db.cuentas.intruso = Date.parse('2026-06-01T00:00:00Z'); // cuenta que ya existía: conserva su acceso
   const vieja = await oauth.autenticar({ headers: { authorization: 'Bearer tok-sin-perfil' } });
   assert.equal(vieja.usuario.rol, 'admin');
+});
+
+test('buzón de Pepito: revisar trae pendientes con permisos del rol; responder lo marca; solo admin lo atiende', async () => {
+  await db.guardar('buzon_pepito', 'b1', { texto: '¿Cuánto vendimos ayer?', uid: 'v-1', nombre: 'Vendedor Dos', rol: 'vendedor', estado: 'pendiente', createdAt: new Date('2026-11-03T16:00:00Z') });
+  await db.guardar('buzon_pepito', 'b0', { texto: 'Hazme una cotización', uid: 'a-1', nombre: 'Almacén', rol: 'almacen', estado: 'pendiente', createdAt: new Date('2026-11-03T15:00:00Z'),
+    contexto: { pregunta: 'antes', respuesta: 'propuesta' } });
+  await db.guardar('buzon_pepito', 'b2', { texto: 'ya contestado', uid: 'v-1', rol: 'vendedor', estado: 'respondido' });
+  const c = await conectar(ADMIN);
+  const r = await c.llamar('revisar_buzon', {});
+  assert.equal(r.pendientes, 2);
+  assert.deepEqual(r.pedidos.map(p => p.id), ['b0', 'b1']);
+  assert.ok(r.pedidos[1].puede_usar.includes('ventas'));
+  assert.ok(!r.pedidos[1].puede_usar.includes('prestamos'));
+  assert.ok(!r.pedidos[0].puede_usar.includes('cotizaciones'));
+  assert.equal(r.pedidos[1].puede_borrar, false);
+  assert.equal(r.pedidos[0].contexto.respuesta_anterior, 'propuesta');
+  assert.ok(db.cols.config.get('buzon_pepito').ultimaRevision);
+  const ok = await c.llamar('responder_buzon', { id: 'b1', respuesta: 'Ayer: $1,000' });
+  assert.equal(ok.ok, true);
+  assert.equal(db.cols.buzon_pepito.get('b1').estado, 'respondido');
+  assert.equal(db.cols.buzon_pepito.get('b1').respuesta, 'Ayer: $1,000');
+  assert.match((await c.llamar('responder_buzon', { id: 'nada', respuesta: 'x' })).error, /No existe/);
+  assert.equal((await c.llamar('revisar_buzon', {})).pendientes, 1);
+  await c.cerrar();
+
+  const v = await conectar(VENDEDOR);
+  const { tools } = await v.cliente.listTools();
+  assert.ok(!tools.some(t => t.name === 'revisar_buzon' || t.name === 'responder_buzon'));
+  await v.cerrar();
 });

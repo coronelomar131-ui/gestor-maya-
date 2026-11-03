@@ -22,6 +22,10 @@ const real = {
     const snap = await app().firestore().collection(nombre).get();
     return snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
   },
+  async buscarIgual(coleccion, campo, valor) {
+    const snap = await app().firestore().collection(coleccion).where(campo, '==', valor).get();
+    return snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+  },
   async obtener(coleccion, id) {
     const snap = await app().firestore().collection(coleccion).doc(id).get();
     return snap.exists ? snap.data() : null;
