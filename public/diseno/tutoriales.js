@@ -145,8 +145,8 @@ export const TUTORIALES = {
   oficina: {
     titulo: 'Oficina virtual',
     pasos: [
-      { el: '#of-piso', titulo: 'Las áreas del equipo', texto: 'Cada oficina es un área: Pepito, Entregas, Facturación, Cobranza y Reportes. Se ilumina y el robot trabaja cuando hay algo pendiente.' },
-      { el: '.m-of-cuarto', titulo: 'Entra a un área', texto: 'Toca una oficina para abrir su módulo. El número arriba a la izquierda es lo pendiente; en rojo, lo urgente.' }
+      { el: '#of-3d', titulo: 'La oficina en 3D', texto: 'Pepito Junior y los agentes de cada área. Cuando llega trabajo se juntan y lo atienden; los que dicen “Te necesita” tienen pendientes. Toca a uno para abrir su área.' },
+      { el: '#of-piso', titulo: 'Lo pendiente por área', texto: 'Aquí ves el número de pendientes de cada área; en rojo, lo urgente. Tócala para entrar.' }
     ]
   },
 

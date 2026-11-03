@@ -1167,3 +1167,27 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 }
 .m-op-caja.m-vidrio { background: rgba(9, 20, 37, 0.97); -webkit-backdrop-filter: blur(28px) saturate(1.2); backdrop-filter: blur(28px) saturate(1.2); border: 1px solid var(--m-vidrio-borde); }
 @media (prefers-reduced-transparency: reduce) { .m-op-caja.m-vidrio { background: #0b1729; } }
+
+/* ── Oficina 3D (diseno/oficina3d.js): la escena del artifact dentro del gestor ── */
+.m-of3d { padding: 10px; border-radius: var(--m-r-xl); display: grid; gap: 8px; }
+.m-of3d-escena { position: relative; height: 560px; border-radius: var(--m-r-lg); overflow: hidden;
+  background: radial-gradient(120% 80% at 50% 0%, #2a3a55, #101b2e 70%); }
+.m-of3d-capa { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.m-of3d-toque { cursor: grab; touch-action: pan-y; }
+.m-of3d-toque:active { cursor: grabbing; }
+.m-of3d-error { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--m-texto-2); }
+.m-of3d-ayuda { margin: 0 6px 4px; color: var(--m-texto-3); font-size: 13px; }
+.m-of-areas { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.m-of-area { --tono: var(--m-faro); display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 12px 14px; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  border-radius: var(--m-r-lg); border: 1px solid var(--m-panel-borde); background: var(--m-panel); border-top: 3px solid var(--tono);
+  transition: transform var(--m-rapido) var(--m-ease), border-color var(--m-rapido) var(--m-ease); animation: m-of-entra 380ms var(--m-ease) both; animation-delay: calc(var(--i) * 50ms); }
+.m-of-area:hover { transform: translateY(-2px); }
+.m-of-area:active { transform: scale(0.98); }
+.m-of-area.c-faro { --tono: var(--m-faro); } .m-of-area.c-ambar { --tono: var(--m-ambar); } .m-of-area.c-azul { --tono: #6f8cff; }
+.m-of-area.c-verde { --tono: var(--m-verde); } .m-of-area.c-morado { --tono: #a77bff; }
+.m-of-area .m-of-placa { padding: 0; border: 0; }
+.m-of-area-num { min-width: 40px; height: 40px; padding: 0 8px; border-radius: 12px; display: grid; place-items: center; font: 700 18px var(--m-f-titulo);
+  background: color-mix(in srgb, var(--tono) 16%, transparent); color: var(--tono); }
+.m-of-area.urgente .m-of-area-num { background: var(--m-calavera); color: #fff; animation: m-of-late 1.4s ease-in-out infinite; }
+@media (max-width: 640px) { .m-of3d { padding: 6px; } .m-of3d-escena { height: auto; aspect-ratio: 5 / 4; } }
+@media (prefers-reduced-motion: reduce) { .m-of-area, .m-of-area.urgente .m-of-area-num { animation: none; } }

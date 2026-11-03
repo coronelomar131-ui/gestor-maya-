@@ -62,7 +62,11 @@ regresan a pendientes y sale de Cobranza.
 
 ## 5. Oficina virtual
 
-*Oficina virtual* muestra cada área como una mini oficina con su robot:
+*Oficina virtual* es la misma Oficina 3D de tu proyecto en claude.ai (Dirección, Entregas, Taller, Facturación,
+Cobranza y Reportes, con Pepito Junior y sus agentes), ahora dentro del gestor y movida con los datos reales:
+cuando un área tiene trabajo nuevo, sus agentes se juntan y lo atienden, y el agente de esa área dice "Te necesita".
+Toca a un agente para abrir su módulo; en PC arrastra para girar la oficina. Debajo de la escena está el número de
+pendientes de cada área:
 
 | Oficina | Qué cuenta | Abre |
 |---|---|---|
@@ -72,10 +76,7 @@ regresan a pendientes y sale de Cobranza.
 | Cobranza | Facturas vencidas (en rojo) o saldo por cobrar | Cobranza |
 | Reportes | Notas de hoy y su importe | Reportes (solo admin) |
 
-El robot "trabaja" (se mueve y se ilumina) cuando su área tiene algo pendiente. Cada quien ve solo las oficinas de su rol.
-
-> La "Oficina 3D" que existe como artifact en claude.ai es otra cosa: corre dentro de Claude y cada persona que la
-> abre necesita su cuenta de Claude. La Oficina virtual del gestor no necesita cuenta de Claude.
+Cada quien ve solo las áreas de su rol. No necesita cuenta de Claude (el artifact de claude.ai sí la pide).
 
 ## 6. Pepito
 

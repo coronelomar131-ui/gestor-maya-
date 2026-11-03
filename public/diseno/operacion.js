@@ -495,16 +495,61 @@ function estadoAreas() {
   };
 }
 
-function robot(color) {
-  return `<svg class="m-of-robot" viewBox="0 0 64 72" aria-hidden="true">
-    <ellipse cx="32" cy="68" rx="16" ry="3.5" class="sombra"/>
-    <line x1="32" y1="6" x2="32" y2="14" class="antena"/><circle cx="32" cy="5" r="3.5" class="foco c-${color}"/>
-    <rect x="12" y="14" width="40" height="30" rx="12" class="cabeza"/>
-    <rect x="17" y="20" width="30" height="17" rx="8" class="cara"/>
-    <circle cx="25" cy="28.5" r="3.6" class="ojo c-${color}"/><circle cx="39" cy="28.5" r="3.6" class="ojo c-${color}"/>
-    <rect x="18" y="46" width="28" height="18" rx="8" class="cuerpo c-${color}"/>
-    <rect x="27" y="51" width="10" height="6" rx="3" class="pecho"/>
-  </svg>`;
+// La escena 3D es la misma de la "Oficina 3D" del artifact (diseno/oficina3d.js). Solo se carga al abrir este
+// módulo (three.js pesa ~600 KB) y se detiene al salir para no gastar batería.
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js';
+const AGENTE_DE_AREA = { pepito: ['direccion', 'pepito-junior'], entregas: ['entregas', 'preparacion'], facturacion: ['facturacion', 'cfdi'], cobranza: ['cobranza', 'alertas'], reportes: ['reportes', 'ventas'] };
+const MODULO_DE_ZONA = { direccion: 'pepito', entregas: 'seguimiento', facturacion: 'facturacion', cobranza: 'cobranza', reportes: 'reportes' };
+let motor3d = null, sim3d = null, vista3d = null, cargando3d = null;
+const previos = {};
+
+function cargarThree() {
+  if (window.THREE) return Promise.resolve();
+  return new Promise((ok, mal) => {
+    const s = document.createElement('script');
+    s.src = THREE_URL; s.async = true; s.onload = ok;
+    s.onerror = () => mal(new Error('No se pudo cargar three.js'));
+    document.head.appendChild(s);
+  });
+}
+const puedeAbrir = id => { const p = window.__permisosMaya || {}; return !p[id] || p[id].includes(rol()); };
+
+async function abrir3D() {
+  const caja = $('#of-3d');
+  if (!caja || vista3d) return;
+  try {
+    if (!cargando3d) cargando3d = cargarThree().then(() => import('./oficina3d.js'));
+    motor3d = await cargando3d;
+  } catch (e) {
+    cargando3d = null;
+    caja.innerHTML = '<p class="m-of3d-error">No se pudo cargar la oficina 3D (revisa tu conexión). Las áreas de abajo siguen funcionando.</p>';
+    return;
+  }
+  if (vista3d || !$('#mod-oficina').classList.contains('active')) return;
+  sim3d = sim3d || motor3d.nuevaSim();
+  vista3d = motor3d.montarOficina3D(caja, sim3d, id => {
+    const ag = id && sim3d.agentes.find(a => a.id === id);
+    const ir = ag && MODULO_DE_ZONA[ag.area];
+    if (ir && puedeAbrir(ir)) setTimeout(() => window.showModule(ir), 0);
+  });
+  sincronizar3D(estadoAreas(), true);
+}
+
+function cerrar3D() {
+  if (vista3d) { vista3d.detener(); vista3d = null; }
+}
+
+// Lo pendiente de cada área prende "Te necesita" en su agente; cuando llega trabajo nuevo, el área se junta y lo atiende
+function sincronizar3D(est, inicio) {
+  if (!sim3d || !motor3d) return;
+  sim3d.piden = new Set();
+  AREAS.forEach(a => {
+    const e = est[a.id];
+    const [area, agente] = AGENTE_DE_AREA[a.id];
+    if (e.alerta) sim3d.piden.add(agente);
+    if (e.n > 0 && (inicio ? previos[a.id] == null : e.n > (previos[a.id] || 0))) motor3d.despachar(sim3d, area, e.txt);
+    previos[a.id] = e.n;
+  });
 }
 
 function pintarOficina() {
@@ -513,27 +558,25 @@ function pintarOficina() {
   if (!mod.dataset.listo) {
     mod.dataset.listo = '1';
     mod.innerHTML = `<div class="m-of">
-      <section class="m-of-intro m-vidrio"><h2>Así va el equipo hoy</h2><p>Cada oficina es un área. Se ilumina cuando tiene trabajo pendiente; tócala para entrar.</p></section>
-      <div class="m-of-piso" id="of-piso"></div></div>`;
+      <section class="m-of3d m-vidrio">
+        <div class="m-of3d-escena" id="of-3d"><p class="m-of3d-error">Cargando la oficina…</p></div>
+        <p class="m-of3d-ayuda">Toca a un agente para abrir su área. En PC arrastra para girar la oficina. Los que dicen “Te necesita” tienen pendientes.</p>
+      </section>
+      <div class="m-of-areas" id="of-piso"></div></div>`;
     $('#of-piso', mod).addEventListener('click', e => {
       const b = e.target.closest('[data-ir]');
       if (b) setTimeout(() => window.showModule(b.dataset.ir), 0);
     });
   }
   const est = estadoAreas();
-  const permitidos = window.__permisosMaya || {};
-  $('#of-piso', mod).innerHTML = AREAS.filter(a => !permitidos[a.ir] || permitidos[a.ir].includes(rol())).map((a, i) => {
+  $('#of-piso', mod).innerHTML = AREAS.filter(a => puedeAbrir(a.ir)).map((a, i) => {
     const e = est[a.id];
-    return `<button type="button" class="m-of-cuarto c-${a.color}${e.alerta ? ' trabajando' : ''}${e.rojo ? ' urgente' : ''}" data-ir="${a.ir}" style="--i:${i}">
-      <span class="m-of-escena">
-        <span class="m-of-pared"></span><span class="m-of-ventana"></span>
-        <span class="m-of-escritorio"><span class="m-of-pantalla"></span></span>
-        ${robot(a.color)}
-        ${e.n ? `<span class="m-of-globo">${e.n}</span>` : ''}
-      </span>
+    return `<button type="button" class="m-of-area c-${a.color}${e.alerta ? ' trabajando' : ''}${e.rojo ? ' urgente' : ''}" data-ir="${a.ir}" style="--i:${i}">
+      <span class="m-of-area-num">${e.n}</span>
       <span class="m-of-placa"><strong>${escapar(a.nombre)}</strong><small>${escapar(a.rolTxt)}</small><em>${escapar(e.txt)}</em></span>
     </button>`;
   }).join('');
+  if (vista3d) sincronizar3D(est, false); else abrir3D();
 }
 
 // ═══════════════════════ Utilidades ═══════════════════════
@@ -585,7 +628,7 @@ Object.keys(PINTORES).forEach(id => {
   const m = document.getElementById('mod-' + id);
   if (!m) return;
   new MutationObserver(() => {
-    if (!m.classList.contains('active')) return;
+    if (!m.classList.contains('active')) { if (id === 'oficina') cerrar3D(); return; }
     escucharFacturas();
     if (id === 'oficina') escucharBuzon();
     PINTORES[id]();
