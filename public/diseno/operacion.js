@@ -533,9 +533,27 @@ async function abrir3D() {
     if (ir && puedeAbrir(ir)) setTimeout(() => window.showModule(ir), 0);
   });
   sincronizar3D(estadoAreas(), true);
+  // En el teléfono la escena es más ancha que la pantalla (como en el artifact): se centra y se desliza de lado
+  const marco = $('#of-marco');
+  if (marco && marco.scrollWidth > marco.clientWidth) marco.scrollLeft = (marco.scrollWidth - marco.clientWidth) / 2;
+  clearInterval(abrir3D.reloj);
+  abrir3D.reloj = setInterval(pintarEstado3D, 1000);
+  pintarEstado3D();
+}
+
+// "Buenas tardes · 3 trabajando · 2 te necesitan", como el letrero del artifact
+function pintarEstado3D() {
+  const el = $('#of-estado');
+  if (!el || !sim3d) return;
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const ocupados = sim3d.agentes.filter(a => ['junta', 'volver', 'yendo', 'trabaja'].includes(a.fase)).length;
+  const piden = sim3d.piden ? sim3d.piden.size : 0;
+  el.innerHTML = `<strong>${saludo}</strong><span>${ocupados} trabajando · ${piden} te ${piden === 1 ? 'necesita' : 'necesitan'}</span>`;
 }
 
 function cerrar3D() {
+  clearInterval(abrir3D.reloj);
   if (vista3d) { vista3d.detener(); vista3d = null; }
 }
 
@@ -559,7 +577,10 @@ function pintarOficina() {
     mod.dataset.listo = '1';
     mod.innerHTML = `<div class="m-of">
       <section class="m-of3d m-vidrio">
-        <div class="m-of3d-escena" id="of-3d"><p class="m-of3d-error">Cargando la oficina…</p></div>
+        <div class="m-of3d-marco" id="of-marco">
+          <div class="m-of3d-escena" id="of-3d"><p class="m-of3d-error">Cargando la oficina…</p></div>
+        </div>
+        <div class="m-of3d-estado" id="of-estado" aria-live="polite"></div>
         <p class="m-of3d-ayuda">Toca a un agente para abrir su área. En PC arrastra para girar la oficina. Los que dicen “Te necesita” tienen pendientes.</p>
       </section>
       <div class="m-of-areas" id="of-piso"></div></div>`;

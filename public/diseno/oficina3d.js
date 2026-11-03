@@ -103,8 +103,6 @@ export function montarOficina3D(contenedor, e, alElegir) {
     const Ee = [];
     [...e.agentes].sort((M, k) => M.py + M.px - k.py - k.px).forEach(M => {
       if (M.libre && !l.get('omar').g.visible) return;
-      // En pantallas chicas solo se rotulan los que tienen pendientes o están trabajando (si no, se enciman)
-      if (K < 600 && !M.libre && !e.piden.has(M.id) && !trabajando(M)) return;
       const [k, V] = J(M.px + .5, M.libre ? 2.05 : 1.75, M.py + .5);
       pintarEtiqueta(m, e, M, k, V, O, Ee);
     });

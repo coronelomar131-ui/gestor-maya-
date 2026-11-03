@@ -1189,5 +1189,12 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-of-area-num { min-width: 40px; height: 40px; padding: 0 8px; border-radius: 12px; display: grid; place-items: center; font: 700 18px var(--m-f-titulo);
   background: color-mix(in srgb, var(--tono) 16%, transparent); color: var(--tono); }
 .m-of-area.urgente .m-of-area-num { background: var(--m-calavera); color: #fff; animation: m-of-late 1.4s ease-in-out infinite; }
-@media (max-width: 640px) { .m-of3d { padding: 6px; } .m-of3d-escena { height: auto; aspect-ratio: 5 / 4; } }
+.m-of3d { position: relative; }
+.m-of3d-marco { overflow-x: auto; overflow-y: hidden; border-radius: var(--m-r-lg); -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.m-of3d-estado { position: absolute; top: 18px; left: 18px; z-index: 2; display: grid; padding: 8px 12px; border-radius: 12px; pointer-events: none;
+  background: rgba(10, 14, 22, 0.78); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.m-of3d-estado:empty { display: none; }
+.m-of3d-estado strong { color: #fff; font: 700 18px var(--m-f-titulo); }
+.m-of3d-estado span { color: var(--m-texto-2); font-size: 12.5px; }
+@media (max-width: 640px) { .m-of3d { padding: 6px; } .m-of3d-escena { min-width: 720px; height: 420px; } .m-of3d-estado { top: 12px; left: 12px; } }
 @media (prefers-reduced-motion: reduce) { .m-of-area, .m-of-area.urgente .m-of-area-num { animation: none; } }
