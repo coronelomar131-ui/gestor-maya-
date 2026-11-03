@@ -106,6 +106,8 @@ function firestoreFalsa(inicial) {
     async tomar(c, id) { const d = col(c).get(id); col(c).delete(id); return d || null; },
     async perfil(uid) { return [...col('usuarios').values()].find(u => u.uid === uid) || null; },
     async verificarIdToken() { throw new Error('sin Firebase Auth en pruebas'); },
+    cuentas: {},
+    async cuentaCreada(uid) { return this.cuentas[uid] || 0; },
     async usuarioActivo() { return true; }
   };
 }
@@ -281,4 +283,22 @@ test('varias preguntas seguidas leen cada colección de Firebase una sola vez (l
   await c.llamar('crear_nota_entrega', { cliente: 'Zeta Autopartes', articulos: [{ descripcion: 'Espejo', cantidad: 1, precio_unitario: 500 }] });
   assert.equal((await c.llamar('ver_nota', { folio: 'NE-230' })).notas[0].folio, 'NE-230');
   await c.cerrar();
+});
+
+test('OAuth: una cuenta sin perfil en usuarios ya no entra (antes entraba como admin)', async () => {
+  const oauth = require('./oauth');
+  const crypto = require('node:crypto');
+  const huella = t => crypto.createHash('sha256').update(t).digest('hex');
+  const futuro = Date.now() + 60000;
+  await db.guardar('mcp_tokens', huella('tok-admin'), { uid: 'admin-1', email: 'admin@maya', expira: futuro });
+  await db.guardar('mcp_tokens', huella('tok-sin-perfil'), { uid: 'intruso', email: 'x@y.z', expira: futuro });
+  const ok = await oauth.autenticar({ headers: { authorization: 'Bearer tok-admin' } });
+  assert.equal(ok.usuario.rol, 'admin');
+  db.cuentas.intruso = Date.parse('2026-11-10T00:00:00Z'); // cuenta nueva, creada después de cerrar el registro
+  const no = await oauth.autenticar({ headers: { authorization: 'Bearer tok-sin-perfil' } });
+  assert.equal(no.error, 'invalid_token');
+  assert.equal(no.usuario, undefined);
+  db.cuentas.intruso = Date.parse('2026-06-01T00:00:00Z'); // cuenta que ya existía: conserva su acceso
+  const vieja = await oauth.autenticar({ headers: { authorization: 'Bearer tok-sin-perfil' } });
+  assert.equal(vieja.usuario.rol, 'admin');
 });

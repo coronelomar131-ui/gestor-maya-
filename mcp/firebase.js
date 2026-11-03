@@ -66,6 +66,14 @@ const real = {
     const t = await app().auth().verifyIdToken(idToken, true);
     return { uid: t.uid, email: t.email || '' };
   },
+  // Fecha de creación de la cuenta de Firebase Auth en milisegundos (0 si no se puede saber)
+  async cuentaCreada(uid) {
+    try {
+      return Date.parse((await app().auth().getUser(uid)).metadata.creationTime) || 0;
+    } catch (e) {
+      return 0;
+    }
+  },
   async usuarioActivo(uid) {
     try {
       return !(await app().auth().getUser(uid)).disabled;

@@ -5,6 +5,8 @@ const { fb, CONFIG_WEB } = require('./firebase');
 
 const CODIGOS = 'mcp_codigos';
 const ACCESOS = 'mcp_tokens';
+// Igual que CORTE_CUENTAS de public/index.html: cuentas creadas antes conservan el acceso que tenían
+const CORTE_CUENTAS = Date.parse('2026-11-04T06:00:00Z');
 const REFRESCOS = 'mcp_refresh';
 const VIDA_CODIGO = 5 * 60 * 1000;
 const VIDA_ACCESO = 60 * 60 * 1000;
@@ -299,6 +301,12 @@ async function autenticar(req) {
   const t = await fb().obtener(ACCESOS, huella(m[1]));
   if (!t || t.expira < Date.now() || (t.resource && t.resource !== recurso(req))) return { error: 'invalid_token' };
   const perfil = await fb().perfil(t.uid);
+  if (!perfil) {
+    // Sin perfil en "usuarios": antes entraba como admin. Se respeta solo para cuentas creadas antes de cerrar
+    // el registro (la app les crea su perfil al entrar); una cuenta nueva sin perfil no tiene acceso.
+    const creada = await fb().cuentaCreada(t.uid);
+    if (!(creada && creada < CORTE_CUENTAS)) return { error: 'invalid_token' };
+  }
   return {
     usuario: {
       uid: t.uid,

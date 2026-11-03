@@ -2511,7 +2511,20 @@ onAuthStateChanged(auth, async (user) => {
       }
     }
 
-    await loadUserProfile(user.uid);
+    const acceso = await loadUserProfile(user.uid);
+    if (acceso !== true) {
+      // Sin perfil en "usuarios" (o sin poder leerlo) no se entra: las cuentas las da de alta un admin
+      hideLoading();
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'flex';
+      const errEl = document.getElementById('login-error');
+      errEl.textContent = acceso === 'sin-perfil'
+        ? '⚠️ Tu cuenta no está dada de alta en el gestor. Pídele a un administrador que te cree tu usuario.'
+        : '⚠️ No se pudo cargar tu perfil. Intenta de nuevo en unos minutos.';
+      errEl.style.display = 'block';
+      await signOut(auth);
+      return;
+    }
     showApp();
     startListeners();
     hideLoading();
@@ -2523,6 +2536,9 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
+// Cuentas creadas antes de esta fecha conservan el acceso que ya tenían (ver loadUserProfile y mcp/oauth.js)
+const CORTE_CUENTAS = Date.parse('2026-11-04T06:00:00Z');
+
 async function loadUserProfile(uid) {
   try {
     const snap = await getDocs(query(collection(db, 'usuarios'), where('uid', '==', uid)));
@@ -2533,6 +2549,15 @@ async function loadUserProfile(uid) {
       document.getElementById('user-role-display').textContent = profile.rol || 'Usuario';
       document.getElementById('user-avatar').textContent = (profile.nombre || currentUser.email)[0].toUpperCase();
     } else {
+      // Sin perfil. Las cuentas creadas antes de cerrar el registro (CORTE_CUENTAS) entraban como admin:
+      // se les crea su perfil de admin para no dejar fuera a nadie del equipo. Una cuenta nueva sin perfil
+      // solo entra si todavía no existe ningún admin (primer arranque); si no, un admin la tiene que dar de alta.
+      const creada = Date.parse((currentUser.metadata && currentUser.metadata.creationTime) || '') || 0;
+      if (!(creada && creada < CORTE_CUENTAS)) {
+        const admins = await getDocs(query(collection(db, 'usuarios'), where('rol', '==', 'admin')));
+        if (!admins.empty) return 'sin-perfil';
+      }
+      await addDoc(collection(db, 'usuarios'), { uid, nombre: currentUser.email, email: currentUser.email, rol: 'admin', createdAt: serverTimestamp() });
       currentRole = 'admin';
       document.getElementById('user-name-display').textContent = currentUser.email;
       document.getElementById('user-role-display').textContent = 'Admin';
@@ -2547,14 +2572,11 @@ async function loadUserProfile(uid) {
       // No-admin users cannot see Finanzas
       document.getElementById('nav-finanzas').style.display = 'none';
     }
+    return true;
   } catch(e) {
-    currentRole = 'admin';
-    document.getElementById('user-name-display').textContent = currentUser.email;
-    document.getElementById('user-role-display').textContent = 'Admin';
-    document.getElementById('user-avatar').textContent = currentUser.email[0].toUpperCase();
-    document.getElementById('nav-admin-section').style.display = 'block';
-    document.getElementById('nav-usuarios').style.display = 'flex';
-    document.getElementById('nav-finanzas').style.display = 'flex';
+    // Antes un error aquí daba acceso de admin; ahora no se entra hasta poder leer el perfil
+    console.error('No se pudo cargar el perfil:', e);
+    return 'error';
   }
 }
 
@@ -2596,6 +2618,7 @@ window.doLogin = async function() {
   try {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch(e) {
+    errEl.textContent = '⚠️ Correo o contraseña incorrectos.';
     errEl.style.display = 'block';
     btn.textContent = 'INGRESAR AL SISTEMA';
     btn.disabled = false;
@@ -4295,9 +4318,18 @@ window.saveUsuario = async function() {
   const pass = document.getElementById('u-pass').value;
   const rol = document.getElementById('u-rol').value;
   if (!email || !pass || pass.length < 6) return toast('Email y contraseña (min 6 caracteres) requeridos', 'error');
+  if (currentRole !== 'admin') return toast('Solo un administrador puede crear usuarios', 'error');
   try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    await addDoc(collection(db, 'usuarios'), { uid: cred.user.uid, nombre, email, rol, createdAt: serverTimestamp() });
+    // La cuenta la crea el servidor (api/usuarios.js) después de revisar que quien la pide es admin.
+    // Así la sesión del admin no cambia y el registro público de Firebase puede quedar apagado.
+    const token = await auth.currentUser.getIdToken();
+    const r = await fetch('/api/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ nombre, email, pass, rol })
+    });
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(res.error || 'No se pudo crear el usuario');
     closeModal('modal-usuario');
     toast('Usuario creado ✅', 'success');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
