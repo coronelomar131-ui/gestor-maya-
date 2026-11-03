@@ -69,6 +69,8 @@ function baseDePrueba() {
       MLM1: { id: 'MLM1', title: 'Faro Derecho Creta 2021', price: 9200, available_quantity: 3, status: 'active', permalink: 'https://articulo.mercadolibre.com.mx/MLM-1', ultimaSync: new Date('2026-10-30T20:00:00Z') },
       MLM2: { id: 'MLM2', title: 'Cofre Seat Leon 2018', price: 6500, available_quantity: 0, status: 'paused', permalink: 'https://articulo.mercadolibre.com.mx/MLM-2', ultimaSync: new Date('2026-10-30T20:05:00Z') }
     },
+    // La app solo reescribe las publicaciones que cambian; la hora del último sync va aquí
+    config: { ml_ultima_sync: { fecha: new Date('2026-10-30T21:00:00Z'), total: 2 } },
     cotizaciones: {
       cot6: { notaId: '6', fecha: 1782432000000, clienteNombre: 'Distribuidora Ejemplo', total: 0, estatus: 'vigente', createdAt: '2026-06-26T16:06:43.133Z' }
     },
@@ -200,7 +202,7 @@ test('buscar_productos_ml: última sincronización, piezas y filtros; solo para 
   const r = await admin.llamar('buscar_productos_ml', {});
   assert.equal(r.encontrados, 2);
   assert.equal(r.piezas_disponibles, 3);
-  assert.equal(r.ultima_sincronizacion, '2026-10-30 14:05');
+  assert.equal(r.ultima_sincronizacion, '2026-10-30 15:00');
   assert.deepEqual((await admin.llamar('buscar_productos_ml', { solo_sin_existencias: true })).productos.map(p => p.id), ['MLM2']);
   assert.deepEqual((await admin.llamar('buscar_productos_ml', { estatus: 'active', texto: 'creta' })).productos.map(p => p.id), ['MLM1']);
   await admin.cerrar();

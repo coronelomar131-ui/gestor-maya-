@@ -4602,8 +4602,11 @@ window.cargarProductosML = async function() {
     }
 
     // ⭐ NUEVO: Cargar desde Firestore primero (caché compartida = más rápido)
-    const mlProductosSnap = await getDocs(collection(db, 'ml_productos'));
+    // Si el listener en tiempo real ya las tiene, se usan esas y no se vuelven a leer ~1,700 documentos
     let items = [];
+    const enMemoria = window._mlProductosEnVivo;
+    const mlProductosSnap = enMemoria ? [] : await getDocs(collection(db, 'ml_productos'));
+    if (enMemoria) items = enMemoria.slice();
     // FIX: Create new objects from Firestore docs to avoid readonly property errors
     mlProductosSnap.forEach(doc => {
       const itemData = doc.data() || {};
@@ -4619,7 +4622,7 @@ window.cargarProductosML = async function() {
     let syncInfo = '';
     if (syncDoc.exists()) {
       const data = syncDoc.data();
-      const fecha = data.fecha.toDate();
+      const fecha = data.fecha && data.fecha.toDate ? data.fecha.toDate() : new Date();
       const horaStr = fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
       syncInfo = `<div style="font-size:0.9em;color:var(--gray);margin-bottom:15px">
         📅 Última actualización: ${horaStr} |
@@ -4776,6 +4779,7 @@ window.escucharProductosML = function() {
       }
       productos.push(newItem);
     });
+    window._mlProductosEnVivo = productos;
 
     if (productos.length > 0) {
       verificarAlertas(productos);
@@ -5861,7 +5865,29 @@ if (document.readyState === 'loading') {
 // MERCADO LIBRE INVENTORY SYNC
 // ═════════════════════════════════════════════════════════════
 
+// El sync automático corre como máximo una vez cada 10 minutos entre todos los usuarios
+const ML_SYNC_CADA_MS = 10 * 60 * 1000;
+let mlSyncEnCurso = false;
+function aMs(f) { if (!f) return 0; if (f.toMillis) return f.toMillis(); const n = new Date(f).getTime(); return isNaN(n) ? 0 : n; }
+// Huella corta de lo que se muestra de una publicación (si no cambia, no se vuelve a escribir)
+function firmaML(p) {
+  const s = [p.title || '', p.price || 0, p.available_quantity || 0, p.status || '', p.permalink || '', (p.thumbnail || '').replace('http://', 'https://')].join('|');
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
 window.sincronizarInventarioML = async function(silent) {
+  if (mlSyncEnCurso) {
+    const st = document.getElementById('ml-sync-status');
+    if (!silent && st) { st.style.display = 'block'; st.innerHTML = '⏳ Ya se está sincronizando, espera un momento...'; }
+    return;
+  }
+  mlSyncEnCurso = true;
+  try { return await sincronizarInventarioMLInterno(silent); } finally { mlSyncEnCurso = false; }
+};
+
+async function sincronizarInventarioMLInterno(silent) {
   const statusDiv = document.getElementById('ml-sync-status');
   try {
     if (!silent && statusDiv) {
@@ -5869,6 +5895,15 @@ window.sincronizarInventarioML = async function(silent) {
       statusDiv.innerHTML = '⏳ Sincronizando con Mercado Libre...';
     }
 
+    // ⭐ Turno compartido: la caché ml_productos es de todos, así que basta con que UN usuario
+    // sincronice cada ML_SYNC_CADA_MS. El automático (silent) se salta si alguien ya lo hizo o lo está haciendo.
+    if (silent) {
+      const metaSnap = await getDoc(doc(db, 'config', 'ml_ultima_sync'));
+      const meta = metaSnap.exists() ? metaSnap.data() : {};
+      const ultima = Math.max(aMs(meta.fecha), aMs(meta.reservado));
+      if (Date.now() - ultima < ML_SYNC_CADA_MS) return;
+      await setDoc(doc(db, 'config', 'ml_ultima_sync'), { reservado: new Date() }, { merge: true });
+    }
     // ⭐ NUEVO: Usar obtenerMLUserId() que lee desde Firestore (compartido)
     let mlUserId = await obtenerMLUserId();
     console.log('ML User ID en sync:', mlUserId);
@@ -5895,14 +5930,25 @@ window.sincronizarInventarioML = async function(silent) {
       return;
     }
 
-    // ⭐ Guardar productos en Firestore en lotes de máx 400 operaciones (límite 500)
-    let syncedCount = 0, stockBajo = 0, sinStock = 0, pausados = 0;
-    const idsActuales = new Set();
+    // ⭐ Solo se guarda lo que cambió desde la última vez (antes se reescribían las ~1,700 publicaciones
+    // dos veces cada pocos minutos y eso agotaba la cuota diaria de Firebase). La huella de cada
+    // publicación se guarda en config/ml_firmas: con 1 lectura se sabe qué cambió.
+    let syncedCount = 0, stockBajo = 0, sinStock = 0, pausados = 0, cambiados = 0, borrados = 0;
+    const firmasDoc = await getDoc(doc(db, 'config', 'ml_firmas'));
+    let firmasPrevias = firmasDoc.exists() ? (firmasDoc.data().firmas || null) : null;
+    if (!firmasPrevias) {
+      // Primera vez: se arma la huella con lo que ya está guardado (lecturas, no escrituras)
+      firmasPrevias = {};
+      const cacheSnap = await getDocs(collection(db, 'ml_productos'));
+      cacheSnap.forEach(d => { firmasPrevias[d.id] = firmaML(d.data() || {}); });
+    }
+    const firmasNuevas = {};
     let batch = writeBatch(db);
     let ops = 0;
     const commitIfFull = async () => {
       if (ops >= 400) { await batch.commit(); batch = writeBatch(db); ops = 0; }
     };
+    const authUser = auth.currentUser;
 
     for (const producto of items) {
       // ⭐ FIX BUG 1: CREAR OBJETO NUEVO (no modificar readonly)
@@ -5917,49 +5963,50 @@ window.sincronizarInventarioML = async function(silent) {
         thumbnail: (producto.thumbnail || '').replace('http://', 'https://'),
         ultimaSync: new Date()
       };
-
-      const authUser = auth.currentUser;
-      if (authUser) {
-        productolimpio.usuario = authUser.uid;
-      }
-
-      idsActuales.add(productolimpio.id);
-      // Guardar en ml_productos (caché compartida)
-      batch.set(doc(db, 'ml_productos', productolimpio.id), productolimpio);
-      // También guardar en inventario (legado)
-      batch.set(doc(db, 'inventario', `ml_${productolimpio.id}`), productolimpio, { merge: true });
-      ops += 2;
-      await commitIfFull();
+      if (authUser) productolimpio.usuario = authUser.uid;
+      if (!productolimpio.id) continue;
 
       syncedCount++;
-
-      // ⭐ NUEVO: Contar alertas
       if (productolimpio.status === 'paused') pausados++;
       else if (productolimpio.available_quantity === 0) sinStock++;
       else if (productolimpio.available_quantity === 1) stockBajo++;
+
+      const firma = firmaML(productolimpio);
+      firmasNuevas[productolimpio.id] = firma;
+      if (firmasPrevias[productolimpio.id] === firma) continue; // sin cambios: no se escribe
+
+      // Guardar en ml_productos (caché compartida) y en inventario (legado)
+      batch.set(doc(db, 'ml_productos', productolimpio.id), productolimpio);
+      batch.set(doc(db, 'inventario', `ml_${productolimpio.id}`), productolimpio, { merge: true });
+      ops += 2;
+      cambiados++;
+      await commitIfFull();
     }
 
     // ⭐ Eliminar de la caché productos que ya no existen en ML
-    try {
-      const cacheSnap = await getDocs(collection(db, 'ml_productos'));
-      for (const d of cacheSnap.docs) {
-        if (!idsActuales.has(d.id)) {
-          batch.delete(doc(db, 'ml_productos', d.id));
-          ops++;
-          await commitIfFull();
-        }
+    for (const id of Object.keys(firmasPrevias)) {
+      if (!(id in firmasNuevas)) {
+        batch.delete(doc(db, 'ml_productos', id));
+        ops++;
+        borrados++;
+        await commitIfFull();
       }
-    } catch (e) { console.warn('No se pudo limpiar caché ML:', e.message); }
+    }
 
-    await batch.commit();
+    if (ops) await batch.commit();
+    if (cambiados || borrados || !firmasDoc.exists()) {
+      await setDoc(doc(db, 'config', 'ml_firmas'), { firmas: firmasNuevas, actualizado: new Date() });
+    }
 
-    // ⭐ NUEVO: Guardar metadata de la sincronización
+    // ⭐ Metadata de la sincronización (también sirve de turno compartido entre usuarios)
     await setDoc(doc(db, 'config', 'ml_ultima_sync'), {
       fecha: new Date(),
       total: syncedCount,
       stockBajo,
       sinStock,
-      pausados
+      pausados,
+      cambiados,
+      borrados
     });
 
     console.log(`✅ Sync ML: ${syncedCount} productos (silent: ${!!silent})`);
@@ -6001,7 +6048,7 @@ window.sincronizarInventarioML = async function(silent) {
       if (statusDiv) statusDiv.innerHTML = `❌ Error: ${error.message}`;
     }
   }
-};
+}
 
 window.mostrarAlertaML = function(mensaje) {
   const container = document.getElementById('ml-alerts-container');

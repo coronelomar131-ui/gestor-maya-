@@ -341,8 +341,9 @@ async function productos(texto, soloBajoStock, limite) {
 // No consulta Mercado Libre en vivo. Los tokens de ML (ml_tokens) nunca se leen aquí.
 async function productosML(f, limite) {
   const q = norm(f.texto);
-  const todos = await leer('ml_productos');
-  let ultima = null;
+  const [todos, meta] = await Promise.all([leer('ml_productos'), fb().obtener('config', 'ml_ultima_sync').catch(() => null)]);
+  // La app ya solo reescribe las publicaciones que cambian; la hora del último sync está en config/ml_ultima_sync
+  let ultima = meta ? aFecha(meta.fecha) : null;
   const lista = todos
     .map(p => {
       const sync = aFecha(p.ultimaSync);
