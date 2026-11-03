@@ -197,6 +197,7 @@ function escuchar() {
 }
 
 function abrir() {
+  if (window.__pepitoChat) return; // con la API de Claude configurada, el módulo es chat en vivo (pepito-chat.js)
   const mod = vista();
   if (!mod) return;
   const wrap = $('#buzon-todos-wrap', mod);

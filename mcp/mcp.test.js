@@ -369,3 +369,80 @@ test('facturación y cobranza: pendientes sin factura y saldos con días vencido
   assert.ok(nombres.includes('cobranza') && nombres.includes('historial_notas') && !nombres.includes('eliminar_registro'));
   await f.cerrar();
 });
+
+// ── Pepito con la API de Claude (cliente simulado: no llama a Anthropic) ──
+function claudeFalso(guion) {
+  const llamadas = [];
+  const crear = async params => {
+    llamadas.push(params);
+    const paso = guion.shift();
+    if (!paso) throw new Error('guion agotado');
+    return typeof paso === 'function' ? paso(params) : paso;
+  };
+  return { llamadas, messages: { create: crear }, beta: { messages: { create: crear } } };
+}
+const usoFalso = { input_tokens: 100, output_tokens: 20 };
+const herramienta = (name, input, id) => ({ stop_reason: 'tool_use', usage: usoFalso, content: [{ type: 'tool_use', id: id || 't' + name, name, input }] });
+const texto = t => ({ stop_reason: 'end_turn', usage: usoFalso, content: [{ type: 'text', text: t }] });
+
+test('Pepito API: consulta con herramientas del rol y propuesta que solo se guarda al confirmar', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const cot = { cliente: 'Zeta Autopartes', partidas: [{ descripcion: 'Faro', precio: 1000, iva_porcentaje: 16, ajuste: 0 }] };
+  const falso = claudeFalso([
+    herramienta('resumen_ventas', { agrupar_por: 'mes' }),
+    texto('Este año van varias notas.'),
+    herramienta('crear_cotizacion', cot),
+    texto('Voy a guardar una cotización para Zeta Autopartes por $1,160. ¿La guardo?'),
+    texto('Listo, quedó la COT.')
+  ]);
+  pepito._usarCliente(falso);
+  const r1 = await pepito.conversar(ADMIN, '¿cómo vamos?', 'gestor');
+  assert.equal(r1.texto, 'Este año van varias notas.');
+  assert.deepEqual(r1.herramientas, ['resumen_ventas']);
+  // Las herramientas que recibe Claude son las del rol, sin el buzón
+  const nombres = falso.llamadas[0].tools.map(t => t.name);
+  assert.ok(nombres.includes('crear_cotizacion') && !nombres.includes('revisar_buzon'));
+  assert.equal(falso.llamadas[0].fallbacks, 'default');
+  // El resultado de la herramienta regresó a Claude
+  assert.equal(falso.llamadas[1].messages.at(-1).content[0].type, 'tool_result');
+
+  const antes = db.cols.cotizaciones.size;
+  const r2 = await pepito.conversar(ADMIN, 'hazme una cotización de un faro para Zeta a 1000', 'gestor');
+  assert.ok(r2.propuesta && r2.propuesta.herramienta === 'crear_cotizacion');
+  assert.equal(db.cols.cotizaciones.size, antes, 'no se guarda hasta confirmar');
+  assert.match(falso.llamadas[3].messages.at(-1).content[0].content, /PENDIENTE DE CONFIRMACIÓN/);
+
+  await assert.rejects(() => pepito.resolverPropuesta(ADMIN, 'otra', true, 'gestor'), /ya no está pendiente/);
+  const r3 = await pepito.resolverPropuesta(ADMIN, r2.propuesta.id, true, 'gestor');
+  assert.equal(r3.texto, 'Listo, quedó la COT.');
+  assert.equal(db.cols.cotizaciones.size, antes + 1, 'al confirmar sí se guarda');
+  await assert.rejects(() => pepito.resolverPropuesta(ADMIN, r2.propuesta.id, true, 'gestor'), /ya no está pendiente/);
+  const conv = db.cols.pepito_conversacion.get('admin-1');
+  assert.equal(conv.mensajes.length, 5);
+  assert.equal(conv.propuesta, null);
+  const uso = [...db.cols.pepito_uso.values()][0];
+  assert.equal(uso.mensajes, 2);
+});
+
+test('Pepito API: un vendedor no recibe herramientas de su rol prohibido y hay límite diario', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const falso = claudeFalso([texto('Hola')]);
+  pepito._usarCliente(falso);
+  await pepito.conversar(VENDEDOR, 'hola', 'whatsapp');
+  const nombres = falso.llamadas[0].tools.map(t => t.name);
+  assert.ok(!nombres.includes('eliminar_registro') && !nombres.includes('cobranza') && !nombres.includes('guardar_producto'));
+  assert.match(falso.llamadas[0].system[0].text, /WhatsApp/);
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  db.cols.pepito_uso.set('v-1_' + hoy, { uid: 'v-1', mensajes: 999, entrada: 0, salida: 0, cache: 0 });
+  await assert.rejects(() => pepito.conversar(VENDEDOR, 'otra', 'gestor'), /mensajes de hoy/);
+});
+
+test('Acceso por WhatsApp: solo números registrados (52 o 521 + 10 dígitos)', async () => {
+  const acceso = require('./acceso');
+  db.cols.usuarios.get('u1').whatsapp10 = '5512345678';
+  assert.equal((await acceso.porWhatsApp('5215512345678')).uid, 'admin-1');
+  assert.equal((await acceso.porWhatsApp('525512345678')).uid, 'admin-1');
+  assert.equal(await acceso.porWhatsApp('5219999999999'), null);
+});
