@@ -357,11 +357,17 @@ function crearServidor(usuario) {
 
     servidor.registerTool('responder_buzon', {
       title: 'Contestar un pedido del buzón',
-      description: 'Guarda la respuesta de Pepito a un pedido del buzón; quien lo pidió la ve en la app al momento.',
+      description: 'Guarda la respuesta de Pepito a un pedido del buzón; quien lo pidió la ve en la app al momento. ' +
+        'Si pidieron una nota o cotización (o la acabas de crear), mándala en adjuntos para que puedan descargar el PDF desde el chat.',
       inputSchema: {
         id: z.string().min(1).describe('id del pedido (sale en revisar_buzon)'),
         respuesta: z.string().min(1).describe('Lo que verá la persona en la app'),
-        espera_confirmacion: z.boolean().default(false).describe('true si propones guardar algo y esperas que confirme')
+        espera_confirmacion: z.boolean().default(false).describe('true si propones guardar algo y esperas que confirme'),
+        adjuntos: z.array(z.object({
+          tipo: z.enum(['nota_entrega', 'nota_venta', 'cotizacion']).describe('nota_entrega = NE (id de la nota); nota_venta = NV (id de la venta); cotizacion = COT (id de la cotización)'),
+          id: z.string().min(1).describe('id del registro, como lo regresan ver_nota, historial_notas, crear_* o buscar_*'),
+          folio: z.string().optional().describe('Folio para el botón, ej. NE-230, NV #243, COT-12')
+        })).max(5).default([]).describe('Notas o cotizaciones que la persona pidió o que acabas de crear: en la app le sale un botón para descargar su PDF')
       },
       annotations: ESCRITURA
     }, ejecutar(a => buzon.responder(usuario, a)));

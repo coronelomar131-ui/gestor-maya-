@@ -60,6 +60,8 @@ function vista() {
   });
   $('#buzon-todos', mod).addEventListener('change', e => { verTodos = e.target.checked; escuchar(); });
   $('#buzon-lista', mod).addEventListener('click', e => {
+    const pdf = e.target.closest('[data-pdf]');
+    if (pdf) return descargarAdjunto(pdf);
     const b = e.target.closest('[data-responder]');
     if (!b) return;
     const p = pedidos.find(x => x.id === b.dataset.responder);
@@ -138,10 +140,30 @@ function pintar() {
           <div class="m-buzon-respuesta">
             <div class="m-buzon-quien">${icono('bot', 15)} Pepito</div>
             <p>${escapar(p.respuesta)}</p>
+            ${adjuntos(p)}
             ${mio ? `<button type="button" class="btn btn-secondary btn-sm" data-responder="${escapar(p.id)}">${icono('reply', 14)}<span>${p.esperaConfirmacion ? 'Confirmar o corregir' : 'Responder'}</span></button>` : ''}
           </div>`}
       </article>`;
   }).join('');
+}
+
+// Notas y cotizaciones que Pepito mandó: el PDF se genera con las mismas funciones de la app
+const PDF = {
+  nota_entrega: { fn: 'generarNotaEntregaPDFById', nombre: 'Nota de entrega' },
+  nota_venta: { fn: 'descargarNotaPorId', nombre: 'Nota de venta' },
+  cotizacion: { fn: 'generarCotizacionPDFById', nombre: 'Cotización' }
+};
+function adjuntos(p) {
+  const lista = (p.adjuntos || []).filter(a => PDF[a.tipo] && a.id);
+  if (!lista.length) return '';
+  return '<div class="m-buzon-adjuntos">' + lista.map(a =>
+    `<button type="button" class="m-buzon-adjunto" data-pdf="${escapar(a.tipo)}" data-id="${escapar(a.id)}">${icono('file-down', 16)}<span><strong>${escapar(a.folio || PDF[a.tipo].nombre)}</strong><small>Descargar PDF</small></span></button>`
+  ).join('') + '</div>';
+}
+function descargarAdjunto(b) {
+  const f = PDF[b.dataset.pdf] && window[PDF[b.dataset.pdf].fn];
+  if (typeof f !== 'function') return window.toast && window.toast('Ese documento no se puede descargar desde aquí', 'error');
+  try { f(b.dataset.id); } catch (e) { window.toast && window.toast('No se pudo generar el PDF: ' + e.message, 'error'); }
 }
 
 function pintarEstado() {

@@ -46,6 +46,7 @@ async function responder(u, a) {
     estado: 'respondido',
     respuesta: String(a.respuesta),
     esperaConfirmacion: !!a.espera_confirmacion,
+    adjuntos: (a.adjuntos || []).map(x => ({ tipo: x.tipo, id: String(x.id), folio: x.folio ? String(x.folio) : '' })),
     respondidoAt: fb().marcaTiempo(),
     respondidoPor: u.nombre || u.email || 'Pepito'
   });

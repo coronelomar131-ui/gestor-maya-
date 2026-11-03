@@ -1001,3 +1001,12 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 @media (prefers-reduced-motion: reduce) {
   .m-buzon-hilo, .m-buzon-hilo.pendiente .m-buzon-chip.espera .m-icono { animation: none; }
 }
+.m-buzon-adjuntos { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.m-buzon-adjunto { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--m-r); cursor: pointer; text-align: left;
+  background: rgba(59, 188, 212, 0.1); border: 1px solid rgba(59, 188, 212, 0.3); color: var(--m-faro-claro); font: inherit;
+  transition: background var(--m-rapido) var(--m-ease), transform var(--m-rapido) var(--m-ease); }
+.m-buzon-adjunto:hover { background: rgba(59, 188, 212, 0.18); }
+.m-buzon-adjunto:active { transform: scale(0.97); }
+.m-buzon-adjunto span { display: grid; line-height: 1.2; }
+.m-buzon-adjunto strong { color: var(--m-niebla); font-size: 14px; }
+.m-buzon-adjunto small { color: var(--m-texto-3); font-size: 12px; }

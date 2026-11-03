@@ -322,8 +322,9 @@ test('buzón de Pepito: revisar trae pendientes con permisos del rol; responder 
   assert.equal(r.pedidos[1].puede_borrar, false);
   assert.equal(r.pedidos[0].contexto.respuesta_anterior, 'propuesta');
   assert.ok(db.cols.config.get('buzon_pepito').ultimaRevision);
-  const ok = await c.llamar('responder_buzon', { id: 'b1', respuesta: 'Ayer: $1,000' });
+  const ok = await c.llamar('responder_buzon', { id: 'b1', respuesta: 'Ayer: $1,000', adjuntos: [{ tipo: 'nota_entrega', id: 'ne1', folio: 'NE-1' }] });
   assert.equal(ok.ok, true);
+  assert.deepEqual(db.cols.buzon_pepito.get('b1').adjuntos, [{ tipo: 'nota_entrega', id: 'ne1', folio: 'NE-1' }]);
   assert.equal(db.cols.buzon_pepito.get('b1').estado, 'respondido');
   assert.equal(db.cols.buzon_pepito.get('b1').respuesta, 'Ayer: $1,000');
   assert.match((await c.llamar('responder_buzon', { id: 'nada', respuesta: 'x' })).error, /No existe/);
