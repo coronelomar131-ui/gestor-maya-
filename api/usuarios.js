@@ -3,7 +3,7 @@
 // Así el registro público de Firebase Auth se puede apagar en la consola y nadie se da de alta solo.
 const admin = require('firebase-admin');
 
-const ROLES = ['vendedor', 'almacen', 'entregas', 'admin'];
+const ROLES = ['vendedor', 'almacen', 'entregas', 'facturacion', 'admin'];
 
 function app() {
   if (!admin.apps.length) {

@@ -7,9 +7,10 @@ const buzon = require('./buzon');
 
 // Los mismos roles por módulo que showModule() en public/index.html; borrar es solo de admin
 const PERMISOS = {
-  notas: ['admin', 'vendedor', 'almacen'],
-  ventas: ['admin', 'vendedor'],
-  clientes: ['admin', 'vendedor'],
+  notas: ['admin', 'vendedor', 'almacen', 'facturacion'],
+  ventas: ['admin', 'vendedor', 'facturacion'],
+  clientes: ['admin', 'vendedor', 'facturacion'],
+  facturas: ['admin', 'facturacion'],
   inventario: ['admin', 'almacen'],
   entregas: ['admin', 'vendedor', 'almacen'],
   envios: ['admin', 'vendedor', 'almacen'],
@@ -90,7 +91,7 @@ function instrucciones(usuario) {
 
 function crearServidor(usuario) {
   const puede = modulo => PERMISOS[modulo].includes(usuario.rol);
-  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.2.0' }, { instructions: instrucciones(usuario) });
+  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.3.0' }, { instructions: instrucciones(usuario) });
 
   // ── Consultas ──
   if (puede('notas')) {
@@ -198,6 +199,27 @@ function crearServidor(usuario) {
       },
       annotations: LECTURA
     }, ejecutar(a => datos.productosML(a, a.limite)));
+  }
+
+  if (puede('facturas')) {
+    servidor.registerTool('pendientes_facturar', {
+      title: 'Pendientes de facturar',
+      description: 'Notas de entrega y de venta con importe que todavía no tienen factura, agrupadas por cliente (bandeja de Facturación de la app). ' +
+        'Las facturas se timbran en CONTPAQi; aquí no se timbra nada.',
+      inputSchema: { cliente: z.string().optional().describe('Parte del nombre del cliente') },
+      annotations: LECTURA
+    }, ejecutar(a => datos.pendientesFacturar(a)));
+
+    servidor.registerTool('cobranza', {
+      title: 'Cobranza: saldos por cobrar',
+      description: 'Facturas con saldo pendiente, su vencimiento y días de atraso (módulo Cobranza de la app), de la más atrasada a la más reciente.',
+      inputSchema: {
+        cliente: z.string().optional().describe('Parte del nombre del cliente'),
+        solo_vencidas: z.boolean().default(false),
+        limite: z.number().int().min(1).max(200).default(50)
+      },
+      annotations: LECTURA
+    }, ejecutar(a => datos.cobranza(a)));
   }
 
   const modulos = Object.keys(datos.MODULOS).filter(puede);

@@ -142,6 +142,40 @@ export const TUTORIALES = {
     ]
   },
 
+  oficina: {
+    titulo: 'Oficina virtual',
+    pasos: [
+      { el: '#of-piso', titulo: 'Las áreas del equipo', texto: 'Cada oficina es un área: Pepito, Entregas, Facturación, Cobranza y Reportes. Se ilumina y el robot trabaja cuando hay algo pendiente.' },
+      { el: '.m-of-cuarto', titulo: 'Entra a un área', texto: 'Toca una oficina para abrir su módulo. El número arriba a la izquierda es lo pendiente; en rojo, lo urgente.' }
+    ]
+  },
+
+  seguimiento: {
+    titulo: 'Seguimiento de piezas',
+    pasos: [
+      { el: '#seg-buscar', titulo: 'Busca una pieza', texto: 'Por cliente, folio, siniestro o pieza.' },
+      { el: '#seg-etapas', titulo: 'Filtra por etapa', texto: 'Registrada, en preparación, en tránsito, entregada, facturada y pagada. “Por entregar” muestra lo que sigue en camino.' },
+      { el: '#seg-lista', titulo: 'Mueve la etapa', texto: 'Toca una pieza para ver su línea de tiempo y moverla de etapa. Facturada y Pagada se ponen solas desde Facturación y Cobranza.' }
+    ]
+  },
+
+  facturacion: {
+    titulo: 'Facturación',
+    pasos: [
+      { el: '#fac-tabs', titulo: 'Pendientes y facturas', texto: 'En Pendientes ves las notas que faltan por facturar, agrupadas por cliente. En Facturas, las que ya subiste.' },
+      { el: '#fac-cuerpo', titulo: 'Prepara la factura', texto: 'Selecciona las notas y copia sus datos para capturarlos en CONTPAQi.' },
+      { el: '.m-op-subir', titulo: 'Sube el XML', texto: 'Cuando CONTPAQi timbre, sube aquí el XML. El gestor lee el UUID, el folio y el total, te sugiere las notas que cubre y la manda a Cobranza.' }
+    ]
+  },
+
+  cobranza: {
+    titulo: 'Cobranza',
+    pasos: [
+      { el: '#cob-resumen', titulo: 'Cómo vamos', texto: 'Lo que falta por cobrar, lo vencido y lo que vence esta semana.' },
+      { el: '#cob-cuerpo', titulo: 'Por cliente', texto: 'Cada factura con su saldo y vencimiento. Registra pagos completos o parciales; cuando el saldo llega a cero queda pagada.' }
+    ]
+  },
+
   pepito: {
     titulo: 'Pepito',
     pasos: [

@@ -16,10 +16,14 @@ const escapar = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':
 const MODULOS = [
   { id: 'dashboard', nombre: 'Resumen', corto: 'Resumen', icono: 'layout-dashboard', grupo: 'Principal', desc: 'Cómo va el negocio hoy' },
   { id: 'pepito', nombre: 'Pepito', corto: 'Pepito', icono: 'bot', grupo: 'Principal', desc: 'Pídele consultas y tareas a Pepito' },
+  { id: 'oficina', nombre: 'Oficina virtual', corto: 'Oficina', icono: 'building', grupo: 'Principal', desc: 'Cada área y su trabajo pendiente' },
   { id: 'notas-entrega', nombre: 'Notas de entrega', corto: 'Notas', icono: 'clipboard-check', grupo: 'Ventas', desc: 'Crea, busca y descarga notas de entrega' },
   { id: 'ventas', nombre: 'Ventas', corto: 'Ventas', icono: 'receipt', grupo: 'Ventas', desc: 'Registra ventas y da seguimiento a su estatus' },
   { id: 'cotizaciones', nombre: 'Cotizaciones', corto: 'Cotizar', icono: 'clipboard-list', grupo: 'Ventas', desc: 'Prepara cotizaciones para tus clientes' },
   { id: 'clientes', nombre: 'Clientes', corto: 'Clientes', icono: 'users', grupo: 'Ventas', desc: 'Directorio de clientes y datos fiscales' },
+  { id: 'seguimiento', nombre: 'Seguimiento de piezas', corto: 'Seguimiento', icono: 'route', grupo: 'Ventas', desc: 'De registrada a pagada' },
+  { id: 'facturacion', nombre: 'Facturación', corto: 'Facturar', icono: 'receipt-text', grupo: 'Administración', desc: 'Pendientes de facturar y XML de CONTPAQi' },
+  { id: 'cobranza', nombre: 'Cobranza', corto: 'Cobranza', icono: 'hand-coins', grupo: 'Administración', desc: 'Saldos, vencimientos y pagos' },
   { id: 'busqueda-ventas', nombre: 'Buscar ventas', corto: 'Buscar', icono: 'search', grupo: 'Ventas', desc: 'Encuentra ventas por siniestro, cliente o monto' },
   { id: 'documentos', nombre: 'Documentos', corto: 'Documentos', icono: 'folder-open', grupo: 'Ventas', desc: 'Notas de venta y facturas' },
   { id: 'inventario', nombre: 'Inventario', corto: 'Inventario', icono: 'package', grupo: 'Almacén', desc: 'Piezas, precios y existencias' },
@@ -34,16 +38,21 @@ const MODULOS = [
   { id: 'configuracion', nombre: 'Configuración', corto: 'Ajustes', icono: 'settings', grupo: 'Administración', desc: 'Datos fiscales y ajustes generales' }
 ];
 const PERMISOS = {
-  dashboard: ['admin', 'vendedor', 'almacen'], pepito: ['admin', 'vendedor', 'almacen', 'entregas'], ventas: ['admin', 'vendedor'], inventario: ['admin', 'almacen'],
-  clientes: ['admin', 'vendedor'], cotizaciones: ['admin', 'vendedor'], proveedores: ['admin', 'almacen'],
+  dashboard: ['admin', 'vendedor', 'almacen', 'facturacion'], pepito: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
+  oficina: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'], seguimiento: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
+  facturacion: ['admin', 'facturacion'], cobranza: ['admin', 'facturacion'], ventas: ['admin', 'vendedor', 'facturacion'], inventario: ['admin', 'almacen'],
+  clientes: ['admin', 'vendedor', 'facturacion'], cotizaciones: ['admin', 'vendedor'], proveedores: ['admin', 'almacen'],
   entregas: ['admin', 'vendedor', 'almacen'], envios: ['admin', 'vendedor', 'almacen'], 'visitas-talleres': ['admin', 'vendedor', 'almacen'],
-  reportes: ['admin'], mercadolibre: ['admin'], documentos: ['admin', 'vendedor'], 'notas-entrega': ['admin', 'vendedor', 'almacen'],
-  'busqueda-ventas': ['admin', 'vendedor', 'almacen'], usuarios: ['admin'], finanzas: ['admin', 'vendedor', 'almacen'], configuracion: ['admin']
+  reportes: ['admin'], mercadolibre: ['admin'], documentos: ['admin', 'vendedor', 'facturacion'], 'notas-entrega': ['admin', 'vendedor', 'almacen', 'facturacion'],
+  'busqueda-ventas': ['admin', 'vendedor', 'almacen', 'facturacion'], usuarios: ['admin'], finanzas: ['admin', 'vendedor', 'almacen'], configuracion: ['admin']
 };
+window.__permisosMaya = PERMISOS;
 const FIJADOS_INICIALES = {
-  admin: ['dashboard', 'pepito', 'notas-entrega', 'ventas', 'clientes', 'inventario', 'reportes'],
+  admin: ['dashboard', 'oficina', 'pepito', 'notas-entrega', 'ventas', 'facturacion', 'cobranza', 'reportes'],
+  facturacion: ['dashboard', 'oficina', 'facturacion', 'cobranza', 'seguimiento', 'pepito'],
+  entregas: ['oficina', 'seguimiento', 'pepito'],
   vendedor: ['dashboard', 'pepito', 'notas-entrega', 'ventas', 'clientes', 'cotizaciones'],
-  almacen: ['dashboard', 'pepito', 'notas-entrega', 'inventario', 'entregas', 'envios']
+  almacen: ['dashboard', 'pepito', 'seguimiento', 'notas-entrega', 'inventario', 'entregas']
 };
 const MAX_FIJADOS = 8;
 const EN_BARRA = 4;

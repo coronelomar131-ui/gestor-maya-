@@ -1683,6 +1683,12 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <!-- PEPITO (buzón; lo arma /diseno/buzon.js) -->
       <div class="module-view" id="mod-pepito"></div>
 
+      <!-- OPERACIÓN (los arma /diseno/operacion.js) -->
+      <div class="module-view" id="mod-oficina"></div>
+      <div class="module-view" id="mod-seguimiento"></div>
+      <div class="module-view" id="mod-facturacion"></div>
+      <div class="module-view" id="mod-cobranza"></div>
+
       <!-- DOCUMENTOS MODULE -->
       <div class="module-view" id="mod-documentos">
         <div style="margin-bottom:20px">
@@ -2314,6 +2320,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <option value="vendedor">Vendedor</option>
           <option value="almacen">Almacén</option>
           <option value="entregas">Entregas</option>
+          <option value="facturacion">Facturación y cobranza</option>
           <option value="admin">Administrador</option>
         </select>
       </div>
@@ -4430,11 +4437,15 @@ window.showModule = function(name) {
 
   // Define module permissions
   const permissions = {
-    dashboard: ['admin', 'vendedor', 'almacen'],
-    pepito: ['admin', 'vendedor', 'almacen', 'entregas'],
-    ventas: ['admin', 'vendedor'],
+    dashboard: ['admin', 'vendedor', 'almacen', 'facturacion'],
+    pepito: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
+    oficina: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
+    seguimiento: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
+    facturacion: ['admin', 'facturacion'],
+    cobranza: ['admin', 'facturacion'],
+    ventas: ['admin', 'vendedor', 'facturacion'],
     inventario: ['admin', 'almacen'],
-    clientes: ['admin', 'vendedor'],
+    clientes: ['admin', 'vendedor', 'facturacion'],
     cotizaciones: ['admin', 'vendedor'],
     proveedores: ['admin', 'almacen'],
     entregas: ['admin', 'vendedor', 'almacen'],
@@ -4442,9 +4453,9 @@ window.showModule = function(name) {
     'visitas-talleres': ['admin', 'vendedor', 'almacen'],
     reportes: ['admin'],
     mercadolibre: ['admin'],
-    documentos: ['admin', 'vendedor'],
-    'notas-entrega': ['admin', 'vendedor', 'almacen'],
-    'busqueda-ventas': ['admin', 'vendedor', 'almacen'],
+    documentos: ['admin', 'vendedor', 'facturacion'],
+    'notas-entrega': ['admin', 'vendedor', 'almacen', 'facturacion'],
+    'busqueda-ventas': ['admin', 'vendedor', 'almacen', 'facturacion'],
     usuarios: ['admin'],
     finanzas: ['admin', 'vendedor', 'almacen'],
     configuracion: ['admin']
@@ -4466,6 +4477,10 @@ window.showModule = function(name) {
   const titles = {
     dashboard: ['Dashboard', 'Resumen general del negocio'],
     pepito: ['Pepito', 'Pídele consultas y tareas; te contesta aquí'],
+    oficina: ['Oficina virtual', 'Cada área y su trabajo pendiente'],
+    seguimiento: ['Seguimiento de piezas', 'De registrada a pagada'],
+    facturacion: ['Facturación', 'Pendientes de facturar y XML de CONTPAQi'],
+    cobranza: ['Cobranza', 'Saldos, vencimientos y pagos'],
     ventas: ['Ventas', 'Registro y control de ventas'],
     inventario: ['Inventario', 'Control de piezas y refacciones'],
     clientes: ['Clientes', 'Directorio de clientes'],
@@ -9971,5 +9986,6 @@ window.previewNotaEntregaPDFById = function(id) {
 
 <script type="module" src="/diseno/maya.js"></script>
 <script type="module" src="/diseno/buzon.js"></script>
+<script type="module" src="/diseno/operacion.js"></script>
 </body>
 </html>

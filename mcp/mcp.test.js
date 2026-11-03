@@ -336,3 +336,36 @@ test('buzón de Pepito: revisar trae pendientes con permisos del rol; responder 
   assert.ok(!tools.some(t => t.name === 'revisar_buzon' || t.name === 'responder_buzon'));
   await v.cerrar();
 });
+
+test('facturación y cobranza: pendientes sin factura y saldos con días vencidos; solo admin y facturación', async () => {
+  // v71 ya tiene factura por cobrar (vencida); v219 tiene una cancelada, así que sigue pendiente
+  db.cols.ventas.get('v71').facturaId = 'f1';
+  db.cols.ventas.get('v219').facturaId = 'f0';
+  const hace = d => Date.now() - d * 86400000;
+  await db.guardar('facturas', 'f1', { serieFolio: 'A-100', clienteNombre: 'Refacciones Prueba', fecha: hace(40), vencimiento: hace(10), total: 10672, saldo: 4000, estatus: 'por_cobrar', pagos: [{ monto: 6672 }], notas: [{ folio: 'NV #71' }] });
+  await db.guardar('facturas', 'f2', { serieFolio: 'A-101', clienteNombre: 'Zeta Autopartes', fecha: hace(2), vencimiento: hace(-28), total: 2000, saldo: 2000, estatus: 'por_cobrar', notas: [] });
+  await db.guardar('facturas', 'f3', { serieFolio: 'A-102', clienteNombre: 'Zeta Autopartes', fecha: hace(5), vencimiento: hace(1), total: 900, saldo: 0, estatus: 'pagada' });
+  await db.guardar('facturas', 'f0', { serieFolio: 'A-099', estatus: 'cancelada', saldo: 0 });
+  const c = await conectar(ADMIN);
+  const p = await c.llamar('pendientes_facturar', {});
+  const folios = p.por_cliente.flatMap(g => g.folios);
+  assert.ok(!folios.includes('NV #71'), 'la que tiene factura no está pendiente');
+  assert.ok(folios.includes('NV #219'), 'la de factura cancelada vuelve a pendientes');
+  assert.ok(!folios.includes('NV #250'), 'las canceladas no cuentan');
+  const cob = await c.llamar('cobranza', {});
+  assert.equal(cob.facturas, 2);
+  assert.equal(cob.por_cobrar, 6000);
+  assert.equal(cob.vencido, 4000);
+  assert.equal(cob.detalle[0].factura, 'A-100');
+  assert.equal(cob.detalle[0].dias_vencida, 10);
+  assert.equal((await c.llamar('cobranza', { solo_vencidas: true })).facturas, 1);
+  await c.cerrar();
+  const v = await conectar(VENDEDOR);
+  const { tools } = await v.cliente.listTools();
+  assert.ok(!tools.some(t => t.name === 'cobranza' || t.name === 'pendientes_facturar'));
+  await v.cerrar();
+  const f = await conectar({ uid: 'g1', email: 'fac@maya', nombre: 'Facturación', rol: 'facturacion' });
+  const nombres = (await f.cliente.listTools()).tools.map(t => t.name);
+  assert.ok(nombres.includes('cobranza') && nombres.includes('historial_notas') && !nombres.includes('eliminar_registro'));
+  await f.cerrar();
+});

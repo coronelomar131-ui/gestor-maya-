@@ -443,7 +443,60 @@ async function registros(modulo, texto, limite) {
   return { modulo, encontrados: lista.length, mostrando: Math.min(limite, lista.length), registros: lista.slice(0, limite) };
 }
 
+// ── Facturación y cobranza (módulos Facturación y Cobranza de la app; colección facturas) ──
+const DIA_MS = 86400000;
+const msDe = v => { const d = aFecha(v); return d ? d.getTime() : (typeof v === 'number' ? v : 0); };
+const inicioDia = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const hoyCero = () => inicioDia(Date.now());
+
+// Notas con importe que todavía no tienen factura (o cuya factura se canceló), agrupadas por cliente
+async function pendientesFacturar(f) {
+  const [ne, nv, fs] = await Promise.all([leer('notasEntrega'), leer('ventas'), leer('facturas')]);
+  const canceladas = new Set(fs.filter(x => x.estatus === 'cancelada').map(x => x.id));
+  const conFactura = new Set(ne.concat(nv).filter(x => x.facturaId && !canceladas.has(x.facturaId)).map(x => x.id));
+  const q = norm(f.cliente);
+  const lista = armarRegistros(ne, nv).filter(x => !conFactura.has(x.id) && x.total > 0 && (!q || norm(x.cliente).includes(q)));
+  const grupos = {};
+  lista.forEach(x => {
+    const g = (grupos[x.cliente || 'Sin cliente'] = grupos[x.cliente || 'Sin cliente'] || { cliente: x.cliente || 'Sin cliente', notas: 0, total: 0, folios: [] });
+    g.notas++; g.total += x.total; g.folios.push(x.folio);
+  });
+  return {
+    notas_pendientes: lista.length,
+    total: pesos(lista.reduce((s, x) => s + x.total, 0)),
+    por_cliente: Object.values(grupos).sort((a, b) => b.total - a.total).map(g => ({ cliente: g.cliente, notas: g.notas, total: pesos(g.total), folios: g.folios.slice(0, 30) })),
+    aviso: 'Las notas en $0 (sin precio a propósito) no cuentan aquí. Las facturas se timbran en CONTPAQi y se suben en la app (Facturación → Subir XML).'
+  };
+}
+
+// Facturas por cobrar con saldo, vencimiento y días de atraso
+async function cobranza(f) {
+  const fs = await leer('facturas');
+  const h = hoyCero();
+  const q = norm(f.cliente);
+  const lista = fs
+    .filter(x => x.estatus === 'por_cobrar' && Number(x.saldo) > 0.009 && (!q || norm(x.clienteNombre || x.receptorNombre).includes(q)))
+    .map(x => {
+      const vence = msDe(x.vencimiento) ? inicioDia(msDe(x.vencimiento)) : 0;
+      return {
+        factura: x.serieFolio, cliente: x.clienteNombre || x.receptorNombre, fecha: fechaISO(new Date(msDe(x.fecha))),
+        vence: vence ? fechaISO(new Date(vence)) : null, dias_vencida: vence && vence < h ? Math.round((h - vence) / DIA_MS) : 0,
+        total: Number(x.total) || 0, saldo: Number(x.saldo) || 0, pagos: (x.pagos || []).length,
+        notas: (x.notas || []).map(n => n.folio)
+      };
+    })
+    .filter(x => !f.solo_vencidas || x.dias_vencida > 0)
+    .sort((a, b) => b.dias_vencida - a.dias_vencida || String(a.vence).localeCompare(String(b.vence)));
+  const suma = arr => Math.round(arr.reduce((s, x) => s + x.saldo, 0) * 100) / 100;
+  return {
+    facturas: lista.length, por_cobrar: suma(lista), vencido: suma(lista.filter(x => x.dias_vencida > 0)),
+    detalle: lista.slice(0, f.limite || 50),
+    aviso: fs.length ? undefined : 'Todavía no hay facturas subidas en la app (Facturación → Subir XML de CONTPAQi).'
+  };
+}
+
 module.exports = {
+  pendientesFacturar, cobranza,
   cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, registros,
   armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };
