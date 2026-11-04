@@ -19,7 +19,7 @@ async function crudo(req) {
 }
 
 function firmaValida(raw, firma) {
-  const secreto = process.env.WHATSAPP_APP_SECRET;
+  const secreto = String(process.env.WHATSAPP_APP_SECRET || '').trim();
   if (!secreto) return true;
   if (!raw.length || !firma) return false;
   const esperada = 'sha256=' + crypto.createHmac('sha256', secreto).update(raw).digest('hex');
@@ -31,9 +31,9 @@ function firmaValida(raw, firma) {
 const destino = n => { const d = String(n).replace(/\D/g, ''); return /^521\d{10}$/.test(d) ? '52' + d.slice(3) : d; };
 
 async function enviar(para, texto) {
-  const r = await fetch(`https://graph.facebook.com/${VERSION}/${process.env.WHATSAPP_PHONE_ID}/messages`, {
+  const r = await fetch(`https://graph.facebook.com/${VERSION}/${String(process.env.WHATSAPP_PHONE_ID || '').trim()}/messages`, {
     method: 'POST',
-    headers: { Authorization: 'Bearer ' + process.env.WHATSAPP_TOKEN, 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to: destino(para), type: 'text', text: { preview_url: false, body: String(texto).slice(0, 4000) } })
   });
   if (!r.ok) console.error('whatsapp: no se pudo enviar', r.status, (await r.text()).slice(0, 300));
@@ -43,11 +43,26 @@ module.exports = async (req, res) => {
   // Meta verifica el webhook con un GET al darlo de alta
   if (req.method === 'GET') {
     const q = new URL(req.url, 'http://x').searchParams;
-    if (q.get('hub.mode') === 'subscribe' && process.env.WHATSAPP_VERIFY_TOKEN && q.get('hub.verify_token') === process.env.WHATSAPP_VERIFY_TOKEN) {
-      res.setHeader('Content-Type', 'text/plain');
-      return res.status(200).send(q.get('hub.challenge'));
+    const esperado = String(process.env.WHATSAPP_VERIFY_TOKEN || '').trim();
+    if (q.get('hub.mode') === 'subscribe') {
+      if (esperado && String(q.get('hub.verify_token') || '').trim() === esperado) {
+        res.setHeader('Content-Type', 'text/plain');
+        return res.status(200).send(String(q.get('hub.challenge') || ''));
+      }
+      console.error('whatsapp: verificación rechazada', esperado ? '(el token no coincide)' : '(falta WHATSAPP_VERIFY_TOKEN)');
+      return res.status(403).send(esperado ? 'El token de verificación no coincide con WHATSAPP_VERIFY_TOKEN' : 'Falta WHATSAPP_VERIFY_TOKEN en Vercel');
     }
-    return res.status(403).send('no');
+    // Abierta en el navegador: dice qué variables ve el servidor (sin mostrar sus valores)
+    return res.status(200).json({
+      webhook: 'ok',
+      variables: {
+        WHATSAPP_VERIFY_TOKEN: !!esperado,
+        WHATSAPP_TOKEN: !!process.env.WHATSAPP_TOKEN,
+        WHATSAPP_PHONE_ID: !!process.env.WHATSAPP_PHONE_ID,
+        WHATSAPP_APP_SECRET: !!process.env.WHATSAPP_APP_SECRET,
+        ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY
+      }
+    });
   }
   if (req.method !== 'POST') return res.status(405).send('no');
   if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return res.status(200).json({ ok: false, motivo: 'WhatsApp sin configurar' });
