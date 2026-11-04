@@ -6,12 +6,19 @@ process.env.TZ = 'America/Mexico_City';
 const crypto = require('crypto');
 const pepito = require('../mcp/pepito');
 const acceso = require('../mcp/acceso');
+const enlaces = require('../mcp/enlaces');
+const voz = require('../mcp/voz');
 const { fb } = require('../mcp/firebase');
 
 const wa = require('../mcp/whatsapp');
 const VERSION = wa.VERSION;
-const SI = /^(s[ií]|si+|confirm[oa]?|dale|va|ok|okay|adelante|gu[aá]rdal[ao])[.!\s]*$/i;
-const NO = /^(no|cancela(r)?|mejor no|no gracias)[.!\s]*$/i;
+// Respuestas cortas a una propuesta ("sí", "sí, guárdala", "dale", "no", "cancela"); en notas de voz llegan con puntuación
+// (\b de JavaScript no reconoce letras con acento como "í", por eso se usa FIN)
+const FIN = '(?=$|[\\s,.;:!¡])';
+const NO = new RegExp('^(no' + FIN + '(?!\\s+s[eé])|cancel|mejor no|ni modo|olv[ií]dalo)', 'i');
+const SI = new RegExp('^(s[ií]+' + FIN + '|sim[oó]n|confirm|dale' + FIN + '|va' + FIN + '|ok' + FIN + '|okay|adelante|gu[aá]rd|correcto|perfecto|as[ií] est[aá] bien)', 'i');
+const esNo = t => t.length <= 40 && NO.test(t);
+const esSi = t => t.length <= 40 && !esNo(t) && SI.test(t);
 
 async function crudo(req) {
   const partes = [];
@@ -82,7 +89,8 @@ module.exports = async (req, res) => {
         WHATSAPP_TOKEN: !!process.env.WHATSAPP_TOKEN,
         WHATSAPP_PHONE_ID: !!process.env.WHATSAPP_PHONE_ID,
         WHATSAPP_APP_SECRET: !!process.env.WHATSAPP_APP_SECRET,
-        ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY
+        ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
+        'GROQ_API_KEY u OPENAI_API_KEY (notas de voz)': voz.configurada()
       }
     });
   }
@@ -114,17 +122,35 @@ module.exports = async (req, res) => {
   }
   try {
     let texto;
-    if (msg.type !== 'text') {
-      texto = msg.type === 'audio' ? 'Todavía no puedo escuchar notas de voz. Escríbeme tu pedido, porfa.' : 'Por ahora solo entiendo mensajes de texto.';
+    let t = null;
+    let encabezado = '';
+    if (msg.type === 'text') {
+      t = String(msg.text && msg.text.body || '').trim();
+    } else if (msg.type === 'audio' && voz.configurada()) {
+      try {
+        const dicho = await voz.transcribir(msg.audio && msg.audio.id);
+        await anotar('nota de voz transcrita', dicho.slice(0, 120));
+        t = dicho;
+        encabezado = '🎙️ Entendí: "' + dicho + '"\n\n';
+      } catch (e) {
+        await anotar('no se pudo transcribir la nota de voz', e.message);
+        texto = 'No pude escuchar bien tu nota de voz. ¿Me la mandas otra vez o me lo escribes?';
+      }
     } else {
-      const t = String(msg.text && msg.text.body || '').trim();
+      texto = msg.type === 'audio' ? 'Todavía no puedo escuchar notas de voz. Escríbeme tu pedido, porfa.' : 'Por ahora solo entiendo mensajes de texto y notas de voz.';
+    }
+    if (t !== null) {
       const conv = await fb().obtener('pepito_conversacion', usuario.uid);
-      if (conv && conv.propuesta && (SI.test(t) || NO.test(t))) {
-        texto = (await pepito.resolverPropuesta(usuario, conv.propuesta.id, SI.test(t), 'whatsapp')).texto;
+      const corto = t.replace(/[.,!¡¿?\s]+$/g, '').trim();
+      if (conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
+        const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
+        const pdf = enlaces.deCreacion(r.herramienta, r.resultado);
+        texto = r.texto + (pdf ? '\n\n📄 PDF' + (pdf.folio ? ' de ' + pdf.folio : '') + ': ' + pdf.url : '');
       } else {
-        const r = await pepito.conversar(usuario, t, 'whatsapp');
+        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : '') + t, 'whatsapp');
         texto = r.texto + (r.propuesta ? '\n\nResponde *SÍ* para guardarlo o *NO* para cancelar.' : '');
       }
+      texto = encabezado + texto;
     }
     await enviar(msg.from, texto);
   } catch (e) {

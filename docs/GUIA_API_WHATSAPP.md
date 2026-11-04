@@ -40,6 +40,21 @@ Cómo se comporta:
    agrega un método de pago en Meta (las respuestas a mensajes que el equipo manda primero cuestan poco o nada;
    los avisos que Pepito mande por su cuenta sí cuestan por mensaje).
 
-Notas:
-- Las notas de voz todavía no se entienden: Pepito pide que se lo escriban.
-- Los PDF de notas se descargan desde el chat del gestor; por WhatsApp todavía no se mandan.
+## 3. Notas de voz (opcional)
+
+Claude no recibe audio, así que las notas de voz se pasan a texto con Whisper:
+
+1. Entra a **console.groq.com**, crea una cuenta (tiene plan gratis) y en **API Keys** crea una llave.
+2. En Vercel agrega `GROQ_API_KEY` con esa llave (Production) y haz Redeploy.
+   (Si prefieres OpenAI, usa `OPENAI_API_KEY` en su lugar.)
+3. Manda una nota de voz a Pepito: contesta con "🎙️ Entendí: …" y lo atiende como si lo hubieras escrito.
+   También sirve para confirmar: un audio diciendo "sí, guárdala".
+
+## 4. PDF por WhatsApp
+
+Cuando Pepito crea una nota, venta o cotización por WhatsApp, contesta con un enlace
+`https://gestor-maya.vercel.app/?pdf=…`. Al abrirlo con tu sesión del gestor se descarga el PDF con el diseño de
+siempre. También puedes pedirle el PDF de una nota que ya existe ("mándame la NE-230").
+
+Diagnóstico: `https://gestor-maya.vercel.app/api/whatsapp` muestra qué variables ve el servidor y qué pasó con los
+últimos mensajes.
