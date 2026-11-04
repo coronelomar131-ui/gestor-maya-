@@ -30,13 +30,25 @@ function firmaValida(raw, firma) {
 // En México WhatsApp entrega 521 + 10 dígitos y para contestar hay que mandar 52 + 10 dígitos
 const destino = n => { const d = String(n).replace(/\D/g, ''); return /^521\d{10}$/.test(d) ? '52' + d.slice(3) : d; };
 
+// Lo último que pasó con el webhook (para diagnosticar sin ver los logs de Vercel): config/whatsapp_estado
+async function anotar(paso, detalle) {
+  try {
+    const previo = (await fb().obtener('config', 'whatsapp_estado')) || {};
+    const evento = { ts: new Date().toISOString(), paso, detalle: detalle ? String(detalle).slice(0, 400) : '' };
+    await fb().guardar('config', 'whatsapp_estado', { ultimo: evento, historial: [evento].concat(previo.historial || []).slice(0, 8) });
+  } catch (e) { console.error('whatsapp: no se pudo anotar', e.message); }
+}
+
 async function enviar(para, texto) {
   const r = await fetch(`https://graph.facebook.com/${VERSION}/${String(process.env.WHATSAPP_PHONE_ID || '').trim()}/messages`, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to: destino(para), type: 'text', text: { preview_url: false, body: String(texto).slice(0, 4000) } })
   });
-  if (!r.ok) console.error('whatsapp: no se pudo enviar', r.status, (await r.text()).slice(0, 300));
+  if (r.ok) { await anotar('respuesta enviada', 'a ...' + String(para).slice(-4)); return; }
+  const error = (await r.text()).slice(0, 300);
+  console.error('whatsapp: no se pudo enviar', r.status, error);
+  await anotar('Meta rechazó la respuesta (' + r.status + ')', error);
 }
 
 module.exports = async (req, res) => {
@@ -52,8 +64,11 @@ module.exports = async (req, res) => {
       console.error('whatsapp: verificación rechazada', esperado ? '(el token no coincide)' : '(falta WHATSAPP_VERIFY_TOKEN)');
       return res.status(403).send(esperado ? 'El token de verificación no coincide con WHATSAPP_VERIFY_TOKEN' : 'Falta WHATSAPP_VERIFY_TOKEN en Vercel');
     }
-    // Abierta en el navegador: dice qué variables ve el servidor (sin mostrar sus valores)
+    // Abierta en el navegador: dice qué variables ve el servidor (sin mostrar sus valores) y qué pasó con el último mensaje
+    const estado = await fb().obtener('config', 'whatsapp_estado').catch(() => null);
     return res.status(200).json({
+      ultimo_evento: estado ? estado.ultimo : 'Todavía no ha llegado ningún mensaje de Meta',
+      historial: estado ? estado.historial : [],
       webhook: 'ok',
       variables: {
         WHATSAPP_VERIFY_TOKEN: !!esperado,
@@ -65,15 +80,20 @@ module.exports = async (req, res) => {
     });
   }
   if (req.method !== 'POST') return res.status(405).send('no');
-  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) return res.status(200).json({ ok: false, motivo: 'WhatsApp sin configurar' });
+  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_ID) { await anotar('llegó un mensaje pero faltan WHATSAPP_TOKEN o WHATSAPP_PHONE_ID'); return res.status(200).json({ ok: false, motivo: 'WhatsApp sin configurar' }); }
 
   const raw = await crudo(req);
-  if (!firmaValida(raw, req.headers['x-hub-signature-256'])) { console.error('whatsapp: firma inválida o cuerpo vacío'); return res.status(401).send('firma'); }
+  if (!firmaValida(raw, req.headers['x-hub-signature-256'])) {
+    console.error('whatsapp: firma inválida o cuerpo vacío');
+    await anotar(raw.length ? 'firma inválida: revisa que WHATSAPP_APP_SECRET sea la clave secreta de esta app' : 'cuerpo vacío al leer el mensaje');
+    return res.status(401).send('firma');
+  }
   let datos;
   try { datos = JSON.parse(raw.toString('utf8') || '{}'); } catch (e) { return res.status(400).send('json'); }
   const valor = datos.entry && datos.entry[0] && datos.entry[0].changes && datos.entry[0].changes[0] && datos.entry[0].changes[0].value;
   const msg = valor && valor.messages && valor.messages[0];
   if (!msg) return res.status(200).json({ ok: true }); // avisos de entregado/leído
+  await anotar('llegó mensaje de WhatsApp', 'de ...' + String(msg.from).slice(-4) + ' · tipo ' + msg.type);
 
   // Meta reintenta si tardamos: no procesar dos veces el mismo mensaje
   if (await fb().obtener('whatsapp_vistos', msg.id)) return res.status(200).json({ ok: true, repetido: true });
@@ -81,6 +101,7 @@ module.exports = async (req, res) => {
 
   const usuario = await acceso.porWhatsApp(msg.from);
   if (!usuario) {
+    await anotar('número no registrado en el gestor', '...' + String(msg.from).slice(-4) + ' (Pepito → WhatsApp del equipo)');
     await enviar(msg.from, 'Hola, soy Pepito Junior de Maya Autopartes. Este número no está dado de alta en el gestor; pídele a un administrador que lo registre.');
     return res.status(200).json({ ok: true });
   }
@@ -101,6 +122,7 @@ module.exports = async (req, res) => {
     await enviar(msg.from, texto);
   } catch (e) {
     console.error('whatsapp/pepito:', e);
+    await anotar('Pepito falló al contestar', e.message);
     await enviar(msg.from, e.limite ? e.message : 'Uy, no pude contestar ahorita. Intenta otra vez en un momento.');
   }
   return res.status(200).json({ ok: true });
