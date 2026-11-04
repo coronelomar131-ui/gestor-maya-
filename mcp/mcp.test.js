@@ -423,6 +423,9 @@ test('Pepito API: consulta con herramientas del rol y propuesta que solo se guar
   assert.equal(conv.propuesta, null);
   const uso = [...db.cols.pepito_uso.values()][0];
   assert.equal(uso.mensajes, 2);
+  // La Oficina 3D se entera de qué área trabajó: consultó reportes, propuso y guardó en dirección (cotización)
+  const act = db.cols.config.get('pepito_actividad').eventos;
+  assert.deepEqual(act.map(e => [e.accion, e.area]), [['guardó', 'direccion'], ['propuso', 'direccion'], ['consultó', 'reportes']]);
 });
 
 test('Pepito API: un vendedor no recibe herramientas de su rol prohibido y hay límite diario', async () => {

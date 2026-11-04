@@ -1,23 +1,43 @@
 // Chat en vivo con Pepito Junior (API de Claude, api/pepito.js). Si la API no está configurada, el módulo
 // Pepito se queda como buzón (diseno/buzon.js). La conversación vive en pepito_conversacion/{uid}, así que lo
 // que se habla por WhatsApp también aparece aquí. Lo que Pepito quiere guardar sale como propuesta con botones.
+// Diseño: un "mostrador" de noche. El avatar de Pepito es un faro que barre mientras piensa; debajo de cada
+// respuesta se ve qué consultó; las propuestas son un ticket que se sella al guardar.
 import { icono } from './iconos.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const escapar = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const hora = t => (t ? new Date(t).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '');
+const TZ = 'America/Mexico_City';
+const hora = t => (t ? new Date(t).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', timeZone: TZ }) : '');
+const diaDe = t => new Date(t).toLocaleDateString('en-CA', { timeZone: TZ });
 const usuario = () => window.auth && window.auth.currentUser;
 const aviso = (m, t) => window.toast && window.toast(m, t || 'success');
+const quieto = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let conv = { mensajes: [], propuesta: null };
 let quitar = null;
 let uidActual = null;
 let esperando = false;
 let modelo = '';
+let pensandoDesde = 0;
+const sellados = new Set(); // mensajes "guardado" que ya mostraron su sello (la animación solo se ve una vez)
 
-// Texto con saltos de línea, **negritas** y viñetas simples; todo lo demás se escapa
+// Lo que Pepito consultó, con nombres que entiende el equipo
+const CONSULTAS = {
+  historial_notas: 'Notas', ver_nota: 'Nota', resumen_ventas: 'Resumen de ventas', buscar_ventas: 'Ventas', buscar_clientes: 'Clientes',
+  buscar_productos: 'Inventario', buscar_productos_ml: 'Mercado Libre', buscar_registros: 'Registros', pendientes_facturar: 'Por facturar',
+  cobranza: 'Cobranza', crear_nota_entrega: 'Nota de entrega', crear_venta: 'Nota de venta', crear_cotizacion: 'Cotización',
+  cambiar_estatus_venta: 'Estatus de venta', guardar_cliente: 'Cliente', guardar_producto: 'Producto', guardar_entrega: 'Entrega',
+  guardar_proveedor: 'Proveedor', eliminar_registro: 'Borrar registro', enviar_whatsapp: 'WhatsApp'
+};
+
+// Texto con saltos de línea, **negritas**, viñetas y montos en pesos resaltados; todo lo demás se escapa
 function formato(t) {
-  return escapar(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/^[-•]\s+(.*)$/gm, '<span class="m-chat-vineta">$1</span>');
+  return escapar(t)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\$\s?\d[\d,]*(\.\d{1,2})?/g, m => '<span class="m-chat-monto">' + m + '</span>')
+    .replace(/^[-•]\s+(.*)$/gm, '<span class="m-chat-vineta">$1</span>')
+    .replace(/<\/span>\n(?=<span class="m-chat-vineta">)/g, '</span>');
 }
 
 // Botón de PDF para lo que Pepito acaba de crear (nota, venta o cotización)
@@ -33,38 +53,48 @@ function adjunto(m) {
   return `<button type="button" class="m-buzon-adjunto" data-pdf="${m.ejecutada}" data-id="${escapar(id)}">${icono('file-down', 16)}<span><strong>${escapar(folio)}</strong><small>Descargar PDF</small></span></button>`;
 }
 
+function faro(clase) {
+  return `<span class="m-faro ${clase || ''}" aria-hidden="true"><span class="m-faro-haz"></span><span class="m-faro-cara">${icono('bot', 20)}</span></span>`;
+}
+
 function vista() {
   const mod = $('#mod-pepito');
   if (!mod) return null;
   if (mod.dataset.listo === 'chat') return mod;
   mod.dataset.listo = 'chat';
   mod.innerHTML = `
-    <div class="m-buzon m-chat">
-      <section class="m-buzon-intro m-vidrio">
-        <div class="m-buzon-avatar">${icono('bot', 26)}</div>
-        <div>
-          <h2>Pepito Junior</h2>
-          <p>Pregúntale lo que necesites o pídele una tarea. Contesta al momento; si va a guardar algo, primero te pregunta.</p>
-          <p class="m-buzon-estado" id="chat-estado"></p>
-        </div>
+    <div class="m-mostrador">
+      <section class="m-mostrador-panel m-vidrio" aria-label="Chat con Pepito Junior">
+        <header class="m-mostrador-cabeza">
+          ${faro('')}
+          <div>
+            <h2>Pepito Junior</h2>
+            <p id="chat-estado" aria-live="polite">Listo</p>
+          </div>
+        </header>
+        <div class="m-mostrador-lista" id="chat-lista"></div>
+        <form class="m-mostrador-escribir" id="chat-form">
+          <div class="m-chat-sugerencias" id="chat-sugerencias"></div>
+          <div class="m-mostrador-caja">
+            <textarea id="chat-texto" rows="1" maxlength="4000" placeholder="Pregúntale o pídele algo a Pepito" aria-label="Mensaje para Pepito" required></textarea>
+            <button type="submit" class="m-mostrador-enviar" id="chat-enviar" aria-label="Enviar">${icono('send', 18)}</button>
+          </div>
+        </form>
       </section>
-      <div class="m-chat-lista m-vidrio" id="chat-lista" aria-live="polite"></div>
-      <form class="m-buzon-form m-vidrio" id="chat-form">
-        <textarea id="chat-texto" rows="2" maxlength="4000" placeholder="Ej.: ¿Qué tengo pendiente de facturar de LATAM?" required></textarea>
-        <div class="m-buzon-acciones">
-          <span class="m-chat-sugerencias" id="chat-sugerencias"></span>
-          <button type="submit" class="btn btn-primary" id="chat-enviar">${icono('send', 16)}<span>Enviar</span></button>
-        </div>
-      </form>
-      <section class="m-chat-wa m-vidrio" id="chat-wa" hidden></section>
+      <details class="m-chat-wa m-vidrio" id="chat-wa" hidden>
+        <summary>${icono('send', 15)} WhatsApp del equipo <small id="chat-wa-cuenta"></small></summary>
+        <div id="chat-wa-lista"></div>
+      </details>
     </div>`;
-  $('#chat-form', mod).addEventListener('submit', e => { e.preventDefault(); mandar($('#chat-texto').value); });
-  $('#chat-texto', mod).addEventListener('keydown', e => {
+  const texto = $('#chat-texto', mod);
+  $('#chat-form', mod).addEventListener('submit', e => { e.preventDefault(); mandar(texto.value); });
+  texto.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(min-width: 768px)').matches) { e.preventDefault(); $('#chat-form').requestSubmit(); }
   });
+  texto.addEventListener('input', crecer);
   mod.addEventListener('click', e => {
     const s = e.target.closest('[data-sugerencia]');
-    if (s) { $('#chat-texto').value = s.dataset.sugerencia; $('#chat-texto').focus(); return; }
+    if (s) { texto.value = s.dataset.sugerencia; crecer(); texto.focus(); return; }
     const c = e.target.closest('[data-confirmar]');
     if (c) return resolver(c.dataset.confirmar === 'si');
     const pdf = e.target.closest('[data-pdf]');
@@ -72,36 +102,83 @@ function vista() {
     const g = e.target.closest('[data-wa]');
     if (g) return guardarWhatsApp(g.dataset.wa);
   });
-  $('#chat-sugerencias', mod).innerHTML = ['¿Cuánto vendimos hoy?', '¿Qué falta por facturar?', '¿Quién nos debe?']
-    .map(t => `<button type="button" class="m-chat-chip" data-sugerencia="${escapar(t)}">${escapar(t)}</button>`).join('');
   return mod;
+}
+
+function crecer() {
+  const t = $('#chat-texto');
+  if (!t) return;
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 168) + 'px';
+}
+
+const SUGERENCIAS = ['¿Cuánto vendimos este mes?', '¿Qué falta por facturar?', '¿Quién nos debe?', 'Hazme una cotización'];
+
+function pintarEstado() {
+  const est = $('#chat-estado');
+  const panel = $('.m-mostrador-panel');
+  if (!est || !panel) return;
+  panel.classList.toggle('pensando', esperando);
+  if (esperando) {
+    const s = (Date.now() - pensandoDesde) / 1000;
+    est.textContent = s < 2.5 ? 'Pensando…' : s < 8 ? 'Revisando el gestor…' : 'Ya casi…';
+  } else {
+    est.textContent = 'Listo. También te contesto por WhatsApp.';
+  }
 }
 
 function pintar() {
   const lista = $('#chat-lista');
   if (!lista) return;
   const msgs = conv.mensajes || [];
-  let html = msgs.length ? msgs.map(m => `
-    <div class="m-chat-msg ${m.de === 'pepito' ? 'pepito' : 'yo'}">
-      ${m.de === 'pepito' ? `<div class="m-buzon-quien">${icono('bot', 14)} Pepito${m.canal === 'whatsapp' ? ' · WhatsApp' : ''}</div>` : m.canal === 'whatsapp' ? '<div class="m-chat-canal">por WhatsApp</div>' : ''}
-      <div class="m-chat-burbuja">${formato(m.texto)}</div>
-      ${adjunto(m)}
-      <time>${hora(m.ts)}</time>
-    </div>`).join('') : `<div class="m-buzon-vacio">${icono('bot', 28)}<p>Hola, soy Pepito Junior. ¿En qué te ayudo?</p></div>`;
-  if (conv.propuesta) {
-    html += `<div class="m-chat-propuesta">
-      <strong>${icono('circle-alert', 15)} ¿Guardo esto? · ${escapar(conv.propuesta.titulo)}</strong>
-      <div class="m-chat-botones">
-        <button type="button" class="btn btn-secondary btn-sm" data-confirmar="no">No, cancelar</button>
-        <button type="button" class="btn btn-primary btn-sm" data-confirmar="si">${icono('check', 14)}<span>Sí, guárdalo</span></button>
-      </div></div>`;
+  let html = '';
+  let dia = '';
+  const hoy = diaDe(Date.now());
+  const ayer = diaDe(Date.now() - 86400000);
+  msgs.forEach((m, i) => {
+    const d = diaDe(m.ts || Date.now());
+    if (d !== dia) {
+      dia = d;
+      const txt = d === hoy ? 'Hoy' : d === ayer ? 'Ayer' : new Date(m.ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', timeZone: TZ });
+      html += `<div class="m-chat-dia"><span>${txt}</span></div>`;
+    }
+    const wa = m.canal === 'whatsapp' ? `<span class="m-chat-canal">${icono('send', 11)} WhatsApp</span>` : '';
+    if (m.de === 'pepito') {
+      const consulto = [...new Set((m.herramientas || []).map(h => CONSULTAS[h]).filter(Boolean))];
+      const clave = (m.ts || i) + ':' + (m.ejecutada || '');
+      const sello = m.ejecutada && m.resultado ? `<span class="m-chat-sello${sellados.has(clave) ? '' : ' nuevo'}">${icono('check', 13)} Guardado</span>` : '';
+      if (sello) sellados.add(clave);
+      html += `<article class="m-chat-msg pepito">
+        <div class="m-chat-texto">${formato(m.texto)}</div>
+        ${adjunto(m)}
+        <footer>${sello}${consulto.length ? `<span class="m-chat-consulto">Consultó ${consulto.map(c => `<b>${escapar(c)}</b>`).join(' ')}</span>` : ''}${wa}<time>${hora(m.ts)}</time></footer>
+      </article>`;
+    } else {
+      html += `<article class="m-chat-msg yo"><div class="m-chat-texto">${formato(m.texto)}</div><footer>${wa}<time>${hora(m.ts)}</time></footer></article>`;
+    }
+  });
+  if (!msgs.length) {
+    html = `<div class="m-chat-bienvenida">
+      ${faro('grande')}
+      <h3>¿En qué te ayudo?</h3>
+      <p>Consulto ventas, notas, inventario, facturación y cobranza. También preparo notas y cotizaciones; antes de guardar algo te pregunto.</p>
+    </div>`;
   }
-  if (esperando) html += `<div class="m-chat-msg pepito"><div class="m-chat-burbuja m-chat-pensando"><i></i><i></i><i></i></div></div>`;
+  if (conv.propuesta) {
+    html += `<div class="m-chat-ticket" role="group" aria-label="Confirmar antes de guardar">
+      <div class="m-chat-ticket-cabeza">${icono('circle-alert', 16)}<div><strong>Antes de guardar</strong><span>${escapar(conv.propuesta.titulo)}: revisa lo que Pepito te propuso arriba.</span></div></div>
+      <div class="m-chat-ticket-botones">
+        <button type="button" class="btn btn-secondary btn-sm" data-confirmar="no">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm" data-confirmar="si">${icono('check', 14)}<span>Guardar</span></button>
+      </div>
+    </div>`;
+  }
+  if (esperando) html += `<article class="m-chat-msg pepito m-chat-escribiendo" aria-label="Pepito está pensando"><div class="m-chat-texto"><span class="m-chat-linea"></span><span class="m-chat-linea corta"></span></div></article>`;
   lista.innerHTML = html;
-  lista.scrollTop = lista.scrollHeight;
+  lista.scrollTo({ top: lista.scrollHeight, behavior: quieto() ? 'auto' : 'smooth' });
   $('#chat-enviar').disabled = esperando;
-  const est = $('#chat-estado');
-  if (est) est.textContent = 'Conectado a la API de Claude' + (modelo ? ' (' + modelo + ')' : '') + '. También te contesta por WhatsApp si tu número está registrado.';
+  $('#chat-sugerencias').innerHTML = msgs.length > 2 ? '' : SUGERENCIAS.map(t => `<button type="button" class="m-chat-chip" data-sugerencia="${escapar(t)}">${escapar(t)}</button>`).join('');
+  pintarEstado();
 }
 
 async function llamar(cuerpo) {
@@ -113,26 +190,39 @@ async function llamar(cuerpo) {
   return d;
 }
 
+let relojEstado = null;
+function empezarEspera() {
+  esperando = true;
+  pensandoDesde = Date.now();
+  clearInterval(relojEstado);
+  relojEstado = setInterval(pintarEstado, 800);
+}
+function terminarEspera() {
+  esperando = false;
+  clearInterval(relojEstado);
+}
+
 async function mandar(texto) {
   const t = String(texto || '').trim();
   if (!t || esperando) return;
-  esperando = true;
+  empezarEspera();
   // Se muestra al momento; el listener trae la versión guardada
   conv = Object.assign({}, conv, { mensajes: (conv.mensajes || []).concat({ de: 'persona', texto: t, ts: Date.now() }) });
   $('#chat-texto').value = '';
+  crecer();
   pintar();
   try { await llamar({ mensaje: t }); }
-  catch (e) { aviso(e.message, 'error'); conv.mensajes = conv.mensajes.slice(0, -1); $('#chat-texto').value = t; }
-  finally { esperando = false; pintar(); }
+  catch (e) { aviso(e.message, 'error'); conv.mensajes = conv.mensajes.slice(0, -1); $('#chat-texto').value = t; crecer(); }
+  finally { terminarEspera(); pintar(); }
 }
 
 async function resolver(si) {
   if (!conv.propuesta || esperando) return;
-  esperando = true;
+  empezarEspera();
   pintar();
   try { await llamar({ propuesta: conv.propuesta.id, confirmar: si }); }
   catch (e) { aviso(e.message, 'error'); }
-  finally { esperando = false; pintar(); }
+  finally { terminarEspera(); pintar(); }
 }
 
 function escuchar() {
@@ -140,8 +230,14 @@ function escuchar() {
   if (!u || uidActual === u.uid) return;
   uidActual = u.uid;
   if (quitar) quitar();
+  let primera = true;
   quitar = window.onSnapshot(window.doc(window.db, 'pepito_conversacion', u.uid), s => {
     conv = s.exists() ? s.data() : { mensajes: [], propuesta: null };
+    // Lo que ya estaba guardado al abrir no repite la animación del sello
+    if (primera) {
+      (conv.mensajes || []).forEach((m, i) => { if (m.de === 'pepito' && m.ejecutada) sellados.add((m.ts || i) + ':' + m.ejecutada); });
+      primera = false;
+    }
     pintar();
   }, () => {});
 }
@@ -153,7 +249,9 @@ function pintarWhatsApp() {
   caja.hidden = window.currentRole !== 'admin';
   if (caja.hidden) return;
   const usuarios = (window.data && window.data.usuarios) || [];
-  caja.innerHTML = `<header><strong>${icono('send', 15)} WhatsApp del equipo</strong><small>Pepito solo contesta a estos números. 10 dígitos.</small></header>
+  const con = usuarios.filter(u => u.whatsapp10).length;
+  $('#chat-wa-cuenta').textContent = con ? con + (con === 1 ? ' número registrado' : ' números registrados') : 'Nadie registrado todavía';
+  $('#chat-wa-lista').innerHTML = `<p class="m-op-nota">Pepito solo contesta por WhatsApp a estos números (10 dígitos).</p>
     ${usuarios.map(u => `<label class="m-chat-wa-fila"><span>${escapar(u.nombre || u.email)}<small>${escapar(u.rol || '')}</small></span>
       <input type="tel" inputmode="numeric" maxlength="14" placeholder="55 1234 5678" value="${escapar(u.whatsapp || '')}" data-wa-input="${escapar(u.id)}">
       <button type="button" class="btn btn-secondary btn-sm" data-wa="${escapar(u.id)}">Guardar</button></label>`).join('') || '<p class="m-op-nota">No hay usuarios.</p>'}`;

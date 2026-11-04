@@ -110,6 +110,25 @@ async function herramientasDe(usuario) {
   };
 }
 
+// ── Actividad para la Oficina 3D: qué área trabajó en cada pedido (config/pepito_actividad, últimos 12) ──
+const AREA_DE = {
+  historial_notas: 'reportes', resumen_ventas: 'reportes', buscar_ventas: 'reportes', buscar_registros: 'reportes',
+  ver_nota: 'facturacion', pendientes_facturar: 'facturacion', crear_nota_entrega: 'facturacion', crear_venta: 'facturacion',
+  cobranza: 'cobranza',
+  buscar_productos: 'entregas', buscar_productos_ml: 'entregas', guardar_producto: 'entregas', guardar_entrega: 'entregas',
+  cambiar_estatus_venta: 'entregas', guardar_proveedor: 'entregas',
+  buscar_clientes: 'direccion', guardar_cliente: 'direccion', crear_cotizacion: 'direccion', eliminar_registro: 'direccion', enviar_whatsapp: 'direccion'
+};
+async function anotarActividad(usuario, eventos, canal) {
+  if (!eventos.length) return;
+  try {
+    const previo = (await fb().obtener('config', 'pepito_actividad')) || {};
+    const ahora = Date.now();
+    const nuevos = eventos.map((e, i) => ({ ts: ahora + i, quien: usuario.nombre || 'Alguien', canal, herramienta: e.herramienta, titulo: e.titulo, area: AREA_DE[e.herramienta] || 'direccion', accion: e.accion }));
+    await fb().guardar('config', 'pepito_actividad', { eventos: nuevos.reverse().concat(previo.eventos || []).slice(0, 12), actualizado: ahora });
+  } catch (e) { console.error('pepito: no se pudo anotar la actividad', e.message); }
+}
+
 const hoyCDMX = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
 async function conversacion(uid) {
@@ -228,6 +247,8 @@ async function conversar(usuario, texto, canal) {
     conv.propuesta = r.propuesta;
     await guardarConversacion(usuario.uid, conv);
     await anotarUso(id, uso, r.uso);
+    const vistas = [...new Set(r.usados)];
+    await anotarActividad(usuario, vistas.map(nombre => ({ herramienta: nombre, titulo: h.titulo(nombre), accion: r.propuesta && r.propuesta.herramienta === nombre ? 'propuso' : 'consultó' })), canal);
     return { texto: r.texto, propuesta: r.propuesta, herramientas: r.usados };
   } finally {
     await h.cerrar();
@@ -262,6 +283,7 @@ async function resolverPropuesta(usuario, propuestaId, confirmar, canal) {
       texto = res.error ? 'No se pudo guardar: ' + res.texto : 'Listo, quedó guardado.';
     }
     conv.mensajes = (conv.mensajes || []).concat({ de: 'pepito', texto, ts: Date.now(), canal, ejecutada: p.herramienta, resultado: res.error ? null : res.texto.slice(0, 4000) });
+    if (!res.error) await anotarActividad(usuario, [{ herramienta: p.herramienta, titulo: p.titulo, accion: 'guardó' }], canal);
     await guardarConversacion(usuario.uid, conv);
     return { texto, resultado: res.error ? null : res.texto, herramienta: p.herramienta };
   } finally {

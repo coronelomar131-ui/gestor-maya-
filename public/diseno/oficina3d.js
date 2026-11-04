@@ -17,6 +17,82 @@ const COLS=32,RENS=24,CUARTOS=[{nombre:"DIRECCI\xD3N",x:0,y:0,w:11,d:12,tipo:"ma
         gl_FragColor = vec4(color, 0.1 + 0.72 * borde + luz);
       }`})}function crearAura(e,n){const a=new THREE.Group,t=new THREE.Mesh(new THREE.SphereGeometry(1,28,20),n);t.scale.set(.72,1.02,.72),t.position.y=.92,t.renderOrder=4;const o=new THREE.Mesh(new THREE.RingGeometry(.62,.8,40),new THREE.MeshBasicMaterial({color:"#35E08C",transparent:!0,opacity:.65,side:THREE.DoubleSide,depthWrite:!1}));return o.rotation.x=-Math.PI/2,o.position.y=.03,a.add(t,o),a.visible=!1,e.add(a),{g:a,anillo:o}}function moverPersona(e,n,a){const t=e.camino.length>0,s=!t&&e.px===e.casa.x&&e.py===e.casa.y&&!e.libre,p=e.susto?Math.abs(Math.sin(e.susto*9))*.45*Math.min(e.susto*2,1):0;if(n.g.position.set(e.px+.5,(s?.08:t?Math.abs(Math.sin(a*11))*.05:0)+p,e.py+.5),t){const i=e.camino[0],f=i.x-e.px,h=i.y-e.py;Math.hypot(f,h)>.01&&(n.g.rotation.y=Math.atan2(f,h));const x=Math.sin(a*11)*.6;n.piernaI.rotation.x=x,n.piernaD.rotation.x=-x,n.brazoI.rotation.x=-x*.8,n.brazoD.rotation.x=x*.8}else if(s){n.g.rotation.y=e.id==="pepito-junior"?0:Math.PI;const i=e.fase==="trabaja"?Math.sin(a*16)*.12:0;n.piernaI.rotation.x=-1.35,n.piernaD.rotation.x=-1.35,n.brazoI.rotation.x=-1.1+i,n.brazoD.rotation.x=-1.1-i}else n.piernaI.rotation.x=0,n.piernaD.rotation.x=0,n.brazoI.rotation.x=0,n.brazoD.rotation.x=0}function pintarEtiqueta(e,n,a,t,o,s,p){e.font='500 10.5px "JetBrains Mono", ui-monospace, monospace';const i=e.measureText(a.id).width+20,f=n.piden.has(a.id),h=f?66:0,x=t-(i+h)/2,g=o-18,b=trabajando(a);if(b){const F=e.createLinearGradient(0,g,0,g+18);F.addColorStop(0,"rgba(190,255,222,.96)"),F.addColorStop(.5,"rgba(70,226,150,.82)"),F.addColorStop(1,"rgba(24,170,104,.9)"),e.fillStyle=F,e.shadowColor="rgba(40,220,140,.75)",e.shadowBlur=12}else e.fillStyle=n.seleccion===a.id?"#111111":"rgba(255,255,255,.94)";e.beginPath(),e.roundRect(x,g,i,18,9),e.fill(),e.shadowBlur=0,b&&(e.strokeStyle="rgba(255,255,255,.8)",e.lineWidth=1,e.beginPath(),e.roundRect(x+.5,g+.5,i-1,17,8.5),e.stroke()),e.globalAlpha=b?.45+.55*Math.abs(Math.sin(s*5)):1,e.fillStyle=b?"#FFFFFF":a.c,e.beginPath(),e.arc(x+9,g+9,3,0,7),e.fill(),e.globalAlpha=1,e.fillStyle=b?"#07351F":n.seleccion===a.id?"#FFFFFF":"#2A282A",e.textBaseline="middle",e.fillText(a.id,x+15,g+9.5),f&&(e.fillStyle="#D21A27",e.beginPath(),e.roundRect(x+i+2,g,64,18,9),e.fill(),e.fillStyle="#FFFFFF",e.font="700 10px Barlow, system-ui, sans-serif",e.fillText("Te necesita",x+i+9,g+9.5)),p.push({id:a.id,x,y:g-2,w:i+h+2,h:56})};
 
+// ── Rendimiento: los muebles no se mueven, así que se juntan en un solo objeto por material ──
+// Antes eran ~860 objetos dibujados por cuadro (y otra vez para las sombras); juntos son unas decenas.
+function claveMaterial(m) {
+  return [m.type, m.color && m.color.getHexString(), m.emissive && m.emissive.getHexString(), m.emissiveIntensity, m.roughness, m.metalness,
+    m.transparent, m.opacity, m.side, m.map ? m.map.uuid : ''].join('|');
+}
+function fusionarEstaticos(escena) {
+  escena.updateMatrixWorld(true);
+  const grupos = new Map();
+  escena.children.slice().forEach(o => {
+    if (!o.isMesh || !o.geometry || !o.material || Array.isArray(o.material) || o.material.transparent || o.material.map) return;
+    const k = claveMaterial(o.material) + '|' + o.castShadow + '|' + o.receiveShadow;
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(o);
+  });
+  let antes = 0, despues = 0;
+  grupos.forEach(lista => {
+    antes += lista.length;
+    if (lista.length < 2) { despues += lista.length; return; }
+    const partes = lista.map(m => { const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(m.matrixWorld); return g; });
+    const total = partes.reduce((s, g) => s + g.attributes.position.count, 0);
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3);
+    let k = 0;
+    partes.forEach(g => {
+      pos.set(g.attributes.position.array, k * 3);
+      if (g.attributes.normal) nor.set(g.attributes.normal.array, k * 3);
+      k += g.attributes.position.count;
+      g.dispose();
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geo.computeBoundingSphere();
+    const junto = new THREE.Mesh(geo, lista[0].material);
+    junto.castShadow = lista[0].castShadow; junto.receiveShadow = lista[0].receiveShadow; junto.renderOrder = lista[0].renderOrder;
+    lista.forEach(m => escena.remove(m));
+    escena.add(junto);
+    despues += 1;
+  });
+  return { antes, despues };
+}
+
+// Luz según la hora de la Ciudad de México: mañana fresca, tarde cálida, noche con lámparas
+function luzDelDia() {
+  const h = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City', hour: 'numeric', hour12: false })) % 24;
+  if (h >= 7 && h < 12) return { cielo: '#FFFFFF', suelo: '#D8C7AC', hemi: 1.35, sol: '#FFF6E8', fuerza: 1.95, lamparas: 0 };
+  if (h >= 12 && h < 17) return { cielo: '#FFF8EE', suelo: '#D8C7AC', hemi: 1.3, sol: '#FFEFD6', fuerza: 2.0, lamparas: 0 };
+  if (h >= 17 && h < 20) return { cielo: '#FFE2C2', suelo: '#B9A184', hemi: 1.05, sol: '#FFB27A', fuerza: 1.55, lamparas: 0.6 };
+  return { cielo: '#9DB2D8', suelo: '#5A5468', hemi: 0.75, sol: '#C7D6FF', fuerza: 0.75, lamparas: 1 };
+}
+
+// Globito con la tarea encima del agente que está trabajando ("Resumen de ventas…"), para que se note a simple vista
+function globito(m, x, y, texto, t) {
+  const limpio = String(texto || '').replace(/\s+/g, ' ').trim();
+  if (!limpio) return;
+  const corto = limpio.length > 34 ? limpio.slice(0, 33) + '…' : limpio;
+  m.font = '600 11px Barlow, system-ui, sans-serif';
+  const w = m.measureText(corto).width + 30, h = 22, gx = x - w / 2, gy = y - 48;
+  m.save();
+  m.globalAlpha = 0.96;
+  m.fillStyle = 'rgba(8, 20, 34, 0.9)';
+  m.shadowColor = 'rgba(40, 220, 140, 0.45)'; m.shadowBlur = 10;
+  m.beginPath(); m.roundRect(gx, gy, w, h, 11); m.fill();
+  m.shadowBlur = 0;
+  m.beginPath(); m.moveTo(x - 5, gy + h); m.lineTo(x + 5, gy + h); m.lineTo(x, gy + h + 6); m.closePath(); m.fill();
+  // tres puntos que laten: está en proceso
+  for (let i = 0; i < 3; i++) {
+    m.globalAlpha = 0.35 + 0.65 * Math.max(0, Math.sin(t * 6 - i * 0.9));
+    m.fillStyle = '#46E296';
+    m.beginPath(); m.arc(gx + 9 + i * 5, gy + h / 2, 1.8, 0, 7); m.fill();
+  }
+  m.globalAlpha = 1; m.fillStyle = '#E8F0F8'; m.textBaseline = 'middle';
+  m.fillText(corto, gx + 24, gy + h / 2 + 0.5);
+  m.restore();
+}
+
 // ── Render sin React (adaptado del componente MapaOficina del artifact) ──
 export function nuevaSim() { return crearSim(); }
 export { despachar, pedirF1 };
@@ -41,26 +117,47 @@ export function montarOficina3D(contenedor, e, alElegir) {
   b.shadowMap.enabled = true; b.shadowMap.type = THREE.PCFSoftShadowMap;
   const F = new THREE.Scene, T = new THREE.OrthographicCamera(-20, 20, 12, -12, .1, 200), z = fabrica();
   const { grupoF1: N, pista: P } = construirEscena(F, e.mundo, z, e.pista);
+  const fusion = fusionarEstaticos(F);
   const l = new Map(e.agentes.map(H => [H.id, crearPersona(H, F, z)]));
   const C = crearGardevoir(F, z), S = crearVidrioVerde();
   const c = new Map(e.agentes.map(H => [H.id, crearAura(F, S)]));
   const d = crearAura(F, S); d.g.scale.setScalar(1.45);
   const v = 'outputColorSpace' in b ? 1 : 1 / Math.PI;
-  F.add(new THREE.HemisphereLight('#FFFFFF', '#D8C7AC', 1.35 * v));
-  const E = new THREE.DirectionalLight('#FFF3E0', 1.95 * v);
+  const luz = luzDelDia();
+  F.add(new THREE.HemisphereLight(luz.cielo, luz.suelo, luz.hemi * v));
+  if (luz.lamparas) [[9.5, 2.1, 4.5], [20.3, 2.1, 13.5], [5.5, 2.4, 3.5], [27, 2.4, 18]].forEach(([x, y, zz]) => {
+    const l = new THREE.PointLight('#FFD9A0', 9 * luz.lamparas * v, 9, 1.6); l.position.set(x, y, zz); F.add(l);
+  });
+  const E = new THREE.DirectionalLight(luz.sol, luz.fuerza * v);
   E.position.set(14, 30, 24); E.target.position.set(CENTRO.x, 0, CENTRO.z); E.castShadow = true;
-  E.shadow.mapSize.set(2048, 2048);
+  const chico = Math.min(window.innerWidth, window.innerHeight) < 700 || matchMedia('(pointer: coarse)').matches;
+  E.shadow.mapSize.set(chico ? 1024 : 2048, chico ? 1024 : 2048);
   Object.assign(E.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 90 });
   E.shadow.bias = -6e-4; E.shadow.radius = 5; F.add(E, E.target);
   const m = lienzo2d.getContext('2d');
   const quieto = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let vivo = true, j = performance.now(), re, K = 1, te = 1, ae = 1, Z = 1;
+  // Calidad adaptable: 60 cuadros por segundo si el equipo aguanta; si no, baja la resolución y luego a 30
+  const calidad = { dpr: chico ? 1.5 : 2, intervalo: 15, costo: 0, muestras: 0 };
+  let enPantalla = true;
+  const io = new IntersectionObserver(([x]) => { enPantalla = x.isIntersecting; }, { threshold: 0.05 });
+  io.observe(contenedor);
+  function ajustarCalidad(costo) {
+    calidad.costo += costo; calidad.muestras++;
+    if (calidad.muestras < 45) return;
+    const prom = calidad.costo / calidad.muestras;
+    calidad.costo = 0; calidad.muestras = 0;
+    if (prom > 22 && calidad.dpr > 1) { calidad.dpr = Math.max(1, calidad.dpr - 0.25); medir(); }
+    else if (prom > 26 && calidad.intervalo < 30) calidad.intervalo = 31;
+    else if (prom < 9 && calidad.intervalo > 15) calidad.intervalo = 15;
+    if (window.__of3d) window.__of3d.extra = { dpr: calidad.dpr, intervalo: calidad.intervalo, prom: +prom.toFixed(1) };
+  }
   const ie = { hw: 20.2, hh: 12.6 }, xe = new THREE.Vector3();
   const camara = () => { const H = Math.PI / 4 + giro.az, q = 60; T.position.set(CENTRO.x + Math.sin(H) * q, CENTRO.y + q * .62, CENTRO.z + Math.cos(H) * q); T.lookAt(CENTRO.x, CENTRO.y, CENTRO.z); };
   const medir = () => {
     const H = contenedor.getBoundingClientRect();
     K = Math.max(H.width, 1); te = Math.max(H.height, 1); ae = Math.min(window.devicePixelRatio || 1, 2);
-    b.setPixelRatio(ae); b.setSize(K, te, false); lienzo2d.width = K * ae; lienzo2d.height = te * ae;
+    ae = Math.min(ae, calidad.dpr); b.setPixelRatio(ae); b.setSize(K, te, false); lienzo2d.width = K * ae; lienzo2d.height = te * ae;
     const q = K / te; let O = 20.2, I = 12.6; q > O / I ? O = I * q : I = O / q;
     ie.hw = O; ie.hh = I; Object.assign(T, { left: -O * Z, right: O * Z, top: I * Z, bottom: -I * Z }); T.updateProjectionMatrix();
   };
@@ -68,7 +165,7 @@ export function montarOficina3D(contenedor, e, alElegir) {
   const cuadro = H => {
     if (!vivo) return;
     re = requestAnimationFrame(cuadro);
-    if (H - j < 30) return;
+    if (H - j < calidad.intervalo || !enPantalla || document.hidden) return;
     const q = Math.min((H - j) / 1e3, .05); j = H;
     avanzar(e, quieto ? 1 : q); seguirEntrenador(e, quieto ? 1 : q);
     const O = H / 1e3;
@@ -92,6 +189,10 @@ export function montarOficina3D(contenedor, e, alElegir) {
       k.g.position.set(M.px + .5, 0, M.py + .5); const V = 1 + Math.sin(O * 3) * .08; k.anillo.scale.set(V, V, 1);
     });
     camara(); b.render(F, T);
+    const est = window.__of3d || (window.__of3d = { cuadros: 0, ms: 0, inicio: performance.now() });
+    const costo = performance.now() - H;
+    est.cuadros++; est.calls = b.info.render.calls; est.triangulos = b.info.render.triangles; est.ms += costo; est.fusion = fusion;
+    ajustarCalidad(costo);
     m.setTransform(ae, 0, 0, ae, 0, 0); m.clearRect(0, 0, K, te); m.textBaseline = 'middle';
     CUARTOS.forEach(M => {
       const [k, V] = J(M.lx, 0, M.ly);
@@ -105,6 +206,7 @@ export function montarOficina3D(contenedor, e, alElegir) {
       if (M.libre && !l.get('omar').g.visible) return;
       const [k, V] = J(M.px + .5, M.libre ? 2.05 : 1.75, M.py + .5);
       pintarEtiqueta(m, e, M, k, V, O, Ee);
+      if (trabajando(M) && M.tarea && !M.libre) globito(m, k, V, M.tarea, O);
     });
     e.zonas = Ee;
     const [we, Fe] = J(CENTRO_F1.x, .4, CENTRO_F1.z); e.zonaF1 = { x: we, y: Fe };
@@ -128,5 +230,5 @@ export function montarOficina3D(contenedor, e, alElegir) {
   lienzo2d.addEventListener('pointerdown', ev => { if (ev.pointerType !== 'mouse') return; Object.assign(giro, { activo: true, x0: ev.clientX, az0: giro.az, movio: false }); lienzo2d.setPointerCapture(ev.pointerId); });
   lienzo2d.addEventListener('pointermove', ev => { if (!giro.activo) return; const dx = ev.clientX - giro.x0; if (Math.abs(dx) > 4) giro.movio = true; giro.az = Math.max(-.6, Math.min(.6, giro.az0 - dx * .004)); });
   lienzo2d.addEventListener('pointerup', () => { giro.activo = false; });
-  return { detener() { vivo = false; cancelAnimationFrame(re); obs.disconnect(); b.dispose(); } };
+  return { detener() { vivo = false; cancelAnimationFrame(re); obs.disconnect(); io.disconnect(); b.dispose(); } };
 }
