@@ -8,7 +8,8 @@ const pepito = require('../mcp/pepito');
 const acceso = require('../mcp/acceso');
 const { fb } = require('../mcp/firebase');
 
-const VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v25.0';
+const wa = require('../mcp/whatsapp');
+const VERSION = wa.VERSION;
 const SI = /^(s[ií]|si+|confirm[oa]?|dale|va|ok|okay|adelante|gu[aá]rdal[ao])[.!\s]*$/i;
 const NO = /^(no|cancela(r)?|mejor no|no gracias)[.!\s]*$/i;
 
@@ -27,8 +28,6 @@ function firmaValida(raw, firma) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// En México WhatsApp entrega 521 + 10 dígitos y para contestar hay que mandar 52 + 10 dígitos
-const destino = n => { const d = String(n).replace(/\D/g, ''); return /^521\d{10}$/.test(d) ? '52' + d.slice(3) : d; };
 
 // Lo último que pasó con el webhook (para diagnosticar sin ver los logs de Vercel): config/whatsapp_estado
 async function anotar(paso, detalle) {
@@ -40,15 +39,10 @@ async function anotar(paso, detalle) {
 }
 
 async function enviar(para, texto) {
-  const r = await fetch(`https://graph.facebook.com/${VERSION}/${String(process.env.WHATSAPP_PHONE_ID || '').trim()}/messages`, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to: destino(para), type: 'text', text: { preview_url: false, body: String(texto).slice(0, 4000) } })
-  });
+  const r = await wa.enviarTexto(para, texto);
   if (r.ok) { await anotar('respuesta enviada', 'a ...' + String(para).slice(-4)); return; }
-  const error = (await r.text()).slice(0, 300);
-  console.error('whatsapp: no se pudo enviar', r.status, error);
-  await anotar('Meta rechazó la respuesta (' + r.status + ')', error);
+  console.error('whatsapp: no se pudo enviar', r.status, r.crudo);
+  await anotar('Meta rechazó la respuesta (' + r.status + ')', r.crudo);
 }
 
 module.exports = async (req, res) => {

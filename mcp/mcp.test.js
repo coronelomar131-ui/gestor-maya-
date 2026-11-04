@@ -458,3 +458,48 @@ test('crear venta y cotización sin vendedor no ponen al usuario conectado; con 
   assert.equal(db.cols.cotizaciones.get(cot.creada).vendedor, '');
   await c.cerrar();
 });
+
+test('Pepito API: enviar_whatsapp a alguien del equipo queda como propuesta y solo se envía al confirmar', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  process.env.WHATSAPP_TOKEN = 'tok';
+  process.env.WHATSAPP_PHONE_ID = '123';
+  const enviados = [];
+  let respuesta = { ok: true, status: 200, text: async () => '{}' };
+  const fetchOriginal = global.fetch;
+  global.fetch = async (url, op) => { enviados.push(JSON.parse(op.body)); return respuesta; };
+  try {
+    db.cols.usuarios.set('u2', { uid: 'd-1', nombre: 'Daniel Hernandez', rol: 'vendedor', whatsapp10: '5512345678' });
+    const pepito = require('./pepito');
+    const falso = claudeFalso([
+      herramienta('enviar_whatsapp', { para: 'daniel', mensaje: 'Ya llegó el faro de Rocco' }),
+      texto('Le voy a mandar a Daniel: "Ya llegó el faro de Rocco". ¿Lo envío?'),
+      texto('Listo, ya le mandé el mensaje a Daniel.'),
+      herramienta('enviar_whatsapp', { para: 'daniel', mensaje: 'otro' }),
+      texto('¿Lo envío?')
+    ]);
+    pepito._usarCliente(falso);
+    const r = await pepito.conversar(ADMIN, 'avísale a Daniel que ya llegó el faro de Rocco', 'gestor');
+    assert.ok(falso.llamadas[0].tools.some(t => t.name === 'enviar_whatsapp'));
+    assert.equal(r.propuesta.herramienta, 'enviar_whatsapp');
+    assert.equal(enviados.length, 0, 'no se manda hasta confirmar');
+    await pepito.resolverPropuesta(ADMIN, r.propuesta.id, true, 'gestor');
+    assert.equal(enviados.length, 1);
+    assert.equal(enviados[0].to, '525512345678');
+    assert.match(enviados[0].text.body, /^Mensaje de Dirección \(vía Pepito\):\nYa llegó el faro de Rocco$/);
+    // Fuera de la ventana de 24 h, se explica qué hacer
+    respuesta = { ok: false, status: 400, text: async () => JSON.stringify({ error: { code: 131047, message: 'Re-engagement message' } }) };
+    const r2 = await pepito.conversar(ADMIN, 'mándale otro', 'gestor');
+    const res = await pepito.resolverPropuesta(ADMIN, r2.propuesta.id, true, 'gestor');
+    assert.match(res.texto, /24 horas/);
+    // Alguien sin número registrado no se encuentra
+    const h = await pepito.herramientasDe(ADMIN);
+    const no = await h.llamar('enviar_whatsapp', { para: 'Nadie', mensaje: 'hola' });
+    assert.equal(no.error, true);
+    assert.match(no.texto, /No encontré/);
+    await h.cerrar();
+  } finally {
+    global.fetch = fetchOriginal;
+    delete process.env.WHATSAPP_TOKEN;
+    delete process.env.WHATSAPP_PHONE_ID;
+  }
+});

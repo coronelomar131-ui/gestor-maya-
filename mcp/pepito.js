@@ -6,6 +6,8 @@ const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
 const { crearServidor } = require('./herramientas');
 const { fb } = require('./firebase');
+const wa = require('./whatsapp');
+const datos = require('./datos');
 
 const MODELO = process.env.PEPITO_MODELO || 'claude-sonnet-5-5';
 const ESFUERZO = process.env.PEPITO_ESFUERZO || 'medium';
@@ -45,6 +47,43 @@ function sistema(instruccionesMcp, canal) {
   ].join('\n');
 }
 
+// Pepito puede mandar un WhatsApp a alguien del equipo (solo números registrados en el gestor).
+// Como cualquier otra acción, queda como propuesta y se envía hasta que la persona confirma.
+const HERRAMIENTA_WHATSAPP = {
+  name: 'enviar_whatsapp',
+  description: 'Manda un mensaje de WhatsApp a una persona del equipo que tenga su número registrado en el gestor (Pepito → WhatsApp del equipo). ' +
+    'No sirve para clientes ni para números que no estén registrados. Por reglas de WhatsApp solo llega si esa persona le escribió a Pepito en las últimas 24 horas; ' +
+    'si no llega por eso, dile que esa persona primero le mande cualquier mensaje al WhatsApp de Pepito.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      para: { type: 'string', description: 'Nombre o correo de la persona del equipo, como aparece en Usuarios' },
+      mensaje: { type: 'string', description: 'Texto a enviar, tal como lo verá esa persona' }
+    },
+    required: ['para', 'mensaje'],
+    additionalProperties: false
+  }
+};
+
+async function mandarWhatsApp(usuario, a) {
+  const q = datos.norm(a.para);
+  const texto = String(a.mensaje || '').trim();
+  if (!q || !texto) return { error: true, texto: 'Falta a quién mandarlo o el mensaje.' };
+  const equipo = (await fb().leerColeccion('usuarios')).filter(u => u.whatsapp10);
+  const exactos = equipo.filter(u => datos.norm(u.nombre) === q || datos.norm(u.email) === q);
+  const hallados = exactos.length ? exactos : equipo.filter(u => datos.norm(u.nombre).includes(q) || datos.norm(u.email).includes(q));
+  if (!hallados.length) return { error: true, texto: 'No encontré a "' + a.para + '" con WhatsApp registrado. Con número: ' + (equipo.map(u => u.nombre || u.email).join(', ') || 'nadie todavía') + '.' };
+  if (hallados.length > 1) return { error: true, texto: 'Hay varias personas que coinciden con "' + a.para + '": ' + hallados.map(u => u.nombre || u.email).join(', ') + '. ¿A cuál?' };
+  const dest = hallados[0];
+  const r = await wa.enviarTexto(dest.whatsapp10, 'Mensaje de ' + (usuario.nombre || 'el equipo') + ' (vía Pepito):\n' + texto);
+  const quien = dest.nombre || dest.email;
+  if (r.ok) return { error: false, texto: JSON.stringify({ enviado: true, para: quien }) };
+  if (r.codigo === 131047 || /24 hours|re-engagement/i.test(r.error || '')) {
+    return { error: true, texto: 'No se envió: ' + quien + ' no le ha escrito a Pepito en las últimas 24 horas (regla de WhatsApp). Pídele que le mande cualquier mensaje al WhatsApp de Pepito y vuelve a intentarlo.' };
+  }
+  return { error: true, texto: 'WhatsApp no aceptó el mensaje para ' + quien + ': ' + (r.error || r.status) };
+}
+
 // Herramientas del MCP del rol de esta persona, conectadas en memoria (sin red ni OAuth)
 async function herramientasDe(usuario) {
   const [lado1, lado2] = InMemoryTransport.createLinkedPair();
@@ -53,12 +92,14 @@ async function herramientasDe(usuario) {
   await Promise.all([servidor.connect(lado2), cliente.connect(lado1)]);
   const { tools } = await cliente.listTools();
   const lista = tools.filter(t => !FUERA.has(t.name));
+  const propias = wa.configurado() ? [HERRAMIENTA_WHATSAPP] : [];
   return {
     instrucciones: cliente.getInstructions(),
-    tools: lista.map(t => ({ name: t.name, description: t.description || t.title || t.name, input_schema: t.inputSchema })),
+    tools: lista.map(t => ({ name: t.name, description: t.description || t.title || t.name, input_schema: t.inputSchema })).concat(propias),
     escribe: nombre => { const t = lista.find(x => x.name === nombre); return !t || !t.annotations || t.annotations.readOnlyHint !== true; },
-    titulo: nombre => { const t = lista.find(x => x.name === nombre); return (t && (t.title || t.name)) || nombre; },
+    titulo: nombre => (nombre === HERRAMIENTA_WHATSAPP.name ? 'Mandar WhatsApp' : ((lista.find(x => x.name === nombre) || {}).title || nombre)),
     async llamar(nombre, args) {
+      if (nombre === HERRAMIENTA_WHATSAPP.name) return mandarWhatsApp(usuario, args || {});
       const r = await cliente.callTool({ name: nombre, arguments: args || {} });
       const texto = (r.content || []).map(c => c.text || '').join('\n');
       return { error: !!r.isError, texto };
