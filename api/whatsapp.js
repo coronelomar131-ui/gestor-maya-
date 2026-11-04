@@ -64,6 +64,19 @@ module.exports = async (req, res) => {
       console.error('whatsapp: verificación rechazada', esperado ? '(el token no coincide)' : '(falta WHATSAPP_VERIFY_TOKEN)');
       return res.status(403).send(esperado ? 'El token de verificación no coincide con WHATSAPP_VERIFY_TOKEN' : 'Falta WHATSAPP_VERIFY_TOKEN en Vercel');
     }
+    // ?suscribir=<id de la cuenta de WhatsApp Business>: suscribe esa cuenta a esta app para que Meta mande los mensajes aquí.
+    // Usa el token de Vercel; solo afecta a cuentas a las que ese token ya tiene acceso. Muestra cómo quedó.
+    const waba = String(q.get('suscribir') || '').replace(/\D/g, '');
+    if (waba) {
+      const token = String(process.env.WHATSAPP_TOKEN || '').trim();
+      if (!token) return res.status(200).json({ ok: false, motivo: 'Falta WHATSAPP_TOKEN en Vercel' });
+      const url = `https://graph.facebook.com/${VERSION}/${waba}/subscribed_apps`;
+      const h = { Authorization: 'Bearer ' + token };
+      const alta = await fetch(url, { method: 'POST', headers: h }).then(async r => ({ status: r.status, respuesta: await r.json().catch(() => null) }));
+      const lista = await fetch(url, { headers: h }).then(async r => ({ status: r.status, respuesta: await r.json().catch(() => null) }));
+      await anotar('suscripción de la cuenta ' + waba, 'alta ' + alta.status + ' · ' + JSON.stringify(alta.respuesta).slice(0, 200));
+      return res.status(200).json({ suscribir: alta, apps_suscritas: lista });
+    }
     // Abierta en el navegador: dice qué variables ve el servidor (sin mostrar sus valores) y qué pasó con el último mensaje
     const estado = await fb().obtener('config', 'whatsapp_estado').catch(() => null);
     return res.status(200).json({
