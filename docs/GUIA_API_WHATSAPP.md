@@ -58,3 +58,27 @@ siempre. También puedes pedirle el PDF de una nota que ya existe ("mándame la 
 
 Diagnóstico: `https://gestor-maya.vercel.app/api/whatsapp` muestra qué variables ve el servidor y qué pasó con los
 últimos mensajes.
+
+## 5. PDF como archivo adjunto
+
+Cuando Pepito guarda una nota de entrega, nota de venta o cotización por WhatsApp, manda el PDF **como archivo**
+en el chat, con el mismo diseño que se descarga en el gestor (el servidor usa las mismas funciones de la app).
+También se le puede pedir el de una nota que ya existe: "mándame la NE-230". Si algo falla, manda el enlace.
+
+## 6. Reporte diario por WhatsApp
+
+Cada mañana (entre 8:00 y 8:59 de la Ciudad de México) Pepito manda a quien tenga rol **admin** o **facturación** y
+su WhatsApp registrado: ventas de ayer (solo admin), lo que falta por facturar y la cobranza vencida.
+
+1. En Vercel agrega `CRON_SECRET` con una contraseña larga que inventes (Production) y haz Redeploy.
+   Vercel la usa para que nadie más pueda disparar el reporte.
+2. Para probarlo sin esperar: abre `https://gestor-maya.vercel.app/api/avisos?clave=<tu CRON_SECRET>`
+   (agrega `&solo=5512345678` para mandártelo solo a ti).
+
+Regla de WhatsApp: un mensaje que Pepito manda por su cuenta solo llega si esa persona le escribió a Pepito en las
+últimas 24 horas. Para que llegue siempre hace falta una **plantilla aprobada por Meta**:
+
+1. En Meta Business Suite → WhatsApp Manager → Plantillas → Crear plantilla, categoría **Utilidad**, idioma Español (MEX).
+2. Nombre `reporte_diario`, cuerpo: `Buenos días, {{1}}. Tu reporte de Maya: {{2}}. Escríbeme para ver el detalle.`
+3. Cuando Meta la apruebe, agrega en Vercel `WHATSAPP_PLANTILLA_REPORTE=reporte_diario` (y `WHATSAPP_PLANTILLA_IDIOMA=es_MX`).
+   Si el mensaje normal no puede llegar por la regla de 24 horas, Pepito usa la plantilla con un resumen de una línea.

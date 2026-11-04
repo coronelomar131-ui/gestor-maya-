@@ -8,9 +8,14 @@
       "maxDuration": 60
     },
     "api/pepito.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "public/index.html"
     },
     "api/whatsapp.js": {
+      "maxDuration": 60,
+      "includeFiles": "public/index.html"
+    },
+    "api/avisos.js": {
       "maxDuration": 60
     }
   },
@@ -38,6 +43,12 @@
     {
       "source": "/(.*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/avisos",
+      "schedule": "0 14 * * *"
     }
   ]
 }

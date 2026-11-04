@@ -2,6 +2,7 @@
 // Usa los datos que la app ya trae en tiempo real (window.data.notasEntrega / ventas / clientes), así que casi no gasta
 // lecturas de Firebase. Las facturas viven en la colección "facturas" y solo se escuchan al abrir estos módulos.
 import { icono } from './iconos.js';
+import { emparejar } from './emparejar.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -197,6 +198,8 @@ function pintarFacturacion() {
       if (cancelar) return cancelarFactura(cancelar.dataset.cancelar);
       const copiar = e.target.closest('[data-copiar]');
       if (copiar) return copiarParaContpaqi();
+      if (e.target.closest('[data-limpiar]')) { seleccion.clear(); previaAbierta = false; pintarFacturacion(); }
+      if (e.target.closest('[data-previa]')) { previaAbierta = !previaAbierta; pintarFacturacion(); }
     });
   }
   $$('#fac-tabs [data-tab]', mod).forEach(b => b.classList.toggle('activo', b.dataset.tab === pestanaFac));
@@ -206,19 +209,18 @@ function pintarFacturacion() {
     const porCliente = {};
     pend.forEach(r => { (porCliente[r.cliente || 'Sin cliente'] = porCliente[r.cliente || 'Sin cliente'] || []).push(r); });
     const elegidas = pend.filter(r => seleccion.has(r.col + ':' + r.id));
-    cuerpo.innerHTML = (elegidas.length ? `<div class="m-op-seleccion m-vidrio">${elegidas.length} seleccionadas · ${pesos(elegidas.reduce((s, r) => s + r.total, 0))}
-        <button type="button" class="btn btn-secondary btn-sm" data-copiar="1">${icono('clipboard-list', 14)}<span>Copiar datos para CONTPAQi</span></button></div>` : '') +
+    cuerpo.innerHTML = `<div class="m-fac-dos"><div class="m-fac-izq">` +
       (Object.keys(porCliente).length ? Object.entries(porCliente).sort((a, b) => b[1].length - a[1].length).map(([cli, lista]) => `
       <section class="m-op-grupo m-vidrio">
         <header><strong>${escapar(cli)}</strong><span>${lista.length} ${lista.length === 1 ? 'nota' : 'notas'} · ${pesos(lista.reduce((s, r) => s + r.total, 0))}</span></header>
         ${lista.map(r => `<label class="m-op-check">
           <input type="checkbox" data-sel="${r.col}:${escapar(r.id)}"${seleccion.has(r.col + ':' + r.id) ? ' checked' : ''}>
           <span class="m-op-folio">${escapar(r.folio)}</span>
-          <span class="m-op-info"><strong>${escapar(r.piezas || '—')}</strong><small>${fechaCorta(r.fecha)}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''} · ${escapar(nombreEtapa(etapa(r)))}</small></span>
+          <span class="m-op-info"><strong>${escapar(r.piezas || '—')}</strong><small>${fechaCorta(r.fecha)}${r.siniestro ? ', siniestro ' + escapar(r.siniestro) : ''}, ${escapar(nombreEtapa(etapa(r)).toLowerCase())}</small></span>
           <span class="m-op-monto">${pesos(r.total)}</span>
         </label>`).join('')}
       </section>`).join('') : `<div class="m-op-vacio">${icono('check', 28)}<p>No hay notas pendientes de facturar.</p></div>`) +
-      `<p class="m-op-nota">Las notas en $0 (sin precio a propósito) no aparecen aquí. Selecciona las que vas a facturar para copiar sus datos y capturarlos en CONTPAQi.</p>`;
+      `<p class="m-op-nota">Las notas en $0 (sin precio a propósito) no aparecen aquí.</p></div>` + previaFactura(elegidas) + `</div>`;
   } else {
     const lista = facturas.slice().sort((a, b) => ms(b.fecha) - ms(a.fecha));
     cuerpo.innerHTML = lista.length ? `<div class="m-op-lista">${lista.map(f => `
@@ -230,6 +232,64 @@ function pintarFacturacion() {
         ${rol() === 'admin' && f.estatus !== 'cancelada' ? `<button type="button" class="m-op-x" data-cancelar="${escapar(f.id)}" title="Marcar como cancelada">${icono('x', 14)}</button>` : ''}
       </div>`).join('')}</div>` : `<div class="m-op-vacio">${icono('receipt', 28)}<p>Todavía no se ha subido ninguna factura. Usa “Subir XML de CONTPAQi”.</p></div>`;
   }
+}
+
+// Partidas de una nota tal como irían en la factura: pieza, siniestro, cantidad, importe sin IVA e IVA
+function partidasFactura(r) {
+  const items = r.raw.items || [];
+  if (!items.length) return [{ folio: r.folio, pieza: r.piezas || '—', siniestro: r.siniestro || '', cantidad: 1, importe: r.total, iva: 0 }];
+  if (r.tipo === 'NE') {
+    const sub = items.reduce((s, i) => s + (Number(i.cantidad) || 1) * (Number(i.precioUnit) || 0), 0);
+    const ivaNota = Number(r.raw.ivaTotal) || 0;
+    return items.map(i => {
+      const imp = (Number(i.cantidad) || 1) * (Number(i.precioUnit) || 0);
+      const conAnio = i.anio && !String(i.descripcion || '').includes(String(i.anio)) ? (i.descripcion || '') + ' (' + i.anio + ')' : (i.descripcion || '—');
+      return { folio: r.folio, pieza: conAnio, siniestro: i.siniestro || '', cantidad: Number(i.cantidad) || 1, importe: imp, iva: sub ? ivaNota * imp / sub : 0 };
+    });
+  }
+  return items.map(i => ({ folio: r.folio, pieza: i.pedido || i.descripcion || '—', siniestro: i.numSiniestro || '', cantidad: 1, importe: Number(i.precio) || 0, iva: Number(i.iva) || 0, ajuste: Number(i.ajuste) || 0 }));
+}
+
+let previaAbierta = false;
+function previaFactura(elegidas) {
+  if (!elegidas.length) {
+    return `<aside class="m-fac-previa vacia m-vidrio" id="fac-previa">${icono('receipt-text', 26)}<strong>Vista previa de la factura</strong><p>Marca las notas que vas a facturar y aquí verás qué piezas lleva, a qué cliente y por cuánto.</p></aside>`;
+  }
+  const partidas = elegidas.flatMap(partidasFactura);
+  const subtotal = partidas.reduce((s, p) => s + p.importe - (p.ajuste || 0), 0);
+  const iva = partidas.reduce((s, p) => s + p.iva, 0);
+  const total = elegidas.reduce((s, r) => s + r.total, 0);
+  const clientes = [...new Set(elegidas.map(r => r.cliente || 'Sin cliente'))];
+  const sinIva = iva < 0.01 && subtotal > 0;
+  return `<aside class="m-fac-previa m-vidrio${previaAbierta ? ' abierta' : ''}" id="fac-previa" aria-label="Vista previa de la factura">
+    <button type="button" class="m-fac-barra" data-previa="1" aria-expanded="${previaAbierta}">
+      <span><b>${elegidas.length} ${elegidas.length === 1 ? 'nota' : 'notas'}</b> para ${escapar(clientes[0])}</span>
+      <strong>${pesos(total)}</strong>
+      <em>${previaAbierta ? 'Ocultar' : 'Ver factura'}</em>
+    </button>
+    <header>
+      <span>Vista previa de la factura</span>
+      <strong>${escapar(clientes[0])}</strong>
+      ${clientes.length > 1 ? `<p class="m-fac-alerta">${icono('circle-alert', 14)} Marcaste notas de ${clientes.length} clientes; una factura es para uno solo.</p>` : ''}
+    </header>
+    <ol class="m-fac-partidas">
+      ${partidas.map(p => `<li>
+        <span class="m-fac-cant">${p.cantidad}×</span>
+        <span class="m-fac-pieza"><b>${escapar(p.pieza)}</b><small>${escapar(p.folio)}${p.siniestro ? ', siniestro ' + escapar(p.siniestro) : ''}</small></span>
+        <span class="m-fac-imp">${pesos(p.importe)}</span>
+      </li>`).join('')}
+    </ol>
+    <dl class="m-fac-totales">
+      <div><dt>Subtotal</dt><dd>${pesos(subtotal)}</dd></div>
+      <div><dt>IVA de las notas</dt><dd>${pesos(iva)}</dd></div>
+      <div class="total"><dt>Total</dt><dd>${pesos(total)}</dd></div>
+      ${sinIva ? `<p class="m-op-nota">Las notas no traen IVA. Si la facturas con IVA 16%, el total sería ${pesos(subtotal * 1.16)}.</p>` : ''}
+    </dl>
+    <footer>
+      <button type="button" class="btn btn-secondary btn-sm" data-limpiar="1">Quitar todas</button>
+      <button type="button" class="btn btn-primary btn-sm" data-copiar="1">${icono('clipboard-list', 14)}<span>Copiar para CONTPAQi</span></button>
+    </footer>
+  </aside>`;
 }
 
 function copiarParaContpaqi() {
@@ -279,7 +339,9 @@ function leerCFDI(texto, nombre) {
 async function subirXML(archivos) {
   for (const archivo of archivos) {
     try {
-      const cfdi = leerCFDI(await archivo.text(), archivo.name);
+      const texto = await archivo.text();
+      const cfdi = leerCFDI(texto, archivo.name);
+      cfdi.textoCompleto = texto; // solo para buscar siniestros; no se guarda
       if (facturas.some(f => f.uuid === cfdi.uuid && f.estatus !== 'cancelada')) { aviso(cfdi.serieFolio + ' ya estaba subida', 'warning'); continue; }
       await confirmarFactura(cfdi);
     } catch (e) {
@@ -288,45 +350,67 @@ async function subirXML(archivos) {
   }
 }
 
+// Factura nueva: el algoritmo (diseno/emparejar.js, sin IA) propone qué notas cubre por siniestro, pieza, importe y cliente
+const RAZON_ICONO = { siniestro: 'clipboard-check', pieza: 'package', importe: 'wallet', cliente: 'users', suma: 'receipt', fecha: 'clock' };
 function confirmarFactura(cfdi) {
   return new Promise(listo => {
     const cliente = clientePorNombreORfc(cfdi.receptorNombre, cfdi.receptorRfc);
     const nombreCli = cliente ? (cliente.razonSocial || cliente.nombre) : cfdi.receptorNombre;
     const pend = registros().filter(facturable);
-    const delCliente = pend.filter(r => norm(r.cliente) === norm(nombreCli) || (cliente && clientePorNombreORfc(r.cliente) === cliente));
-    const textoConceptos = norm(cfdi.conceptos.map(c => c.descripcion + ' ' + c.clave).join(' '));
-    // Sugerencias: las que se seleccionaron en la bandeja, las que tienen un siniestro que aparece en los conceptos, o la que cuadra con el total
-    const sugeridas = new Set(delCliente.filter(r =>
-      seleccion.has(r.col + ':' + r.id) ||
-      String(r.siniestro).split(/[|,\s]+/).some(s => s.length >= 4 && textoConceptos.includes(norm(s)))
-    ).map(r => r.col + ':' + r.id));
-    if (!sugeridas.size) { const exacta = delCliente.find(r => Math.abs(r.total - cfdi.total) < 1); if (exacta) sugeridas.add(exacta.col + ':' + exacta.id); }
-    const candidatas = delCliente.length ? delCliente : pend.slice(0, 40);
+    const porClave = new Map(pend.map(r => [r.col + ':' + r.id, r]));
+    const esDelCliente = n => { const r = porClave.get(n.clave); return !!r && (norm(r.cliente) === norm(nombreCli) || (cliente && clientePorNombreORfc(r.cliente) === cliente)); };
+    const res = emparejar(cfdi, pend.map(r => ({ clave: r.col + ':' + r.id, folio: r.folio, cliente: r.cliente, fecha: r.fecha, total: r.total, siniestro: r.siniestro, piezas: r.piezas, items: r.raw.items })), esDelCliente);
+    // Lo que se marcó en la bandeja antes de subir el XML también cuenta
+    const elegidas = new Map(res.elegidas.map(e => [e.clave, e]));
+    pend.forEach(r => { const k = r.col + ':' + r.id; if (seleccion.has(k) && !elegidas.has(k)) elegidas.set(k, { clave: k, razones: [{ tipo: 'cliente', texto: 'La marcaste en la bandeja' }] }); });
+    const marcadas = new Set(elegidas.keys());
+    const extras = new Map(); // notas que la persona agrega a mano desde el buscador
     const plazo = diasCredito(cliente);
     const pue = cfdi.metodoPago === 'PUE';
+
+    const fila = (r, info, marcada) => `
+      <label class="m-op-check m-cf-fila${marcada ? ' marcada' : ''}"><input type="checkbox" value="${r.col}:${escapar(r.id)}"${marcada ? ' checked' : ''}>
+        <span class="m-op-folio">${escapar(r.folio)}</span>
+        <span class="m-op-info"><strong>${escapar(r.piezas || '—')}</strong><small>${escapar(r.cliente)} · ${fechaCorta(r.fecha)}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''}</small>
+          ${info && info.razones && info.razones.length ? `<span class="m-cf-razones">${info.razones.filter(x => x.tipo !== 'fecha' || !marcada).map(x => `<i class="r-${x.tipo}">${icono(RAZON_ICONO[x.tipo] || 'check', 12)}${escapar(x.texto)}</i>`).join('')}</span>` : ''}</span>
+        <span class="m-op-monto">${pesos(r.total)}</span></label>`;
+    const pintarListas = () => {
+      const enc = [...elegidas.values()].map(e => porClave.get(e.clave)).filter(Boolean);
+      const man = [...extras.values()].filter(r => !elegidas.has(r.col + ':' + r.id));
+      $('#cf-encontradas').innerHTML = enc.length || man.length
+        ? enc.map(r => fila(r, elegidas.get(r.col + ':' + r.id), marcadas.has(r.col + ':' + r.id))).join('') + man.map(r => fila(r, { razones: [{ tipo: 'cliente', texto: 'Agregada a mano' }] }, marcadas.has(r.col + ':' + r.id))).join('')
+        : `<p class="m-op-nota">No encontré notas con el mismo siniestro, pieza o importe. Búscala abajo por folio, siniestro o pieza.</p>`;
+      const otras = res.otras.map(e => porClave.get(e.clave)).filter(r => r && !extras.has(r.col + ':' + r.id));
+      $('#cf-otras').hidden = !otras.length;
+      $('#cf-otras-lista').innerHTML = otras.map(r => fila(r, res.otras.find(e => e.clave === r.col + ':' + r.id), marcadas.has(r.col + ':' + r.id))).join('');
+      $('#cf-otras-n').textContent = otras.length;
+      suma();
+    };
     dialogo('Factura ' + cfdi.serieFolio, `
       <div class="m-op-cfdi">
-        <div><small>Cliente</small><strong>${escapar(cfdi.receptorNombre)}</strong><small>${escapar(cfdi.receptorRfc)}${cliente ? ' · en el gestor como ' + escapar(nombreCli) : ' · no está en Clientes'}</small></div>
-        <div><small>Fecha</small><strong>${fechaCorta(cfdi.fecha)}</strong><small>${escapar(cfdi.metodoPago || '—')} · forma ${escapar(cfdi.formaPago || '—')}</small></div>
-        <div><small>Total</small><strong>${pesos(cfdi.total)}</strong><small>Subtotal ${pesos(cfdi.subtotal)} · IVA ${pesos(cfdi.iva)}</small></div>
+        <div><small>Cliente</small><strong>${escapar(cfdi.receptorNombre)}</strong><small>${escapar(cfdi.receptorRfc)}${cliente ? ', en el gestor como ' + escapar(nombreCli) : ', no está en Clientes'}</small></div>
+        <div><small>Fecha</small><strong>${fechaCorta(cfdi.fecha)}</strong><small>${escapar(cfdi.metodoPago || '—')}, forma ${escapar(cfdi.formaPago || '—')}</small></div>
+        <div><small>Total</small><strong>${pesos(cfdi.total)}</strong><small>Subtotal ${pesos(cfdi.subtotal)} + IVA ${pesos(cfdi.iva)}</small></div>
       </div>
-      <details class="m-op-conceptos"><summary>${cfdi.conceptos.length} conceptos</summary>${cfdi.conceptos.map(c => `<div>${escapar(c.descripcion)} <b>${pesos(c.importe)}</b></div>`).join('')}</details>
-      <p class="m-op-sub">¿Qué notas cubre esta factura?</p>
-      <div class="m-op-ligar" id="cf-notas">${candidatas.length ? candidatas.map(r => `
-        <label class="m-op-check"><input type="checkbox" value="${r.col}:${escapar(r.id)}"${sugeridas.has(r.col + ':' + r.id) ? ' checked' : ''}>
-          <span class="m-op-folio">${escapar(r.folio)}</span><span class="m-op-info"><strong>${escapar(r.piezas || '—')}</strong><small>${escapar(r.cliente)} · ${fechaCorta(r.fecha)}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''}</small></span>
-          <span class="m-op-monto">${pesos(r.total)}</span></label>`).join('') : '<p class="m-op-nota">No hay notas pendientes de facturar.</p>'}</div>
+      <details class="m-op-conceptos"><summary>${cfdi.conceptos.length} ${cfdi.conceptos.length === 1 ? 'concepto' : 'conceptos'} en la factura</summary>${cfdi.conceptos.map(c => `<div>${escapar(c.descripcion)} <b>${pesos(c.importe)}</b></div>`).join('')}</details>
+      <h4 class="m-cf-titulo">${res.elegidas.length ? 'Notas que cubre esta factura' : 'Notas de esta factura'}</h4>
+      <div class="m-op-ligar m-cf-lista" id="cf-encontradas"></div>
+      <details class="m-cf-otras" id="cf-otras"><summary>Otras posibles (<span id="cf-otras-n">0</span>)</summary><div class="m-op-ligar m-cf-lista" id="cf-otras-lista"></div></details>
+      <div class="m-cf-buscar">
+        <input type="search" id="cf-buscar" placeholder="Agregar otra nota: busca por folio, siniestro o pieza" autocomplete="off">
+        <div id="cf-resultados" class="m-cf-lista"></div>
+      </div>
       <p class="m-op-suma" id="cf-suma"></p>
       <div class="m-op-mover">
         <label><input type="checkbox" id="cf-pagada"${pue ? ' checked' : ''}> Ya está pagada (${pue ? 'la factura es PUE' : 'márcalo si ya la pagaron'})</label>
         <label>Días de crédito <input type="number" id="cf-dias" min="0" max="365" value="${plazo}" style="width:80px"></label>
       </div>`,
     [{ texto: 'Guardar factura', principal: true, accion: async () => {
-      const elegidas = $$('#cf-notas input:checked').map(i => i.value);
-      const lista = registros().filter(r => elegidas.includes(r.col + ':' + r.id));
+      const lista = pend.filter(r => marcadas.has(r.col + ':' + r.id));
       const dias = Math.max(0, Number($('#cf-dias').value) || 0);
       const pagada = $('#cf-pagada').checked;
-      const factura = Object.assign({}, cfdi, {
+      const { textoCompleto, ...datosCfdi } = cfdi;
+      const factura = Object.assign({}, datosCfdi, {
         clienteId: cliente ? cliente.id : '', clienteNombre: nombreCli,
         notas: lista.map(r => ({ tipo: r.tipo, col: r.col, id: r.id, folio: r.folio, total: r.total })),
         diasCredito: dias, vencimiento: inicioDia(cfdi.fecha) + dias * DIA,
@@ -347,12 +431,38 @@ function confirmarFactura(cfdi) {
       return true;
     } }], listo);
     const suma = () => {
-      const t = registros().filter(r => $$('#cf-notas input:checked').map(i => i.value).includes(r.col + ':' + r.id)).reduce((s, r) => s + r.total, 0);
-      const dif = cfdi.total - t;
-      $('#cf-suma').innerHTML = `Notas seleccionadas: <b>${pesos(t)}</b> de ${pesos(cfdi.total)}` + (Math.abs(dif) >= 1 ? ` · <span class="m-op-dif">diferencia ${pesos(dif)}</span>` : ' · <span class="m-op-ok">cuadra</span>');
+      const t = pend.filter(r => marcadas.has(r.col + ':' + r.id)).reduce((s, r) => s + r.total, 0);
+      const n = pend.filter(r => marcadas.has(r.col + ':' + r.id)).length;
+      const cuadra = [cfdi.total, cfdi.subtotal].some(x => Math.abs(x - t) < 1);
+      $('#cf-suma').innerHTML = `<b>${n} ${n === 1 ? 'nota' : 'notas'}</b> por <b>${pesos(t)}</b> de ${pesos(cfdi.total)}. ` +
+        (cuadra ? '<span class="m-op-ok">Cuadra con la factura</span>' : `<span class="m-op-dif">Faltan ${pesos(cfdi.total - t)} para el total</span>`);
     };
-    $('#cf-notas').addEventListener('change', suma);
-    suma();
+    const caja = $('.m-op-caja:last-of-type') || document;
+    caja.addEventListener('change', e => {
+      const c = e.target.closest('.m-cf-lista input[type=checkbox]');
+      if (!c) return;
+      c.checked ? marcadas.add(c.value) : marcadas.delete(c.value);
+      c.closest('.m-cf-fila').classList.toggle('marcada', c.checked);
+      suma();
+    });
+    $('#cf-buscar').addEventListener('input', e => {
+      const q = norm(e.target.value);
+      const box = $('#cf-resultados');
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      const hall = pend.filter(r => !marcadas.has(r.col + ':' + r.id) && norm([r.folio, r.cliente, r.siniestro, r.piezas].join(' ')).includes(q)).slice(0, 6);
+      box.innerHTML = hall.length ? hall.map(r => `<button type="button" class="m-cf-agregar" data-agregar="${r.col}:${escapar(r.id)}">${icono('check', 14)}<span><b>${escapar(r.folio)}</b> ${escapar(r.piezas || '—')}<small>${escapar(r.cliente)} · ${pesos(r.total)}</small></span></button>`).join('') : '<p class="m-op-nota">Sin resultados.</p>';
+    });
+    $('#cf-resultados').addEventListener('click', e => {
+      const b = e.target.closest('[data-agregar]');
+      if (!b) return;
+      const r = porClave.get(b.dataset.agregar);
+      if (!r) return;
+      extras.set(b.dataset.agregar, r);
+      marcadas.add(b.dataset.agregar);
+      $('#cf-buscar').value = ''; $('#cf-resultados').innerHTML = '';
+      pintarListas();
+    });
+    pintarListas();
   });
 }
 
@@ -653,8 +763,13 @@ function pintarOficina() {
           <div class="m-of3d-escena" id="of-3d"><p class="m-of3d-error">Cargando la oficina…</p></div>
         </div>
         <div class="m-of3d-estado" id="of-estado" aria-live="polite"></div>
+        <div class="m-of3d-giro" role="group" aria-label="Girar la oficina">
+          <button type="button" data-giro="-1" aria-label="Girar a la izquierda">${icono('rotate-ccw', 18)}</button>
+          <button type="button" data-giro="0" aria-label="Vista inicial">${icono('locate', 18)}</button>
+          <button type="button" data-giro="1" aria-label="Girar a la derecha">${icono('rotate-cw', 18)}</button>
+        </div>
         <div class="m-of3d-agente" id="of-agente" hidden></div>
-        <p class="m-of3d-ayuda">Toca a un agente para ver en qué está. En PC arrastra para girar la oficina.</p>
+        <p class="m-of3d-ayuda">Toca a un agente para ver en qué está. Gira la oficina con los botones o, en PC, arrastrándola.</p>
       </section>
       <div class="m-of-areas" id="of-piso"></div>
       <section class="m-of-actividad m-vidrio">
@@ -664,6 +779,26 @@ function pintarOficina() {
     $('#of-piso', mod).addEventListener('click', e => {
       const b = e.target.closest('[data-ir]');
       if (b) setTimeout(() => window.showModule(b.dataset.ir), 0);
+    });
+    // Mantener presionado sigue girando; un toque gira 45°
+    let reloj = null;
+    const parar = () => { clearInterval(reloj); reloj = null; };
+    $('.m-of3d-giro', mod).addEventListener('pointerdown', e => {
+      const b = e.target.closest('[data-giro]');
+      if (!b || !vista3d) return;
+      const dir = Number(b.dataset.giro);
+      if (!dir) { vista3d.centrar(); return; }
+      vista3d.girar(dir * Math.PI / 4);
+      parar();
+      reloj = setTimeout(() => { reloj = setInterval(() => vista3d && vista3d.girar(dir * 0.09), 60); }, 380);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => $('.m-of3d-giro', mod).addEventListener(ev, parar));
+    $('.m-of3d-giro', mod).addEventListener('keydown', e => {
+      const b = e.target.closest('[data-giro]');
+      if (!b || !vista3d || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      const dir = Number(b.dataset.giro);
+      if (dir) vista3d.girar(dir * Math.PI / 4); else vista3d.centrar();
     });
     $('#of-agente', mod).addEventListener('click', e => {
       if (e.target.closest('[data-cerrar-agente]')) { $('#of-agente').hidden = true; return; }
@@ -742,4 +877,4 @@ Object.keys(PINTORES).forEach(id => {
 });
 
 // Para pruebas y para Pepito en el futuro
-window.mayaOperacion = { leerCFDI, registros, etapa };
+window.mayaOperacion = { leerCFDI, registros, etapa, estadoAreas, AREAS };

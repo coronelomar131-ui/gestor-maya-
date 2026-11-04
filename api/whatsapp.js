@@ -6,7 +6,7 @@ process.env.TZ = 'America/Mexico_City';
 const crypto = require('crypto');
 const pepito = require('../mcp/pepito');
 const acceso = require('../mcp/acceso');
-const enlaces = require('../mcp/enlaces');
+const documentos = require('../mcp/documentos');
 const voz = require('../mcp/voz');
 const { fb } = require('../mcp/firebase');
 
@@ -122,6 +122,7 @@ module.exports = async (req, res) => {
   }
   try {
     let texto;
+    let adjunto = null;
     let t = null;
     let encabezado = '';
     if (msg.type === 'text') {
@@ -144,8 +145,8 @@ module.exports = async (req, res) => {
       const corto = t.replace(/[.,!¡¿?\s]+$/g, '').trim();
       if (conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
         const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
-        const pdf = enlaces.deCreacion(r.herramienta, r.resultado);
-        texto = r.texto + (pdf ? '\n\n📄 PDF' + (pdf.folio ? ' de ' + pdf.folio : '') + ': ' + pdf.url : '');
+        texto = r.texto;
+        adjunto = documentos.deCreacion(r.herramienta, r.resultado);
       } else {
         const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : '') + t, 'whatsapp');
         texto = r.texto + (r.propuesta ? '\n\nResponde *SÍ* para guardarlo o *NO* para cancelar.' : '');
@@ -153,6 +154,11 @@ module.exports = async (req, res) => {
       texto = encabezado + texto;
     }
     await enviar(msg.from, texto);
+    // Lo que se acaba de guardar llega como PDF adjunto, con el mismo diseño de la app
+    if (adjunto) {
+      const r = await documentos.mandar(msg.from, adjunto.tipo, adjunto.id, adjunto.folio ? '📄 ' + adjunto.folio : '');
+      await anotar(r.ok ? 'PDF enviado' : 'no se pudo adjuntar el PDF', r.ok ? r.archivo : r.error);
+    }
   } catch (e) {
     console.error('whatsapp/pepito:', e);
     await anotar('Pepito falló al contestar', e.message);

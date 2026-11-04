@@ -59,6 +59,45 @@ function fusionarEstaticos(escena) {
   return { antes, despues };
 }
 
+// Para girar 360°: las dos paredes del fondo (z≈0 y x≈0) y lo que cuelga de ellas van en su propio grupo,
+// y se desvanecen cuando quedan entre la cámara y la oficina
+function separarParedes(escena) {
+  const norte = new THREE.Group(), oeste = new THREE.Group();
+  const caja = new THREE.Box3();
+  escena.updateMatrixWorld(true);
+  escena.children.slice().forEach(o => {
+    if (!o.isMesh) return;
+    caja.setFromObject(o);
+    const enNorte = caja.max.z < 0.35, enOeste = caja.max.x < 0.35;
+    if (!enNorte && !enOeste) return;
+    escena.remove(o);
+    (enNorte && !enOeste ? norte : enOeste && !enNorte ? oeste : (caja.max.x - caja.min.x > caja.max.z - caja.min.z ? norte : oeste)).add(o);
+  });
+  escena.add(norte, oeste);
+  [norte, oeste].forEach(g => {
+    fusionarEstaticos(g);
+    g.traverse(m => {
+      if (!m.isMesh) return;
+      m.material = m.material.clone();
+      m.userData.opacidad = m.material.transparent ? m.material.opacity : 1;
+      m.userData.transparente = m.material.transparent;
+    });
+  });
+  return { norte, oeste };
+}
+function opacidadPared(grupo, valor) {
+  grupo.visible = valor > 0.03;
+  grupo.traverse(m => {
+    if (!m.isMesh) return;
+    const op = m.userData.opacidad * valor;
+    const ver = valor < 0.999 || m.userData.transparente;
+    if (m.material.transparent !== ver) { m.material.transparent = ver; m.material.needsUpdate = true; }
+    m.material.opacity = op;
+    m.material.depthWrite = valor > 0.98 && !m.userData.transparente;
+    m.castShadow = valor > 0.6;
+  });
+}
+
 // Luz según la hora de la Ciudad de México: mañana fresca, tarde cálida, noche con lámparas
 function luzDelDia() {
   const h = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City', hour: 'numeric', hour12: false })) % 24;
@@ -107,7 +146,7 @@ export function montarOficina3D(contenedor, e, alElegir) {
   lienzo2d.setAttribute('role', 'img');
   lienzo2d.setAttribute('aria-label', 'Oficina en 3D con Pepito Junior y sus agentes por área');
   contenedor.append(lienzo3d, lienzo2d);
-  const giro = { az: 0, activo: false, x0: 0, az0: 0, movio: false };
+  const giro = { az: 0, meta: 0, activo: false, x0: 0, az0: 0, movio: false };
   let b;
   try { b = new THREE.WebGLRenderer({ canvas: lienzo3d, antialias: true, alpha: true }); }
   catch (err) {
@@ -117,7 +156,9 @@ export function montarOficina3D(contenedor, e, alElegir) {
   b.shadowMap.enabled = true; b.shadowMap.type = THREE.PCFSoftShadowMap;
   const F = new THREE.Scene, T = new THREE.OrthographicCamera(-20, 20, 12, -12, .1, 200), z = fabrica();
   const { grupoF1: N, pista: P } = construirEscena(F, e.mundo, z, e.pista);
+  const paredes = separarParedes(F);
   const fusion = fusionarEstaticos(F);
+  let opNorte = 1, opOeste = 1;
   const l = new Map(e.agentes.map(H => [H.id, crearPersona(H, F, z)]));
   const C = crearGardevoir(F, z), S = crearVidrioVerde();
   const c = new Map(e.agentes.map(H => [H.id, crearAura(F, S)]));
@@ -153,7 +194,14 @@ export function montarOficina3D(contenedor, e, alElegir) {
     if (window.__of3d) window.__of3d.extra = { dpr: calidad.dpr, intervalo: calidad.intervalo, prom: +prom.toFixed(1) };
   }
   const ie = { hw: 20.2, hh: 12.6 }, xe = new THREE.Vector3();
-  const camara = () => { const H = Math.PI / 4 + giro.az, q = 60; T.position.set(CENTRO.x + Math.sin(H) * q, CENTRO.y + q * .62, CENTRO.z + Math.cos(H) * q); T.lookAt(CENTRO.x, CENTRO.y, CENTRO.z); };
+  const camara = () => {
+    if (!giro.activo) giro.az += (giro.meta - giro.az) * (quieto ? 1 : 0.14);
+    const H = Math.PI / 4 + giro.az, q = 60;
+    // La pared que queda del lado de la cámara se desvanece
+    const s = Math.sin(H), c = Math.cos(H);
+    const suave = (x, a, b) => Math.max(0, Math.min(1, (x - a) / (b - a)));
+    opNorte += (suave(c, -0.35, 0.1) - opNorte) * 0.25; opOeste += (suave(s, -0.35, 0.1) - opOeste) * 0.25;
+    opacidadPared(paredes.norte, opNorte); opacidadPared(paredes.oeste, opOeste); T.position.set(CENTRO.x + Math.sin(H) * q, CENTRO.y + q * .62, CENTRO.z + Math.cos(H) * q); T.lookAt(CENTRO.x, CENTRO.y, CENTRO.z); };
   const medir = () => {
     const H = contenedor.getBoundingClientRect();
     K = Math.max(H.width, 1); te = Math.max(H.height, 1); ae = Math.min(window.devicePixelRatio || 1, 2);
@@ -227,8 +275,14 @@ export function montarOficina3D(contenedor, e, alElegir) {
     if (!zona && e.zonaF1 && Math.hypot(x - e.zonaF1.x, y - e.zonaF1.y) < 62) { pedirF1(e); return; }
     alElegir && alElegir(zona ? zona.id : null);
   });
+  // Con el mouse se arrastra para girar los 360°; en el teléfono el dedo desliza la escena y se gira con los botones
   lienzo2d.addEventListener('pointerdown', ev => { if (ev.pointerType !== 'mouse') return; Object.assign(giro, { activo: true, x0: ev.clientX, az0: giro.az, movio: false }); lienzo2d.setPointerCapture(ev.pointerId); });
-  lienzo2d.addEventListener('pointermove', ev => { if (!giro.activo) return; const dx = ev.clientX - giro.x0; if (Math.abs(dx) > 4) giro.movio = true; giro.az = Math.max(-.6, Math.min(.6, giro.az0 - dx * .004)); });
+  lienzo2d.addEventListener('pointermove', ev => { if (!giro.activo) return; const dx = ev.clientX - giro.x0; if (Math.abs(dx) > 4) giro.movio = true; giro.az = giro.meta = giro.az0 - dx * .006; });
   lienzo2d.addEventListener('pointerup', () => { giro.activo = false; });
-  return { detener() { vivo = false; cancelAnimationFrame(re); obs.disconnect(); io.disconnect(); b.dispose(); } };
+  lienzo2d.addEventListener('pointercancel', () => { giro.activo = false; });
+  return {
+    girar(paso) { giro.meta += paso; },
+    centrar() { giro.meta = Math.round(giro.az / (2 * Math.PI)) * 2 * Math.PI; },
+    detener() { vivo = false; cancelAnimationFrame(re); obs.disconnect(); io.disconnect(); b.dispose(); }
+  };
 }

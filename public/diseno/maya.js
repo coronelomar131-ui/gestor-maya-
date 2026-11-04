@@ -375,6 +375,25 @@ function actualizarAvatar() {
 
 // ── Resumen: saludo y accesos fijados (se ordenan arrastrando en modo Editar) ──
 let editandoAccesos = false;
+// La Oficina virtual se ve como la oficina misma: su imagen en 3D y lo que está pendiente en cada área
+function accesoOficina(m) {
+  let areas = [];
+  try { const est = window.mayaOperacion && window.mayaOperacion.estadoAreas && window.mayaOperacion.estadoAreas(); if (est) areas = window.mayaOperacion.AREAS.map(a => Object.assign({ nombre: a.nombre, color: a.color }, est[a.id] || {})); } catch (e) { areas = []; }
+  const activas = areas.filter(a => a.n > 0 && a.nombre !== 'Reportes');
+  return `<div class="m-acceso-celda m-acceso-ancha" data-mod="${m.id}">
+    <button type="button" class="m-acceso m-acceso-oficina" data-ir="${m.id}">
+      <img class="m-acceso-oficina-img" src="/diseno/oficina-vista.webp" alt="" loading="lazy" decoding="async" width="960" height="574">
+      <span class="m-acceso-oficina-texto">
+        <b>${escapar(m.nombre)}</b>
+        <small>${activas.length ? (activas.length === 1 ? '1 área tiene trabajo' : activas.length + ' áreas tienen trabajo') : 'Todo al día'}</small>
+        ${activas.length ? `<span class="m-acceso-oficina-areas">${activas.slice(0, 3).map(a => `<i class="c-${a.color}${a.rojo ? ' urgente' : ''}"><em></em>${escapar(a.nombre)} <b>${a.n}</b></i>`).join('')}</span>` : ''}
+      </span>
+      <span class="m-acceso-mango" aria-hidden="true">${icono('grip-vertical', 16)}</span>
+    </button>
+    <button type="button" class="m-acceso-quitar" data-fijar="${m.id}" data-no-arrastrar aria-label="Quitar ${escapar(m.nombre)} de tus accesos" title="Quitar de tus accesos">${icono('x', 14)}</button>
+  </div>`;
+}
+
 function datoDe(id) {
   const d = window.data || {};
   const hoy = new Date();
@@ -409,6 +428,7 @@ function pintarResumen() {
       ${fij.map(id => {
         const m = porId(id);
         const dato = datoDe(id);
+        if (m.id === 'oficina') return accesoOficina(m);
         return `<div class="m-acceso-celda" data-mod="${m.id}">
           <button type="button" class="m-acceso" data-ir="${m.id}">
             <span class="m-acceso-icono">${icono(m.icono, 21)}</span>
@@ -429,6 +449,7 @@ function refrescarDatosResumen() {
   refresco = requestAnimationFrame(() => {
     refresco = 0;
     $$('#m-accesos .m-acceso-celda[data-mod]').forEach(b => {
+      if (b.dataset.mod === 'oficina') { if (!$('#m-accesos.editando')) b.outerHTML = accesoOficina(porId('oficina')); return; }
       const m = porId(b.dataset.mod);
       const s = $('small', b);
       if (m && s) s.textContent = datoDe(m.id) || m.desc;

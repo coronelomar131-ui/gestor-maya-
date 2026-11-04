@@ -506,3 +506,89 @@ test('Pepito API: enviar_whatsapp a alguien del equipo queda como propuesta y so
     delete process.env.WHATSAPP_PHONE_ID;
   }
 });
+
+test('PDF en el servidor: mismo generador de la app para nota de entrega, venta y cotización', async () => {
+  const pdf = require('./pdf');
+  const ne = { id: 'n', notaId: 'NE-9', fecha: '2026-11-04', cliente: 'Zeta', items: [{ descripcion: 'Faro', cantidad: 1, precioUnit: 100 }], subtotal: 100, ivaTotal: 0, total: 100 };
+  const nv = { id: 'v', notaId: '9', fecha: Date.now(), clienteNombre: 'Zeta', items: [{ pedido: 'Faro', precio: 100, iva: 16, ajuste: 0 }], subtotal: 100, ivaTotal: 16, total: 116 };
+  const cot = { id: 'c', notaId: '3', fecha: Date.now(), clienteNombre: 'Zeta', items: [{ pedido: 'Faro', precio: 100, iva: 16, ajuste: 0 }], subtotal: 100, ivaTotal: 16, total: 116 };
+  for (const [tipo, reg, nombre] of [['nota_entrega', ne, 'nota-entrega-NE-9.pdf'], ['nota_venta', nv, 'NV-9.pdf'], ['cotizacion', cot, 'cotizacion-3.pdf']]) {
+    const r = await pdf.generar(tipo, reg, { data: { clientes: [] } });
+    assert.equal(r.archivo, nombre);
+    assert.equal(r.datos.slice(0, 5).toString(), '%PDF-');
+    assert.ok(r.datos.length > 5000);
+  }
+});
+
+test('mandar_pdf: solo por WhatsApp, con número registrado y según el rol', async () => {
+  process.env.WHATSAPP_TOKEN = 'tok';
+  process.env.WHATSAPP_PHONE_ID = '123';
+  try {
+    const pepito = require('./pepito');
+    const enGestor = await pepito.herramientasDe(ADMIN, 'gestor');
+    assert.ok(!enGestor.tools.some(t => t.name === 'mandar_pdf'));
+    await enGestor.cerrar();
+    const almacen = { uid: 'a-1', nombre: 'Almacén', rol: 'almacen', whatsapp10: '5511111111' };
+    const h = await pepito.herramientasDe(almacen, 'whatsapp');
+    assert.ok(h.tools.some(t => t.name === 'mandar_pdf'));
+    assert.equal(h.escribe('mandar_pdf'), false, 'no pide confirmación: solo le llega a quien lo pidió');
+    const no = await h.llamar('mandar_pdf', { tipo: 'cotizacion', id: 'x' });
+    assert.match(no.texto, /rol no puede/);
+    await h.cerrar();
+  } finally {
+    delete process.env.WHATSAPP_TOKEN;
+    delete process.env.WHATSAPP_PHONE_ID;
+  }
+});
+
+test('reporte diario: ventas de ayer, por facturar y cobranza, según el rol', async () => {
+  const reporte = require('./reporte');
+  const ayerISO = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  db.cols.ventas.set('vAyer', { notaId: '300', estatus: 'Pendiente', clienteNombre: 'Zeta Autopartes', fecha: ms(ayerISO) + 12 * 3600000, items: [{ pedido: 'Faro', precio: 1000, iva: 160, ajuste: 0 }], subtotal: 1000, ivaTotal: 160, ajusteTotal: 0, total: 1160 });
+  await db.guardar('facturas', 'fv', { serieFolio: 'A-7', clienteNombre: 'Zeta Autopartes', fecha: Date.now() - 40 * 86400000, vencimiento: Date.now() - 5 * 86400000, total: 500, saldo: 500, estatus: 'por_cobrar' });
+  const rep = await reporte.armar();
+  assert.equal(rep.ayer, ayerISO);
+  assert.ok(rep.ventas.notas >= 1);
+  assert.ok(rep.ventas.top.some(([c]) => c === 'Zeta Autopartes'));
+  assert.equal(rep.cobranza.vencidas, 1);
+  const admin = reporte.texto(rep, { nombre: 'Omar Coronel', rol: 'admin' });
+  assert.match(admin, /^Buenos días, Omar\./);
+  assert.match(admin, /Ventas:/);
+  assert.match(admin, /A-7 de Zeta Autopartes, 5 días/);
+  const fac = reporte.texto(rep, { nombre: 'Geraldine', rol: 'facturacion' });
+  assert.doesNotMatch(fac, /Ventas:/, 'facturación no ve ventas');
+  assert.doesNotMatch(reporte.corto(rep, { rol: 'admin' }), /\n/, 'la plantilla no lleva saltos de línea');
+});
+
+test('emparejar factura con notas: siniestro, pieza con abreviaturas, importe y suma de varias notas', async () => {
+  const { emparejar } = await import('../public/diseno/emparejar.js');
+  const dia = d => Date.parse('2026-11-' + d + 'T12:00:00Z');
+  const notas = [
+    { clave: 'ne:1', cliente: 'LATAM', fecha: dia('01'), total: 9200, siniestro: 'B84247461', items: [{ descripcion: 'Faro Derecho Creta', anio: '2021', cantidad: 1, precioUnit: 9200, siniestro: 'B84247461' }] },
+    { clave: 'ne:2', cliente: 'LATAM', fecha: dia('02'), total: 2500, siniestro: '', items: [{ descripcion: 'Espejo izquierdo Aveo', anio: '2019', cantidad: 1, precioUnit: 2500 }] },
+    { clave: 'ne:3', cliente: 'LATAM', fecha: dia('02'), total: 4300, siniestro: '', items: [{ descripcion: 'Marco radiador Transit', cantidad: 1, precioUnit: 4300 }] },
+    { clave: 'ne:4', cliente: 'Otro Taller', fecha: dia('01'), total: 9200, siniestro: 'B11111111', items: [{ descripcion: 'Faro derecho Creta', anio: '2021', cantidad: 1, precioUnit: 9200 }] },
+    { clave: 'nv:5', cliente: 'LATAM', fecha: dia('03'), total: 1000, items: [{ pedido: 'Tapón de tanque', precio: 1000 }] }
+  ];
+  const deLatam = n => n.cliente === 'LATAM';
+  // 1) El siniestro viene en las observaciones de la factura; el concepto dice "FARO DER. CRETA 21"
+  const f1 = { fecha: dia('04'), subtotal: 9200, total: 10672, conceptos: [{ descripcion: 'FARO DER. CRETA 2021', importe: 9200 }], textoCompleto: '<cfdi:Comprobante Observaciones="SINIESTRO B84247461">' };
+  const r1 = emparejar(f1, notas, deLatam);
+  assert.deepEqual(r1.elegidas.map(e => e.clave), ['ne:1']);
+  assert.ok(r1.elegidas[0].razones.some(x => x.tipo === 'siniestro'));
+  assert.ok(r1.cuadra);
+  assert.ok(!r1.elegidas.some(e => e.clave === 'ne:4'), 'la nota igual de otro cliente no se elige');
+  // 2) Sin siniestro: por pieza (con abreviaturas) e importe
+  const f2 = { fecha: dia('04'), subtotal: 6800, total: 7888, conceptos: [{ descripcion: 'ESPEJO IZQ AVEO 2019', importe: 2500 }, { descripcion: 'MARCO DE RADIADOR FORD TRANSIT', importe: 4300 }] };
+  const r2 = emparejar(f2, notas, deLatam);
+  assert.deepEqual(r2.elegidas.map(e => e.clave).sort(), ['ne:2', 'ne:3']);
+  assert.ok(r2.cuadra);
+  // 3) Conceptos genéricos: la combinación de notas del cliente que da el total
+  const f3 = { fecha: dia('04'), subtotal: 3500, total: 4060, conceptos: [{ descripcion: 'REFACCIONES VARIAS', importe: 3500 }] };
+  const r3 = emparejar(f3, notas, deLatam);
+  assert.deepEqual(r3.elegidas.map(e => e.clave).sort(), ['ne:2', 'nv:5']);
+  assert.ok(r3.elegidas.every(e => e.razones.some(x => x.tipo === 'suma')));
+  // 4) Una nota posterior a la factura no se sugiere
+  const f4 = { fecha: dia('01'), subtotal: 1000, total: 1160, conceptos: [{ descripcion: 'TAPON DE TANQUE', importe: 1000 }] };
+  assert.ok(!emparejar(f4, notas, deLatam).elegidas.some(e => e.clave === 'nv:5'));
+});

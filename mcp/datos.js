@@ -496,7 +496,7 @@ async function cobranza(f) {
 }
 
 module.exports = {
-  pendientesFacturar, cobranza,
+  leer, pendientesFacturar, cobranza,
   cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, registros,
   armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };

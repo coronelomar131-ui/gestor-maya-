@@ -24,4 +24,43 @@ async function enviarTexto(para, texto) {
   return { ok: false, status: r.status, codigo, error: mensaje, crudo };
 }
 
-module.exports = { enviarTexto, destino, configurado, VERSION };
+// Sube el archivo a WhatsApp y lo manda como documento (llega como PDF adjunto en el chat)
+async function enviarDocumento(para, datos, archivo, leyenda) {
+  const phone = String(process.env.WHATSAPP_PHONE_ID || '').trim();
+  const auth = { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim() };
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', 'application/pdf');
+  form.append('file', new Blob([datos], { type: 'application/pdf' }), archivo);
+  const subida = await fetch(`https://graph.facebook.com/${VERSION}/${phone}/media`, { method: 'POST', headers: auth, body: form });
+  const s = await subida.json().catch(() => ({}));
+  if (!subida.ok || !s.id) return { ok: false, status: subida.status, error: (s.error && s.error.message) || 'No se pudo subir el PDF a WhatsApp' };
+  const r = await fetch(`https://graph.facebook.com/${VERSION}/${phone}/messages`, {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, auth),
+    body: JSON.stringify({ messaging_product: 'whatsapp', to: destino(para), type: 'document', document: { id: s.id, filename: archivo, caption: leyenda ? String(leyenda).slice(0, 1000) : undefined } })
+  });
+  if (r.ok) return { ok: true };
+  const e = await r.json().catch(() => ({}));
+  return { ok: false, status: r.status, codigo: e.error && e.error.code, error: (e.error && e.error.message) || 'WhatsApp no aceptó el PDF' };
+}
+
+// Mensaje con plantilla aprobada por Meta: es la única forma de escribirle a alguien que no le ha escrito a Pepito en 24 h.
+// Los parámetros no pueden traer saltos de línea.
+async function enviarPlantilla(para, nombre, idioma, parametros) {
+  const r = await fetch(`https://graph.facebook.com/${VERSION}/${String(process.env.WHATSAPP_PHONE_ID || '').trim()}/messages`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp', to: destino(para), type: 'template',
+      template: { name: nombre, language: { code: idioma || 'es_MX' }, components: parametros && parametros.length ? [{ type: 'body', parameters: parametros.map(p => ({ type: 'text', text: String(p).replace(/\s*\n+\s*/g, ' · ').slice(0, 900) })) }] : [] }
+    })
+  });
+  if (r.ok) return { ok: true };
+  const e = await r.json().catch(() => ({}));
+  return { ok: false, status: r.status, codigo: e.error && e.error.code, error: (e.error && e.error.message) || 'Meta no aceptó la plantilla' };
+}
+
+const fueraDeVentana = r => r && (r.codigo === 131047 || /24 hours|re-engagement/i.test(r.error || ''));
+
+module.exports = { enviarTexto, enviarDocumento, enviarPlantilla, fueraDeVentana, destino, configurado, VERSION };

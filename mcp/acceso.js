@@ -32,7 +32,7 @@ async function porWhatsApp(numero) {
   const perfiles = await fb().buscarIgual('usuarios', 'whatsapp10', d);
   if (perfiles.length !== 1) return null;
   const p = perfiles[0];
-  return { uid: p.uid, email: p.email || '', nombre: p.nombre || p.email || 'Usuario', rol: p.rol || 'vendedor' };
+  return { uid: p.uid, email: p.email || '', nombre: p.nombre || p.email || 'Usuario', rol: p.rol || 'vendedor', whatsapp10: d };
 }
 
 module.exports = { porToken, porWhatsApp, diez };
