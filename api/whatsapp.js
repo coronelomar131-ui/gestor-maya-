@@ -8,7 +8,7 @@ const pepito = require('../mcp/pepito');
 const acceso = require('../mcp/acceso');
 const { fb } = require('../mcp/firebase');
 
-const VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v23.0';
+const VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v25.0';
 const SI = /^(s[ií]|si+|confirm[oa]?|dale|va|ok|okay|adelante|gu[aá]rdal[ao])[.!\s]*$/i;
 const NO = /^(no|cancela(r)?|mejor no|no gracias)[.!\s]*$/i;
 
