@@ -85,6 +85,7 @@ function instrucciones(usuario) {
     'Una venta puede tener tres folios: NV #243 (su número en Ventas), NV-219 (el de Facturas) y F-219 (el de su factura). Si una nota trae otros_folios, son los de la venta ligada; úsalos al responder para que el usuario la reconozca.',
     'Para no agotar el límite diario de lecturas de Firebase, las consultas reutilizan los datos hasta 5 minutos: si alguien acaba de capturar algo en la app y no aparece, espera unos minutos. Lo que se guarda desde aquí aparece al momento.',
     'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos.',
+    'En notas, ventas y cotizaciones no pongas vendedor a menos que la persona diga quién vendió; no uses al usuario conectado como vendedor.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
 }
@@ -246,7 +247,7 @@ function crearServidor(usuario) {
       inputSchema: {
         cliente: z.string().min(1).describe('Si coincide con un cliente registrado se usa su nombre exacto'),
         fecha: FECHA.optional().describe('Por omisión hoy'),
-        vendedor: opcional,
+        vendedor: z.string().optional().describe('Solo si la persona dice quién vendió; si no, va vacío'),
         con_iva: z.boolean().default(false).describe('Suma 16% de IVA al subtotal (casilla "Incluye IVA 16%")'),
         registrar_venta: z.boolean().default(true).describe('false si esa venta ya se capturó en Ventas'),
         articulos: z.array(z.object({
@@ -269,7 +270,7 @@ function crearServidor(usuario) {
       inputSchema: {
         cliente: z.string().min(1),
         fecha: FECHA.optional().describe('Por omisión hoy'),
-        vendedor: z.string().optional().describe('Por omisión el usuario conectado'),
+        vendedor: z.string().optional().describe('Solo si la persona dice quién vendió; si no, va vacío'),
         estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
         incluye_datos_fiscales: z.boolean().default(false),
         partidas: z.array(PARTIDA).min(1)
@@ -334,7 +335,7 @@ function crearServidor(usuario) {
     servidor.registerTool('crear_cotizacion', {
       title: 'Crear cotización',
       description: 'Crea una cotización (COT-consecutivo, estatus vigente) igual que el módulo Cotizaciones. Confirma con el usuario antes de usarla.',
-      inputSchema: { cliente: z.string().min(1), fecha: FECHA.optional(), vendedor: opcional, partidas: z.array(PARTIDA).min(1) },
+      inputSchema: { cliente: z.string().min(1), fecha: FECHA.optional(), vendedor: z.string().optional().describe('Solo si la persona dice quién vendió; si no, va vacío'), partidas: z.array(PARTIDA).min(1) },
       annotations: ESCRITURA
     }, ejecutar(a => escritura.crearCotizacion(usuario, a)));
   }

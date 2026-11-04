@@ -106,7 +106,7 @@ async function crearVenta(u, a) {
   const notaId = String(maxNumero(await fb().leerColeccion('ventas'), v => v.notaId || v.notaNumero) + 1);
   const venta = Object.assign({
     notaId, fecha: mediodiaMs(fecha), clienteId: cliente.id, clienteNombre: cliente.nombre,
-    vendedor: texto(a.vendedor) || u.nombre, items: p.items, siniestros: p.siniestros,
+    vendedor: texto(a.vendedor), items: p.items, siniestros: p.siniestros,
     subtotal: p.subtotal, ivaTotal: p.ivaTotal, ajusteTotal: p.ajusteTotal, total: p.total,
     incluyeDatosFiscales: !!a.incluye_datos_fiscales, estado: 'pendiente', estatus: a.estatus,
     facturaURL: '', tieneFactura: false, createdAt: fb().marcaTiempo()
@@ -230,7 +230,7 @@ async function crearCotizacion(u, a) {
   const notaId = String(maxNumero(await fb().leerColeccion('cotizaciones'), c => c.notaId) + 1);
   const cotizacion = {
     notaId, fecha: mediodiaMs(a.fecha || hoy()), clienteId: cliente.id, clienteNombre: cliente.nombre,
-    vendedor: texto(a.vendedor) || u.nombre, items: p.items, siniestros: p.siniestros,
+    vendedor: texto(a.vendedor), items: p.items, siniestros: p.siniestros,
     subtotal: p.subtotal, ivaTotal: p.ivaTotal, ajusteTotal: p.ajusteTotal, total: p.total,
     estatus: 'vigente', createdAt: fb().marcaTiempo(), createdBy: u.uid, origen: ORIGEN
   };

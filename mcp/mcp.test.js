@@ -446,3 +446,15 @@ test('Acceso por WhatsApp: solo números registrados (52 o 521 + 10 dígitos)', 
   assert.equal((await acceso.porWhatsApp('525512345678')).uid, 'admin-1');
   assert.equal(await acceso.porWhatsApp('5219999999999'), null);
 });
+
+test('crear venta y cotización sin vendedor no ponen al usuario conectado; con vendedor sí lo guardan', async () => {
+  const c = await conectar(ADMIN);
+  const partidas = [{ descripcion: 'Cristal', precio: 1000, iva_porcentaje: 0 }];
+  const v = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas });
+  assert.equal(db.cols.ventas.get(v.creada.id).vendedor, '');
+  const v2 = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, vendedor: 'Daniel' });
+  assert.equal(db.cols.ventas.get(v2.creada.id).vendedor, 'Daniel');
+  const cot = await c.llamar('crear_cotizacion', { cliente: 'Zeta Autopartes', partidas });
+  assert.equal(db.cols.cotizaciones.get(cot.creada).vendedor, '');
+  await c.cerrar();
+});
