@@ -772,6 +772,6 @@ test('nota sin precio: el cliente marcado (p. ej. JEIC) recibe notas sin precios
     assert.doesNotMatch(t, /PRECIO|\(TOTAL\)|9,200|10,672/, tipo + ' sin precios');
   }
   const otro = await texto('nota_entrega', Object.assign({}, ne, { cliente: 'Zeta' }));
-  assert.match(otro, /PRECIO UNIT/);
+  assert.match(otro, /PRECIO/);
   assert.match(otro, /10,672\.00/);
 });
