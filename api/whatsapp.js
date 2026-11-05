@@ -8,6 +8,7 @@ const pepito = require('../mcp/pepito');
 const acceso = require('../mcp/acceso');
 const documentos = require('../mcp/documentos');
 const voz = require('../mcp/voz');
+const avisos = require('../mcp/avisos');
 const { fb } = require('../mcp/firebase');
 
 const wa = require('../mcp/whatsapp');
@@ -107,7 +108,15 @@ module.exports = async (req, res) => {
   try { datos = JSON.parse(raw.toString('utf8') || '{}'); } catch (e) { return res.status(400).send('json'); }
   const valor = datos.entry && datos.entry[0] && datos.entry[0].changes && datos.entry[0].changes[0] && datos.entry[0].changes[0].value;
   const msg = valor && valor.messages && valor.messages[0];
-  if (!msg) return res.status(200).json({ ok: true }); // avisos de entregado/leído
+  if (!msg) {
+    // Avisos de Meta sobre lo que mandamos: entregado, leído o fallido (p. ej. fuera de las 24 horas)
+    const estados = valor && valor.statuses;
+    if (estados && estados.length) {
+      try { for (const n of await avisos.procesarEstados(estados)) await anotar(n.paso, n.detalle); }
+      catch (e) { console.error('whatsapp: estados', e); await anotar('no se pudo revisar un aviso de entrega', e.message); }
+    }
+    return res.status(200).json({ ok: true });
+  }
   await anotar('llegó mensaje de WhatsApp', 'de ...' + String(msg.from).slice(-4) + ' · tipo ' + msg.type);
 
   // Meta reintenta si tardamos: no procesar dos veces el mismo mensaje
@@ -120,6 +129,11 @@ module.exports = async (req, res) => {
     await enviar(msg.from, 'Hola, soy Pepito Junior de Maya Autopartes. Este número no está dado de alta en el gestor; pídele a un administrador que lo registre.');
     return res.status(200).json({ ok: true });
   }
+  // Al escribir se abre su ventana de 24 horas: primero se le entrega lo que tenía guardado
+  try {
+    const n = await avisos.entregarPendientes(acceso.diez(msg.from));
+    if (n) await anotar('pendientes entregados', n + ' a ...' + String(msg.from).slice(-4));
+  } catch (e) { console.error('whatsapp: pendientes', e); }
   try {
     let texto;
     let adjunto = null;

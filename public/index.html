@@ -2554,6 +2554,7 @@ async function loadUserProfile(uid) {
     const snap = await getDocs(query(collection(db, 'usuarios'), where('uid', '==', uid)));
     if (!snap.empty) {
       const profile = snap.docs[0].data();
+      window.miPerfil = Object.assign({ id: snap.docs[0].id }, profile);
       currentRole = profile.rol || 'vendedor';
       document.getElementById('user-name-display').textContent = profile.nombre || currentUser.email;
       document.getElementById('user-role-display').textContent = profile.rol || 'Usuario';
@@ -3075,7 +3076,8 @@ window.saveVenta = async function() {
   };
   if (!obj.total) return toast('Ingresa el total de la venta', 'error');
   try {
-    await addDoc(collection(db, 'ventas'), obj);
+    const refAviso = await addDoc(collection(db, 'ventas'), obj);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: refAviso.id });
     closeModal('modal-venta');
 
     // Generar nota PDF automáticamente
@@ -3351,6 +3353,7 @@ window.saveVentaMultiLinea = async function() {
   try {
     console.log('💾 Guardando venta en Firebase:', venta);
     const docRef = await addDoc(collection(db, 'ventas'), venta);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: docRef.id });
     console.log('✅ Venta guardada con ID:', docRef.id);
 
     // Generar PDF de la nota
@@ -4412,7 +4415,8 @@ window.cotToVenta = async function(id) {
       createdByName
     };
 
-    await addDoc(collection(db, "ventas"), venta);
+    const refAviso = await addDoc(collection(db, "ventas"), venta);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: refAviso.id });
     await deleteDoc(doc(db, "cotizaciones", id));
     setTimeout(() => window.generarNotaPDF(venta), 500);
     toast("Convertida a Venta " + notaId + " y PDF generado", "success");
@@ -9598,6 +9602,7 @@ window.saveNotaEntrega = async function() {
       total: total, createdAt: new Date().toISOString()
     };
     var ref = await window.addDoc(window.collection(window.db, 'notasEntrega'), payload);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'notasEntrega', id: ref.id });
     window.toast('Nota de entrega guardada', 'success');
 
     // 💰 Registrar también como venta (automático, si el checkbox está marcado)
@@ -9989,5 +9994,6 @@ window.previewNotaEntregaPDFById = function(id) {
 <script type="module" src="/diseno/pepito-chat.js"></script>
 <script type="module" src="/diseno/enlaces.js"></script>
 <script type="module" src="/diseno/operacion.js"></script>
+<script type="module" src="/diseno/avisos.js"></script>
 </body>
 </html>

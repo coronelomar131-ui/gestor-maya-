@@ -65,20 +65,63 @@ Cuando Pepito guarda una nota de entrega, nota de venta o cotización por WhatsA
 en el chat, con el mismo diseño que se descarga en el gestor (el servidor usa las mismas funciones de la app).
 También se le puede pedir el de una nota que ya existe: "mándame la NE-230". Si algo falla, manda el enlace.
 
-## 6. Reporte diario por WhatsApp
+## 6. Avisos del equipo: resumen de la mañana, alarmas y avisos al momento
 
-Cada mañana (entre 8:00 y 8:59 de la Ciudad de México) Pepito manda a quien tenga rol **admin** o **facturación** y
-su WhatsApp registrado: ventas de ayer (solo admin), lo que falta por facturar y la cobranza vencida.
+Cada aviso llega a la **campanita** del gestor (arriba a la derecha) y, si la persona tiene su WhatsApp registrado
+en Usuarios, también por WhatsApp. Cada quien elige en la campanita → Preferencias qué quiere recibir.
+
+| Aviso | A quién | Cuándo |
+|---|---|---|
+| Resumen de la mañana | Todos, según su rol: admin (ventas, facturar, cobrar), facturación (facturar y cobrar), vendedor (sus ventas de ayer, sus piezas en camino, sus clientes con saldo vencido), almacén (por preparar y stock bajo), entregas (listas para salir y en tránsito). Incluye las alarmas del día. | 8:00 de la CDMX |
+| Nota o venta nueva | Almacén | Al guardarla (en el gestor o con Pepito) |
+| Pieza en preparación | Entregas | Al mover la etapa en Seguimiento |
+| Pieza en camino / entregada | El vendedor de esa nota (y facturación cuando se entrega) | Al mover la etapa |
+| Factura subida | Los vendedores de las notas facturadas | Al subir el XML |
+| Pago registrado | Admins y los vendedores de esas notas | Al guardar el pago en Cobranza |
+| Alarma | La persona que la pidió (o a quien se la pusieron) | A la hora que se le dijo a Pepito |
+
+El vendedor de una nota se reconoce por su nombre: "Daniel" en la nota = el usuario "Daniel Hernández".
+Nadie recibe aviso de lo que él mismo hizo.
+
+**Alarmas:** se le piden a Pepito, por el chat del gestor o por WhatsApp: *"recuérdame mañana a las 10 cobrarle a
+LATAM Parts"*, *"en 20 minutos recuérdame llamar a Israel"*, *"ponle una alarma a Israel el viernes a las 9: pasar
+por el faro"*, *"¿qué alarmas tengo?"*, *"cancela la de LATAM"*.
+
+### Configuración (una sola vez)
 
 1. En Vercel agrega `CRON_SECRET` con una contraseña larga que inventes (Production) y haz Redeploy.
-   Vercel la usa para que nadie más pueda disparar el reporte.
-2. Para probarlo sin esperar: abre `https://gestor-maya.vercel.app/api/avisos?clave=<tu CRON_SECRET>`
-   (agrega `&solo=5512345678` para mandártelo solo a ti).
+2. **Tick cada 5 minutos en cron-job.org (gratis)**, para que las alarmas lleguen a su hora (Vercel gratis solo
+   deja una tarea al día):
+   1. Crea una cuenta en https://cron-job.org y entra a *Cronjobs → Create cronjob*.
+   2. URL: `https://gestor-maya.vercel.app/api/avisos?tarea=tick`
+   3. Schedule: *Every 5 minutes*.
+   4. En *Advanced → Headers* agrega `Authorization` con el valor `Bearer <tu CRON_SECRET>`.
+   5. Guarda y usa *Test run*: debe contestar `{"ok":true,...}`.
+   El cron de Vercel de las 8:00 se queda como respaldo: el resumen sale una sola vez al día aunque llamen los dos.
+3. Para probar el resumen sin esperar: `https://gestor-maya.vercel.app/api/avisos?clave=<tu CRON_SECRET>&solo=5512345678`.
+4. Opcional: `AVISOS_HORA` (por defecto 8) cambia la hora del resumen cuando lo manda el tick.
 
-Regla de WhatsApp: un mensaje que Pepito manda por su cuenta solo llega si esa persona le escribió a Pepito en las
-últimas 24 horas. Para que llegue siempre hace falta una **plantilla aprobada por Meta**:
+### Regla de 24 horas de WhatsApp
 
-1. En Meta Business Suite → WhatsApp Manager → Plantillas → Crear plantilla, categoría **Utilidad**, idioma Español (MEX).
-2. Nombre `reporte_diario`, cuerpo: `Buenos días, {{1}}. Tu reporte de Maya: {{2}}. Escríbeme para ver el detalle.`
-3. Cuando Meta la apruebe, agrega en Vercel `WHATSAPP_PLANTILLA_REPORTE=reporte_diario` (y `WHATSAPP_PLANTILLA_IDIOMA=es_MX`).
-   Si el mensaje normal no puede llegar por la regla de 24 horas, Pepito usa la plantilla con un resumen de una línea.
+Un mensaje que Pepito manda por su cuenta solo llega si esa persona le escribió a Pepito en las últimas 24 horas.
+Meta contesta "aceptado" al momento y el rechazo lo avisa después al webhook. El gestor lo detecta:
+
+- Si hay **plantilla aprobada**, lo reintenta con la plantilla.
+- Si no, lo guarda y se lo entrega **en cuanto esa persona le escriba a Pepito**. Si el mensaje lo pidió alguien
+  por WhatsApp ("mándale a Israel..."), a esa persona le llega el aviso de que no se entregó todavía y, después,
+  la confirmación cuando ya le llegó.
+- En la campanita del gestor siempre llega.
+
+Plantillas (Meta Business Suite → WhatsApp Manager → Plantillas → Crear plantilla, categoría **Utilidad**, Español (MEX)):
+
+1. `reporte_diario`: `Buenos días, {{1}}. Tu reporte de Maya: {{2}}. Escríbeme para ver el detalle.`
+   → en Vercel `WHATSAPP_PLANTILLA_REPORTE=reporte_diario` (se usa para admin y facturación).
+2. `aviso_equipo`: `Aviso de Maya Autopartes: {{1}}`
+   → en Vercel `WHATSAPP_PLANTILLA_AVISO=aviso_equipo` (alarmas, avisos al momento y el resumen de los demás roles).
+3. `WHATSAPP_PLANTILLA_IDIOMA=es_MX`.
+
+Meta cobra cada mensaje de plantilla (unos centavos de dólar en México; revisa la tarifa vigente en
+https://developers.facebook.com/docs/whatsapp/pricing). Los mensajes dentro de las 24 horas no se cobran.
+Con el número de prueba solo llegan a los 5 números que tengas dados de alta en Meta.
+
+En `https://gestor-maya.vercel.app/api/whatsapp` (diagnóstico) aparecen los envíos que Meta no entregó y por qué.

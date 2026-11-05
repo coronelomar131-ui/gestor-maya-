@@ -11,6 +11,7 @@ const enlaces = require('./enlaces');
 const documentos = require('./documentos');
 const { PERMISOS } = require('./herramientas');
 const datos = require('./datos');
+const avisos = require('./avisos');
 
 const MODELO = process.env.PEPITO_MODELO || 'claude-sonnet-5-5';
 const ESFUERZO = process.env.PEPITO_ESFUERZO || 'medium';
@@ -79,14 +80,48 @@ async function mandarWhatsApp(usuario, a) {
   if (!hallados.length) return { error: true, texto: 'No encontré a "' + a.para + '" con WhatsApp registrado. Con número: ' + (equipo.map(u => u.nombre || u.email).join(', ') || 'nadie todavía') + '.' };
   if (hallados.length > 1) return { error: true, texto: 'Hay varias personas que coinciden con "' + a.para + '": ' + hallados.map(u => u.nombre || u.email).join(', ') + '. ¿A cuál?' };
   const dest = hallados[0];
-  const r = await wa.enviarTexto(dest.whatsapp10, 'Mensaje de ' + (usuario.nombre || 'el equipo') + ' (vía Pepito):\n' + texto);
   const quien = dest.nombre || dest.email;
-  if (r.ok) return { error: false, texto: JSON.stringify({ enviado: true, para: quien }) };
-  if (r.codigo === 131047 || /24 hours|re-engagement/i.test(r.error || '')) {
-    return { error: true, texto: 'No se envió: ' + quien + ' no le ha escrito a Pepito en las últimas 24 horas (regla de WhatsApp). Pídele que le mande cualquier mensaje al WhatsApp de Pepito y vuelve a intentarlo.' };
-  }
+  const r = await avisos.mandarWhatsApp(dest.whatsapp10, 'Mensaje de ' + (usuario.nombre || 'el equipo') + ' (vía Pepito):\n' + texto,
+    { paraNombre: quien, de10: usuario.whatsapp10 || null, deNombre: usuario.nombre || usuario.email || '' });
+  if (r.ok && r.via === 'plantilla') return { error: false, texto: JSON.stringify({ enviado: true, para: quien, como: 'plantilla aprobada (no le había escrito a Pepito en 24 horas)' }) };
+  if (r.ok) return { error: false, texto: JSON.stringify({ aceptado_por_whatsapp: true, para: quien, ojo: 'WhatsApp lo aceptó pero aún no confirma la entrega. Si ' + quien + ' no le ha escrito a Pepito en las últimas 24 horas, WhatsApp lo rechaza después: en ese caso queda guardado, se le entrega en cuanto le escriba a Pepito' + (usuario.whatsapp10 ? ' y a ti te llega un aviso' : '') + '. Dilo así, sin asegurar que ya le llegó.' }) };
+  if (r.pendiente) return { error: true, texto: 'Todavía no le llegó: ' + quien + ' no le ha escrito a Pepito en las últimas 24 horas (regla de WhatsApp). Quedó guardado y se le entrega en cuanto le mande cualquier mensaje al WhatsApp de Pepito.' };
   return { error: true, texto: 'WhatsApp no aceptó el mensaje para ' + quien + ': ' + (r.error || r.status) };
 }
+
+// Alarmas: "recuérdame el viernes a las 10 cobrarle a LATAM". Llegan a la campanita del gestor y por WhatsApp.
+// No piden confirmación: solo le avisan a una persona del equipo y se pueden cancelar.
+const HERRAMIENTAS_ALARMA = [
+  {
+    name: 'crear_recordatorio',
+    description: 'Programa una alarma (recordatorio) para quien te habla o para otra persona del equipo. A esa hora le llega a la campanita del gestor y por WhatsApp. ' +
+      'La hora es de la Ciudad de México. Usa fecha + hora (24 h) o en_minutos para "en 20 minutos". Si no dicen el día, es hoy. ' +
+      'Si dicen "mañana", "el viernes", etc., calcula la fecha a partir de hoy. Si no dicen la hora, pregúntala.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        mensaje: { type: 'string', description: 'Qué hay que recordar, como lo leerá la persona' },
+        fecha: { type: 'string', description: 'AAAA-MM-DD (opcional; hoy si falta)' },
+        hora: { type: 'string', description: 'HH:MM en 24 horas, hora de la Ciudad de México' },
+        en_minutos: { type: 'number', description: 'En lugar de fecha y hora: dentro de cuántos minutos' },
+        para: { type: 'string', description: 'Nombre o correo de otra persona del equipo; vacío = quien te habla' }
+      },
+      required: ['mensaje'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'mis_recordatorios',
+    description: 'Lista las alarmas pendientes de quien te habla (las suyas y las que creó para otros), con su id.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
+    name: 'cancelar_recordatorio',
+    description: 'Cancela una alarma pendiente. Primero usa mis_recordatorios para tener su id.',
+    input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false }
+  }
+];
+const ALARMA = new Set(HERRAMIENTAS_ALARMA.map(t => t.name));
 
 // Por WhatsApp, Pepito puede mandarle a la persona el PDF de una nota o cotización que ya existe (no necesita confirmación:
 // solo le llega a quien lo pidió, y solo de lo que su rol puede ver)
@@ -123,15 +158,18 @@ async function herramientasDe(usuario, canal) {
   await Promise.all([servidor.connect(lado2), cliente.connect(lado1)]);
   const { tools } = await cliente.listTools();
   const lista = tools.filter(t => !FUERA.has(t.name));
-  const propias = wa.configurado() ? [HERRAMIENTA_WHATSAPP].concat(canal === 'whatsapp' && usuario.whatsapp10 ? [HERRAMIENTA_PDF] : []) : [];
+  const propias = (wa.configurado() ? [HERRAMIENTA_WHATSAPP].concat(canal === 'whatsapp' && usuario.whatsapp10 ? [HERRAMIENTA_PDF] : []) : []).concat(HERRAMIENTAS_ALARMA);
   return {
     instrucciones: cliente.getInstructions(),
     tools: lista.map(t => ({ name: t.name, description: t.description || t.title || t.name, input_schema: t.inputSchema })).concat(propias),
-    escribe: nombre => { if (nombre === HERRAMIENTA_PDF.name) return false; const t = lista.find(x => x.name === nombre); return !t || !t.annotations || t.annotations.readOnlyHint !== true; },
-    titulo: nombre => (nombre === HERRAMIENTA_WHATSAPP.name ? 'Mandar WhatsApp' : nombre === HERRAMIENTA_PDF.name ? 'Mandar PDF' : ((lista.find(x => x.name === nombre) || {}).title || nombre)),
+    escribe: nombre => { if (nombre === HERRAMIENTA_PDF.name || ALARMA.has(nombre)) return false; const t = lista.find(x => x.name === nombre); return !t || !t.annotations || t.annotations.readOnlyHint !== true; },
+    titulo: nombre => (nombre === HERRAMIENTA_WHATSAPP.name ? 'Mandar WhatsApp' : nombre === HERRAMIENTA_PDF.name ? 'Mandar PDF' : nombre === 'crear_recordatorio' ? 'Alarma' : nombre === 'mis_recordatorios' ? 'Mis alarmas' : nombre === 'cancelar_recordatorio' ? 'Cancelar alarma' : ((lista.find(x => x.name === nombre) || {}).title || nombre)),
     async llamar(nombre, args) {
       if (nombre === HERRAMIENTA_WHATSAPP.name) return mandarWhatsApp(usuario, args || {});
       if (nombre === HERRAMIENTA_PDF.name) return mandarPdf(usuario, args || {});
+      if (nombre === 'crear_recordatorio') return avisos.crearRecordatorio(usuario, args || {});
+      if (nombre === 'mis_recordatorios') return avisos.misRecordatorios(usuario);
+      if (nombre === 'cancelar_recordatorio') return avisos.cancelarRecordatorio(usuario, args || {});
       const r = await cliente.callTool({ name: nombre, arguments: args || {} });
       const texto = (r.content || []).map(c => c.text || '').join('\n');
       return { error: !!r.isError, texto };
@@ -147,7 +185,7 @@ const AREA_DE = {
   cobranza: 'cobranza',
   buscar_productos: 'entregas', buscar_productos_ml: 'entregas', guardar_producto: 'entregas', guardar_entrega: 'entregas',
   cambiar_estatus_venta: 'entregas', guardar_proveedor: 'entregas',
-  mandar_pdf: 'facturacion', buscar_clientes: 'direccion', guardar_cliente: 'direccion', crear_cotizacion: 'direccion', eliminar_registro: 'direccion', enviar_whatsapp: 'direccion'
+  mandar_pdf: 'facturacion', crear_recordatorio: 'direccion', mis_recordatorios: 'direccion', cancelar_recordatorio: 'direccion', buscar_clientes: 'direccion', guardar_cliente: 'direccion', crear_cotizacion: 'direccion', eliminar_registro: 'direccion', enviar_whatsapp: 'direccion'
 };
 async function anotarActividad(usuario, eventos, canal) {
   if (!eventos.length) return;
@@ -301,6 +339,11 @@ async function resolverPropuesta(usuario, propuestaId, confirmar, canal) {
   try {
     if (!h.tools.some(t => t.name === p.herramienta)) throw new Error('Tu rol ya no puede usar ' + p.titulo + '.');
     const res = await h.llamar(p.herramienta, p.args);
+    // Nota nueva desde Pepito: avisa al almacén igual que cuando se captura en el gestor
+    const nueva = !res.error && documentos.deCreacion(p.herramienta, res.texto);
+    if (nueva && (p.herramienta === 'crear_nota_entrega' || p.herramienta === 'crear_venta')) {
+      await avisos.porEvento('nota_nueva', { col: p.herramienta === 'crear_venta' ? 'ventas' : 'notasEntrega', id: nueva.id }, usuario).catch(e => console.error('pepito: aviso de nota nueva', e.message));
+    }
     const cli = claude();
     if (cli && !res.error) {
       const r = await pedir(cli, {

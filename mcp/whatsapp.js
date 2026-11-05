@@ -11,14 +11,17 @@ function destino(n) {
   return d;
 }
 
+// Meta contesta { messages: [{ id: 'wamid...' }] }: "aceptado" no es "entregado"; la entrega (o el rechazo) llega después al webhook
+function idDe(crudo) { try { const j = JSON.parse(crudo); return (j.messages && j.messages[0] && j.messages[0].id) || null; } catch (e) { return null; } }
+
 async function enviarTexto(para, texto) {
   const r = await fetch(`https://graph.facebook.com/${VERSION}/${String(process.env.WHATSAPP_PHONE_ID || '').trim()}/messages`, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to: destino(para), type: 'text', text: { preview_url: false, body: String(texto).slice(0, 4000) } })
   });
-  if (r.ok) return { ok: true };
   const crudo = (await r.text()).slice(0, 600);
+  if (r.ok) return { ok: true, id: idDe(crudo) };
   let codigo = null, mensaje = crudo;
   try { const e = JSON.parse(crudo).error || {}; codigo = e.code || null; mensaje = (e.error_data && e.error_data.details) || e.message || crudo; } catch (x) { /* texto plano */ }
   return { ok: false, status: r.status, codigo, error: mensaje, crudo };
@@ -40,8 +43,8 @@ async function enviarDocumento(para, datos, archivo, leyenda) {
     headers: Object.assign({ 'Content-Type': 'application/json' }, auth),
     body: JSON.stringify({ messaging_product: 'whatsapp', to: destino(para), type: 'document', document: { id: s.id, filename: archivo, caption: leyenda ? String(leyenda).slice(0, 1000) : undefined } })
   });
-  if (r.ok) return { ok: true };
   const e = await r.json().catch(() => ({}));
+  if (r.ok) return { ok: true, id: (e.messages && e.messages[0] && e.messages[0].id) || null };
   return { ok: false, status: r.status, codigo: e.error && e.error.code, error: (e.error && e.error.message) || 'WhatsApp no aceptó el PDF' };
 }
 
@@ -56,8 +59,8 @@ async function enviarPlantilla(para, nombre, idioma, parametros) {
       template: { name: nombre, language: { code: idioma || 'es_MX' }, components: parametros && parametros.length ? [{ type: 'body', parameters: parametros.map(p => ({ type: 'text', text: String(p).replace(/\s*\n+\s*/g, ' · ').slice(0, 900) })) }] : [] }
     })
   });
-  if (r.ok) return { ok: true };
   const e = await r.json().catch(() => ({}));
+  if (r.ok) return { ok: true, id: (e.messages && e.messages[0] && e.messages[0].id) || null };
   return { ok: false, status: r.status, codigo: e.error && e.error.code, error: (e.error && e.error.message) || 'Meta no aceptó la plantilla' };
 }
 

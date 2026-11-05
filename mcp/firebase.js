@@ -60,6 +60,17 @@ const real = {
       return snap.data();
     });
   },
+  // Marca un campo en una transacción solo si aún no tenía ese valor: evita que dos tareas manden lo mismo dos veces
+  async reservar(coleccion, id, campo, valor) {
+    const db = app().firestore();
+    const ref = db.collection(coleccion).doc(id);
+    return db.runTransaction(async t => {
+      const snap = await t.get(ref);
+      if (snap.exists && snap.data()[campo] === valor) return false;
+      t.set(ref, { [campo]: valor }, { merge: true });
+      return true;
+    });
+  },
   // Igual que loadUserProfile() de la app
   async perfil(uid) {
     const snap = await app().firestore().collection('usuarios').where('uid', '==', uid).limit(1).get();

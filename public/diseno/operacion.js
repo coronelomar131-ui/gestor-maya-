@@ -162,6 +162,7 @@ function abrirPieza(col, id) {
     const ev = { etapa: nueva, fecha: Date.now(), por: yo() };
     if (nota) ev.nota = nota;
     await window.updateDoc(window.doc(window.db, col, id), { etapa: nueva, seguimiento: (r.raw.seguimiento || []).concat(ev) });
+    if (nueva !== et && window.mayaAvisar) window.mayaAvisar('etapa', { col, id, etapa: nueva, nota });
     aviso(r.folio + ' → ' + nombreEtapa(nueva));
     return true;
   } }] : []);
@@ -425,6 +426,7 @@ function confirmarFactura(cfdi) {
       })));
       if (cliente && dias !== plazo) await window.updateDoc(window.doc(window.db, 'clientes', cliente.id), { diasCredito: dias });
       lista.forEach(r => seleccion.delete(r.col + ':' + r.id));
+      if (window.mayaAvisar) window.mayaAvisar('factura', { id: ref.id });
       aviso(cfdi.serieFolio + ' guardada' + (lista.length ? ' y ligada a ' + lista.length + (lista.length === 1 ? ' nota' : ' notas') : ''));
       pestanaFac = 'facturas';
       pintarActivo();
@@ -552,6 +554,7 @@ function registrarPago(id) {
     if (nota) pago.nota = nota;
     const saldo = Math.round((Number(f.saldo) - monto) * 100) / 100;
     await window.updateDoc(window.doc(window.db, 'facturas', id), { pagos: (f.pagos || []).concat(pago), saldo, estatus: saldo <= 0.009 ? 'pagada' : 'por_cobrar' });
+    if (window.mayaAvisar) window.mayaAvisar('pago', { id, monto });
     aviso(saldo <= 0.009 ? f.serieFolio + ' quedó pagada' : 'Pago guardado; saldo ' + pesos(saldo));
     return true;
   } }]);
