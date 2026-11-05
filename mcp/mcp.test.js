@@ -759,3 +759,19 @@ test('/api/avisos: el tick manda alarmas y el resumen una sola vez al día; even
     assert.equal((await llamar('/api/avisos', { method: 'POST', body: { evento: 'pago', id: 'x' } })).c, 401, 'un evento necesita sesión');
   } finally { wa.cerrar(); delete process.env.CRON_SECRET; delete process.env.AVISOS_HORA; }
 });
+
+test('nota sin precio: el cliente marcado (p. ej. JEIC) recibe notas sin precios ni totales; la venta sí los guarda', async () => {
+  const pdf = require('./pdf');
+  const clientes = [{ id: 'j', razonSocial: 'JEIC DISTRIBUIDORA', notaSinPrecio: true }, { id: 'z', razonSocial: 'Zeta' }];
+  const ne = { id: 'n', notaId: 'NE-301', fecha: '2026-11-05', cliente: 'JEIC DISTRIBUIDORA', items: [{ descripcion: 'Faro derecho Creta', cantidad: 1, precioUnit: 9200 }], subtotal: 9200, ivaTotal: 1472, total: 10672 };
+  const nv = { id: 'v', notaId: '310', fecha: Date.now(), clienteNombre: 'JEIC DISTRIBUIDORA', items: [{ pedido: 'Faro derecho Creta', precio: 9200, iva: 1472, ajuste: 0 }], subtotal: 9200, ivaTotal: 1472, total: 10672 };
+  const texto = async (tipo, r) => (await pdf.generar(tipo, r, { data: { clientes } })).datos.toString('latin1');
+  for (const [tipo, r] of [['nota_entrega', ne], ['nota_venta', nv]]) {
+    const t = await texto(tipo, r);
+    assert.match(t, /Faro derecho Creta/);
+    assert.doesNotMatch(t, /PRECIO|\(TOTAL\)|9,200|10,672/, tipo + ' sin precios');
+  }
+  const otro = await texto('nota_entrega', Object.assign({}, ne, { cliente: 'Zeta' }));
+  assert.match(otro, /PRECIO UNIT/);
+  assert.match(otro, /10,672\.00/);
+});
