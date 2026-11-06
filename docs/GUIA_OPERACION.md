@@ -83,14 +83,17 @@ Cada quien ve solo las áreas de su rol. No necesita cuenta de Claude (el artifa
 El módulo **Compras** es un registro separado, disponible para administración y almacén. No aumenta ni descuenta
 existencias del módulo Inventario y tampoco agrega datos a Ventas, notas o facturas.
 
-1. Entra a **Compras → Registrar compra** y captura fecha, pieza, proveedor, cantidad y costo por pieza.
-2. Al vender piezas de ese lote, usa **Registrar venta** y actualiza la cantidad vendida acumulada y el importe total
-   recibido. Si el mismo lote se vende a distintos precios, captura el ingreso total de todas esas ventas.
-3. La utilidad bruta se calcula como **ingreso registrado − (piezas vendidas × costo por pieza)**. No incluye gastos
+1. Entra a **Compras → Registrar compra** y captura fecha y proveedor. Agrega todos los artículos que vengan en esa
+   compra; para cada uno captura cantidad, precio de compra por pieza y, cuando corresponda, cantidad vendida y precio
+   de venta por pieza. Los totales y la utilidad se actualizan mientras escribes.
+2. Para corregir una compra después, toca **Editar compra**. Puedes cambiar sus artículos, precios, cantidades y datos
+   generales, agregar más artículos o quitar los que ya no correspondan.
+3. La utilidad bruta se calcula por artículo como **piezas vendidas × (precio de venta por pieza − precio de compra por
+   pieza)**. No incluye gastos
    adicionales, impuestos ni comisiones.
 
-Los indicadores resumen todos los lotes guardados. Las piezas pendientes son solo las de este registro, no una copia
-del inventario general.
+Los indicadores resumen todas las compras guardadas. Las piezas pendientes son solo las de este registro, no una copia
+del inventario general. Los registros anteriores de un solo artículo siguen apareciendo y se pueden editar.
 
 ## 7. Pepito
 

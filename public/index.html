@@ -1254,16 +1254,16 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
         <div class="table-card">
           <div class="table-header">
-            <div class="table-title">Lotes registrados</div>
-            <input class="search-box" id="compras-busqueda" placeholder="🔍 Buscar pieza o proveedor..." oninput="comprasFiltrar(this.value)">
+            <div class="table-title">Compras registradas</div>
+            <input class="search-box" id="compras-busqueda" placeholder="🔍 Buscar artículo o proveedor..." oninput="comprasFiltrar(this.value)">
           </div>
           <div style="overflow-x:auto">
             <table id="compras-table">
               <thead><tr>
-                <th>Fecha</th><th>Pieza</th><th>Proveedor</th><th>Compradas</th><th>Costo unitario</th><th>Vendidas</th><th>Ingresos</th><th>Utilidad</th><th>Acciones</th>
+                <th>Fecha</th><th>Artículos</th><th>Proveedor</th><th>Piezas</th><th>Total de compra</th><th>Ingresos por venta</th><th>Utilidad</th><th>Acciones</th>
               </tr></thead>
               <tbody id="compras-body">
-                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Aún no hay compras</div><div class="empty-desc">Registra un lote para empezar a medir su costo y utilidad.</div></div></td></tr>
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Aún no hay compras</div><div class="empty-desc">Registra una compra para empezar a medir costos y utilidad.</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -1984,7 +1984,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <button class="modal-close" type="button" onclick="closeModal('modal-compra')">×</button>
     </div>
     <div class="modal-body">
-      <p class="m-compras-modal-ayuda">Captura el costo del lote. Puedes registrar las ventas ahora o volver después para actualizar sus acumulados.</p>
+      <p class="m-compras-modal-ayuda">Agrega todos los artículos de esta compra. Pon el costo y, cuando ya vendas, la cantidad y el precio de venta por pieza.</p>
       <div class="m-compras-form-grid">
         <div class="form-group">
           <label for="compra-fecha">Fecha de compra</label>
@@ -1994,25 +1994,17 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <label for="compra-proveedor">Proveedor</label>
           <input id="compra-proveedor" type="text" maxlength="120" placeholder="Nombre del proveedor">
         </div>
-        <div class="form-group m-compras-campo-completo">
-          <label for="compra-pieza">Pieza o producto</label>
-          <input id="compra-pieza" type="text" maxlength="160" placeholder="Ej. Faro delantero derecho" required>
-        </div>
-        <div class="form-group">
-          <label for="compra-cantidad">Piezas compradas</label>
-          <input id="compra-cantidad" type="number" min="1" step="1" value="1" required>
-        </div>
-        <div class="form-group">
-          <label for="compra-costo">Costo por pieza</label>
-          <input id="compra-costo" type="number" min="0" step="0.01" placeholder="0.00" required>
-        </div>
-        <div class="form-group">
-          <label for="compra-vendido">Piezas vendidas (acumuladas)</label>
-          <input id="compra-vendido" type="number" min="0" step="1" value="0" required>
-        </div>
-        <div class="form-group">
-          <label for="compra-ingresos">Importe total de esas ventas</label>
-          <input id="compra-ingresos" type="number" min="0" step="0.01" value="0" required>
+        <div class="m-compras-campo-completo">
+          <div class="m-compras-articulos-cabecera">
+            <strong>Artículos de la compra</strong>
+            <button class="btn btn-secondary btn-sm" type="button" onclick="comprasAgregarArticulo()">+ Agregar artículo</button>
+          </div>
+          <div id="compras-articulos"></div>
+          <div class="m-compras-total-modal">
+            <span>Total de compra <strong id="compras-modal-costo">$0.00</strong></span>
+            <span>Ingresos por venta <strong id="compras-modal-ingresos">$0.00</strong></span>
+            <span>Utilidad bruta <strong id="compras-modal-utilidad">$0.00</strong></span>
+          </div>
         </div>
         <div class="form-group m-compras-campo-completo">
           <label for="compra-notas">Notas (opcional)</label>
