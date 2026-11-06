@@ -75,6 +75,19 @@ function baseDePrueba() {
       cot6: { notaId: '6', fecha: 1782432000000, clienteNombre: 'Distribuidora Ejemplo', total: 0, estatus: 'vigente', createdAt: '2026-06-26T16:06:43.133Z' }
     },
     proveedores: { pr1: { nombre: 'Proveedor Uno', telefono: '555' } },
+    compras: {
+      compra1: {
+        fecha: '2026-11-05', proveedor: 'Proveedor Faro',
+        articulos: [
+          { pieza: 'Faro derecho', cantidadComprada: 2, costoUnitario: 100, cantidadVendida: 1, precioVenta: 180 },
+          { pieza: 'Espejo lateral', cantidadComprada: 1, costoUnitario: 250, cantidadVendida: 1, precioVenta: 300 }
+        ]
+      },
+      compra2: {
+        fecha: '2026-10-25', proveedor: 'Refa Uno', pieza: 'Cofre',
+        cantidadComprada: 2, costoUnitario: 100, cantidadVendida: 1, ingresosVenta: 250
+      }
+    },
     usuarios: { u1: { uid: 'admin-1', nombre: 'Dirección', rol: 'admin' } }
   };
 }
@@ -233,6 +246,67 @@ test('buscar_registros entrega las fechas guardadas en milisegundos como AAAA-MM
   const r = await c.llamar('buscar_registros', { modulo: 'cotizaciones' });
   assert.equal(r.registros[0].fecha, '2026-06-26');
   await c.cerrar();
+});
+
+test('resumen_compras calcula utilidad por artículo, filtra y conserva compras anteriores', async () => {
+  const c = await conectar(ADMIN);
+  const r = await c.llamar('resumen_compras', {});
+  assert.equal(r.compras_encontradas, 2);
+  assert.deepEqual(r.resumen, {
+    total_compra: 650,
+    ingresos_venta: 730,
+    utilidad_bruta: 280,
+    piezas_compradas: 5,
+    piezas_vendidas: 3,
+    piezas_pendientes: 2
+  });
+  assert.equal(r.compras[0].articulos[0].utilidad_bruta, 80);
+  assert.equal(r.compras[0].articulos[1].utilidad_bruta, 50);
+  assert.equal(r.compras[1].articulos[0].ingresos_venta, 250, 'mantiene el ingreso acumulado de registros anteriores');
+  assert.equal(db.lecturas.compras, 1);
+  assert.equal(db.lecturas.ventas, undefined, 'consulta compras sin leer la colección de ventas');
+  assert.equal(db.lecturas.productos, undefined, 'consulta compras sin leer el inventario');
+
+  const filtrada = await c.llamar('resumen_compras', { texto: 'faro derecho', desde: '2026-11-01', hasta: '2026-11-30' });
+  assert.equal(filtrada.compras_encontradas, 1);
+  assert.deepEqual(filtrada.resumen, {
+    total_compra: 200,
+    ingresos_venta: 180,
+    utilidad_bruta: 80,
+    piezas_compradas: 2,
+    piezas_vendidas: 1,
+    piezas_pendientes: 1
+  });
+
+  const registros = await c.llamar('buscar_registros', { modulo: 'compras', texto: 'espejo' });
+  assert.equal(registros.encontrados, 1);
+  assert.equal(registros.registros[0].id, 'compra1');
+  await c.cerrar();
+});
+
+test('solo administración y almacén pueden consultar compras con Pepito', async () => {
+  const pepito = require('./pepito');
+  const admin = await pepito.herramientasDe(ADMIN, 'gestor');
+  assert.ok(admin.tools.some(tool => tool.name === 'resumen_compras'));
+  const adminResultado = await admin.llamar('resumen_compras', {});
+  assert.equal(adminResultado.error, false);
+  assert.equal(JSON.parse(adminResultado.texto).resumen.utilidad_bruta, 280);
+  await admin.cerrar();
+
+  const almacen = await pepito.herramientasDe({ uid: 'a-1', nombre: 'Almacén', rol: 'almacen' }, 'gestor');
+  assert.ok(almacen.tools.some(tool => tool.name === 'resumen_compras'));
+  const resultado = await almacen.llamar('resumen_compras', { proveedor: 'faro' });
+  assert.equal(resultado.error, false);
+  assert.equal(JSON.parse(resultado.texto).compras_encontradas, 1);
+  await almacen.cerrar();
+
+  for (const usuario of [VENDEDOR, { uid: 'f-1', nombre: 'Facturación', rol: 'facturacion' }]) {
+    const h = await pepito.herramientasDe(usuario, 'gestor');
+    assert.ok(!h.tools.some(tool => tool.name === 'resumen_compras'));
+    const generic = h.tools.find(tool => tool.name === 'buscar_registros');
+    if (generic) assert.ok(!generic.input_schema.properties.modulo.enum.includes('compras'));
+    await h.cerrar();
+  }
 });
 
 test('guardar_producto con id sí cambia el código; buscado por código no lo cambia', async () => {

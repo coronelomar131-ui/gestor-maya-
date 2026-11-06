@@ -12,6 +12,7 @@ const PERMISOS = {
   clientes: ['admin', 'vendedor', 'facturacion'],
   facturas: ['admin', 'facturacion'],
   inventario: ['admin', 'almacen'],
+  compras: ['admin', 'almacen'],
   entregas: ['admin', 'vendedor', 'almacen'],
   envios: ['admin', 'vendedor', 'almacen'],
   visitas_talleres: ['admin', 'vendedor', 'almacen'],
@@ -80,6 +81,7 @@ function instrucciones(usuario) {
     'Hay dos tipos de nota: nota de entrega (folio NE-123) y nota de venta (folio NV #123). Salvo que se pida un tipo, el historial y el resumen incluyen ambas; no incluyen notas de venta canceladas ni las que se crean solas al guardar una nota de entrega (esa venta ya aparece como su NE).',
     'En cada nota: total = subtotal + iva - ajuste. Los totales del resumen son la suma exacta de las notas. Usa solo montos que vengan de las herramientas; no estimes ni inventes cifras.',
     'En las notas de venta no se guarda cantidad: cantidad y precio_unitario vienen en null y el importe es el precio capturado de la partida.',
+    'Compras es un registro independiente de ventas, notas e inventario. Usa resumen_compras para consultar el costo de compra, ingresos registrados y utilidad bruta por artículo; la utilidad es precio de venta por unidad menos costo unitario, multiplicado por unidades vendidas. No afirmes que estos datos actualizan ventas ni existencias.',
     'Si resumen.posibles_duplicados no está vacío, avísale al usuario: podría ser la misma venta capturada como nota de venta y como nota de entrega, y el total la estaría sumando dos veces.',
     'Algunas notas van sin precio a propósito (así las piden algunos clientes): resumen.notas_sin_importe dice cuántas están en $0 (folios en folios_sin_importe). Cuentan como nota pero no suman al total; menciónalo en una línea al dar totales, sin tratarlo como error.',
     'Una venta puede tener tres folios: NV #243 (su número en Ventas), NV-219 (el de Facturas) y F-219 (el de su factura). Si una nota trae otros_folios, son los de la venta ligada; úsalos al responder para que el usuario la reconozca.',
@@ -221,6 +223,21 @@ function crearServidor(usuario) {
       },
       annotations: LECTURA
     }, ejecutar(a => datos.cobranza(a)));
+  }
+
+  if (puede('compras')) {
+    servidor.registerTool('resumen_compras', {
+      title: 'Consultar compras y utilidad',
+      description: 'Consulta compras independientes de Ventas, notas e Inventario. Calcula costo total, ingresos por unidades vendidas y utilidad bruta por artículo, con filtros opcionales por artículo, proveedor y fechas. No modifica datos. Los cambios recientes pueden tardar hasta 5 minutos en aparecer.',
+      inputSchema: {
+        texto: z.string().optional().describe('Parte del nombre de un artículo; también encuentra el proveedor o las notas de la compra'),
+        proveedor: z.string().optional().describe('Parte del nombre del proveedor'),
+        desde: FECHA.optional().describe('Primer día incluido (AAAA-MM-DD)'),
+        hasta: FECHA.optional().describe('Último día incluido (AAAA-MM-DD)'),
+        limite: z.number().int().min(1).max(100).default(30).describe('Máximo de compras a mostrar; el resumen considera todas las coincidencias')
+      },
+      annotations: LECTURA
+    }, ejecutar(a => datos.compras(a)));
   }
 
   const modulos = Object.keys(datos.MODULOS).filter(puede);

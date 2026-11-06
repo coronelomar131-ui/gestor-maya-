@@ -411,7 +411,7 @@ async function ventas(f, limite) {
 // Módulos que se consultan tal cual. Los textos muy largos (fotos en base64, firmas) se recortan.
 const MODULOS = {
   entregas: 'entregas', envios: 'envios', visitas_talleres: 'visitasTalleres', cotizaciones: 'cotizaciones',
-  proveedores: 'proveedores', prestamos: 'finanzas_prestamos', pagos: 'finanzas_pagos', usuarios: 'usuarios'
+  proveedores: 'proveedores', compras: 'compras', prestamos: 'finanzas_prestamos', pagos: 'finanzas_pagos', usuarios: 'usuarios'
 };
 
 function limpiar(valor) {
@@ -441,6 +441,116 @@ async function registros(modulo, texto, limite) {
     .filter(d => !q || norm(JSON.stringify(d)).includes(q))
     .sort((a, b) => cuando(b) - cuando(a));
   return { modulo, encontrados: lista.length, mostrando: Math.min(limite, lista.length), registros: lista.slice(0, limite) };
+}
+
+function articulosCompra(compra) {
+  if (Array.isArray(compra.articulos) && compra.articulos.length) {
+    return compra.articulos.map(articulo => ({
+      pieza: articulo.pieza || '',
+      cantidad_comprada: Number(articulo.cantidadComprada) || 0,
+      costo_unitario_centavos: centavos(articulo.costoUnitario),
+      cantidad_vendida: Number(articulo.cantidadVendida) || 0,
+      precio_venta_centavos: centavos(articulo.precioVenta)
+    }));
+  }
+  const cantidadVendida = Number(compra.cantidadVendida) || 0;
+  const ingresos = centavos(compra.ingresosVenta);
+  return [{
+    pieza: compra.pieza || '',
+    cantidad_comprada: Number(compra.cantidadComprada) || 0,
+    costo_unitario_centavos: centavos(compra.costoUnitario),
+    cantidad_vendida: cantidadVendida,
+    precio_venta_centavos: cantidadVendida ? Math.round(ingresos / cantidadVendida) : 0,
+    ingresos_venta_centavos: ingresos
+  }];
+}
+
+function resumirCompra(compra, articulos) {
+  const legacy = !Array.isArray(compra.articulos) || !compra.articulos.length;
+  const lineas = articulos.map(articulo => {
+    const importeCompra = articulo.cantidad_comprada * articulo.costo_unitario_centavos;
+    const ingresosVenta = legacy && articulos.length === 1 && articulo.ingresos_venta_centavos != null
+      ? articulo.ingresos_venta_centavos
+      : articulo.cantidad_vendida * articulo.precio_venta_centavos;
+    const utilidad = ingresosVenta - articulo.cantidad_vendida * articulo.costo_unitario_centavos;
+    return {
+      pieza: articulo.pieza,
+      cantidad_comprada: articulo.cantidad_comprada,
+      costo_unitario: pesos(articulo.costo_unitario_centavos),
+      total_compra: pesos(importeCompra),
+      cantidad_vendida: articulo.cantidad_vendida,
+      precio_venta_unitario: pesos(articulo.precio_venta_centavos),
+      ingresos_venta: pesos(ingresosVenta),
+      utilidad_bruta: pesos(utilidad),
+      piezas_pendientes: Math.max(0, articulo.cantidad_comprada - articulo.cantidad_vendida)
+    };
+  });
+  const total = lineas.reduce((suma, articulo) => {
+    suma.totalCompra += centavos(articulo.total_compra);
+    suma.ingresosVenta += centavos(articulo.ingresos_venta);
+    suma.utilidad += centavos(articulo.utilidad_bruta);
+    suma.compradas += articulo.cantidad_comprada;
+    suma.vendidas += articulo.cantidad_vendida;
+    suma.pendientes += articulo.piezas_pendientes;
+    return suma;
+  }, { totalCompra: 0, ingresosVenta: 0, utilidad: 0, compradas: 0, vendidas: 0, pendientes: 0 });
+  return {
+    id: compra.id,
+    fecha: typeof compra.fecha === 'string' ? compra.fecha.slice(0, 10) : fechaISO(dia(compra.fecha)),
+    proveedor: compra.proveedor || null,
+    articulos: lineas,
+    total_compra: pesos(total.totalCompra),
+    ingresos_venta: pesos(total.ingresosVenta),
+    utilidad_bruta: pesos(total.utilidad),
+    piezas_compradas: total.compradas,
+    piezas_vendidas: total.vendidas,
+    piezas_pendientes: total.pendientes
+  };
+}
+
+async function compras(filtros) {
+  const q = norm(filtros.texto);
+  const proveedorQ = norm(filtros.proveedor);
+  const lista = (await leer('compras')).filter(compra => {
+    const fecha = typeof compra.fecha === 'string' ? compra.fecha.slice(0, 10) : fechaISO(dia(compra.fecha));
+    if (filtros.desde && (!fecha || fecha < filtros.desde)) return false;
+    if (filtros.hasta && (!fecha || fecha > filtros.hasta)) return false;
+    if (proveedorQ && !norm(compra.proveedor).includes(proveedorQ)) return false;
+    return true;
+  }).map(compra => {
+    const articulos = articulosCompra(compra);
+    if (!q) return resumirCompra(compra, articulos);
+    const coincideEnCompra = norm([compra.proveedor, compra.notas].join(' ')).includes(q);
+    const encontrados = coincideEnCompra ? articulos : articulos.filter(articulo => norm(articulo.pieza).includes(q));
+    return encontrados.length ? resumirCompra(compra, encontrados) : null;
+  }).filter(Boolean).sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+
+  const resumen = lista.reduce((total, compra) => {
+    total.total_compra += centavos(compra.total_compra);
+    total.ingresos_venta += centavos(compra.ingresos_venta);
+    total.utilidad_bruta += centavos(compra.utilidad_bruta);
+    total.piezas_compradas += compra.piezas_compradas;
+    total.piezas_vendidas += compra.piezas_vendidas;
+    total.piezas_pendientes += compra.piezas_pendientes;
+    return total;
+  }, {
+    total_compra: 0, ingresos_venta: 0, utilidad_bruta: 0,
+    piezas_compradas: 0, piezas_vendidas: 0, piezas_pendientes: 0
+  });
+  resumen.total_compra = pesos(resumen.total_compra);
+  resumen.ingresos_venta = pesos(resumen.ingresos_venta);
+  resumen.utilidad_bruta = pesos(resumen.utilidad_bruta);
+  return {
+    filtros: {
+      texto: filtros.texto || null, proveedor: filtros.proveedor || null,
+      desde: filtros.desde || null, hasta: filtros.hasta || null
+    },
+    compras_encontradas: lista.length,
+    resumen,
+    mostrando: Math.min(filtros.limite, lista.length),
+    compras: lista.slice(0, filtros.limite),
+    aviso: 'Los datos son los capturados en el módulo Compras, independiente de Ventas, notas e Inventario. La utilidad bruta es ingresos registrados menos costo de las piezas vendidas; no incluye otros gastos.'
+  };
 }
 
 // ── Facturación y cobranza (módulos Facturación y Cobranza de la app; colección facturas) ──
@@ -496,7 +606,7 @@ async function cobranza(f) {
 }
 
 module.exports = {
-  leer, pendientesFacturar, cobranza,
+  leer, pendientesFacturar, cobranza, compras,
   cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, registros,
   armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };

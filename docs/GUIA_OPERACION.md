@@ -95,6 +95,11 @@ existencias del módulo Inventario y tampoco agrega datos a Ventas, notas o fact
 Los indicadores resumen todas las compras guardadas. Las piezas pendientes son solo las de este registro, no una copia
 del inventario general. Los registros anteriores de un solo artículo siguen apareciendo y se pueden editar.
 
+Pepito también puede consultar los datos con **“¿Cuánto invertimos en compras y cuál es la utilidad?”** o buscar por
+artículo, proveedor y fechas. La herramienta **Consultar compras y utilidad** es de solo lectura y solo está disponible
+para los roles de administración y almacén. El agente usa los costos e ingresos capturados en Compras; no toma precios
+de Ventas, notas ni Inventario. Los cambios recientes pueden tardar hasta 5 minutos en aparecer en la consulta del agente.
+
 ## 7. Pepito
 
 Mientras no haya presupuesto para la API, Pepito contesta por el buzón (*módulo Pepito*): alguien con acceso admin
