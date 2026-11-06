@@ -1039,6 +1039,9 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="nav-item" onclick="showModule('inventario')">
         <span class="nav-icon">📦</span> Inventario
       </div>
+      <div class="nav-item" id="nav-compras" style="display:none" onclick="showModule('compras')">
+        <span class="nav-icon">🛒</span> Compras
+      </div>
       <div class="nav-item" onclick="showModule('clientes')">
         <span class="nav-icon">👥</span> Clientes
       </div>
@@ -1224,6 +1227,43 @@ tr:hover td { background: rgba(59,188,212,0.03); }
               </tr></thead>
               <tbody id="inv-body">
                 <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-title">Sin productos aún</div><div class="empty-desc">Agrega tu primera pieza</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMPRAS: registro independiente de inventario y notas de venta -->
+      <div class="module-view" id="mod-compras">
+        <section class="m-compras-intro">
+          <div>
+            <h1>Compras</h1>
+            <p>Registra cuánto costó cada lote y cuánto recuperaste al vender sus piezas.</p>
+          </div>
+          <button class="btn btn-primary" type="button" onclick="comprasNueva()">+ Registrar compra</button>
+        </section>
+        <div class="m-compras-aviso">
+          Este registro es independiente: no modifica el inventario general ni aparece en las notas de venta.
+          La utilidad mostrada es bruta y se calcula solo con las cantidades e importes registrados aquí.
+        </div>
+        <div class="m-compras-metricas" aria-live="polite">
+          <div class="m-compras-metrica"><span>Invertido en compras</span><strong id="compras-total-invertido">$0.00</strong></div>
+          <div class="m-compras-metrica"><span>Ingresos registrados</span><strong id="compras-total-ventas">$0.00</strong></div>
+          <div class="m-compras-metrica m-compras-utilidad"><span>Utilidad bruta</span><strong id="compras-total-utilidad">$0.00</strong></div>
+          <div class="m-compras-metrica"><span>Piezas sin vender</span><strong id="compras-piezas-pendientes">0</strong></div>
+        </div>
+        <div class="table-card">
+          <div class="table-header">
+            <div class="table-title">Lotes registrados</div>
+            <input class="search-box" id="compras-busqueda" placeholder="🔍 Buscar pieza o proveedor..." oninput="comprasFiltrar(this.value)">
+          </div>
+          <div style="overflow-x:auto">
+            <table id="compras-table">
+              <thead><tr>
+                <th>Fecha</th><th>Pieza</th><th>Proveedor</th><th>Compradas</th><th>Costo unitario</th><th>Vendidas</th><th>Ingresos</th><th>Utilidad</th><th>Acciones</th>
+              </tr></thead>
+              <tbody id="compras-body">
+                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Aún no hay compras</div><div class="empty-desc">Registra un lote para empezar a medir su costo y utilidad.</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -1936,6 +1976,57 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
 <!-- MODALS -->
 
+<!-- Modal Compras -->
+<div class="modal-overlay" id="modal-compra" onclick="if(event.target===this)closeModal('modal-compra')">
+  <div class="modal" style="max-width:720px;max-height:90vh;overflow-y:auto">
+    <div class="modal-head">
+      <h3 id="compras-modal-titulo">Registrar compra</h3>
+      <button class="modal-close" type="button" onclick="closeModal('modal-compra')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="m-compras-modal-ayuda">Captura el costo del lote. Puedes registrar las ventas ahora o volver después para actualizar sus acumulados.</p>
+      <div class="m-compras-form-grid">
+        <div class="form-group">
+          <label for="compra-fecha">Fecha de compra</label>
+          <input id="compra-fecha" type="date" required>
+        </div>
+        <div class="form-group">
+          <label for="compra-proveedor">Proveedor</label>
+          <input id="compra-proveedor" type="text" maxlength="120" placeholder="Nombre del proveedor">
+        </div>
+        <div class="form-group m-compras-campo-completo">
+          <label for="compra-pieza">Pieza o producto</label>
+          <input id="compra-pieza" type="text" maxlength="160" placeholder="Ej. Faro delantero derecho" required>
+        </div>
+        <div class="form-group">
+          <label for="compra-cantidad">Piezas compradas</label>
+          <input id="compra-cantidad" type="number" min="1" step="1" value="1" required>
+        </div>
+        <div class="form-group">
+          <label for="compra-costo">Costo por pieza</label>
+          <input id="compra-costo" type="number" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div class="form-group">
+          <label for="compra-vendido">Piezas vendidas (acumuladas)</label>
+          <input id="compra-vendido" type="number" min="0" step="1" value="0" required>
+        </div>
+        <div class="form-group">
+          <label for="compra-ingresos">Importe total de esas ventas</label>
+          <input id="compra-ingresos" type="number" min="0" step="0.01" value="0" required>
+        </div>
+        <div class="form-group m-compras-campo-completo">
+          <label for="compra-notas">Notas (opcional)</label>
+          <textarea id="compra-notas" rows="2" maxlength="500" placeholder="Referencia, condición o detalle del lote"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeModal('modal-compra')">Cancelar</button>
+      <button class="btn btn-primary" id="compras-btn-guardar" type="button" onclick="comprasGuardar()">Guardar compra</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Venta -->
 <div class="modal-overlay" id="modal-venta">
   <div class="modal" style="max-width:900px;max-height:90vh;overflow-y:auto">
@@ -2540,6 +2631,7 @@ onAuthStateChanged(auth, async (user) => {
     hideLoading();
   } else {
     currentUser = null;
+    if (typeof window.comprasCerrar === 'function') window.comprasCerrar();
     hideLoading();
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
@@ -2582,6 +2674,7 @@ async function loadUserProfile(uid) {
       // No-admin users cannot see Finanzas
       document.getElementById('nav-finanzas').style.display = 'none';
     }
+    document.getElementById('nav-compras').style.display = ['admin', 'almacen'].includes(currentRole) ? 'flex' : 'none';
     return true;
   } catch(e) {
     // Antes un error aquí daba acceso de admin; ahora no se entra hasta poder leer el perfil
@@ -4445,6 +4538,7 @@ window.showModule = function(name) {
     cobranza: ['admin', 'facturacion'],
     ventas: ['admin', 'vendedor', 'facturacion'],
     inventario: ['admin', 'almacen'],
+    compras: ['admin', 'almacen'],
     clientes: ['admin', 'vendedor', 'facturacion'],
     cotizaciones: ['admin', 'vendedor'],
     proveedores: ['admin', 'almacen'],
@@ -9989,5 +10083,6 @@ window.previewNotaEntregaPDFById = function(id) {
 <script type="module" src="/diseno/pepito-chat.js"></script>
 <script type="module" src="/diseno/enlaces.js"></script>
 <script type="module" src="/diseno/operacion.js"></script>
+<script type="module" src="/diseno/compras.js"></script>
 </body>
 </html>

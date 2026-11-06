@@ -78,7 +78,21 @@ pendientes de cada área:
 
 Cada quien ve solo las áreas de su rol. No necesita cuenta de Claude (el artifact de claude.ai sí la pide).
 
-## 6. Pepito
+## 6. Compras y utilidad
+
+El módulo **Compras** es un registro separado, disponible para administración y almacén. No aumenta ni descuenta
+existencias del módulo Inventario y tampoco agrega datos a Ventas, notas o facturas.
+
+1. Entra a **Compras → Registrar compra** y captura fecha, pieza, proveedor, cantidad y costo por pieza.
+2. Al vender piezas de ese lote, usa **Registrar venta** y actualiza la cantidad vendida acumulada y el importe total
+   recibido. Si el mismo lote se vende a distintos precios, captura el ingreso total de todas esas ventas.
+3. La utilidad bruta se calcula como **ingreso registrado − (piezas vendidas × costo por pieza)**. No incluye gastos
+   adicionales, impuestos ni comisiones.
+
+Los indicadores resumen todos los lotes guardados. Las piezas pendientes son solo las de este registro, no una copia
+del inventario general.
+
+## 7. Pepito
 
 Mientras no haya presupuesto para la API, Pepito contesta por el buzón (*módulo Pepito*): alguien con acceso admin
 a Claude lo pone a revisar (por ejemplo `/loop 1m revisa el buzón de Pepito y contesta los pendientes`).
@@ -89,10 +103,11 @@ Con el MCP ya puede responder, además de ventas y notas:
 
 Para guardar algo, Pepito primero dice qué va a guardar y espera confirmación.
 
-## 7. Dónde se guarda cada cosa (Firebase)
+## 8. Dónde se guarda cada cosa (Firebase)
 
 | Dato | Dónde |
 |---|---|
+| Lotes de compra, costo unitario e ingresos de venta | colección `compras` (independiente de `ventas`, `notasEntrega` y `productos`) |
 | Etapa e historial de una pieza | `etapa` y `seguimiento` en la nota (`notasEntrega`) o venta (`ventas`) |
 | Facturas (datos del XML, notas ligadas, pagos, saldo) | colección `facturas` |
 | Factura ligada a una nota | `facturaId`, `facturaFolio`, `facturaUUID` en la nota o venta |

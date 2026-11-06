@@ -25,6 +25,7 @@ La parte que tú ves (botones, tablas, formularios) está en UN solo archivo: `p
 | 👥 Clientes | Quién nos compra (nombre, teléfono, dirección) |
 | 💰 Ventas | Lo que vendimos, a quién, cuánto, si ya pagó |
 | 📦 Inventario | Qué productos tenemos y cuántos quedan |
+| 🛒 Compras | Costos por lote, ventas registradas y utilidad bruta (independiente) |
 | 📄 Documentos | Las notas y facturas de cada venta |
 | 🚚 Envíos | Paquetes que mandamos, con guía y estado |
 | 💸 Finanzas | Préstamos y pagos (solo el dueño los ve) |
