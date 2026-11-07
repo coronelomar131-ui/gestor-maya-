@@ -94,7 +94,7 @@ function instrucciones(usuario) {
 
 function crearServidor(usuario) {
   const puede = modulo => PERMISOS[modulo].includes(usuario.rol);
-  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.3.0' }, { instructions: instrucciones(usuario) });
+  const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.4.0' }, { instructions: instrucciones(usuario) });
 
   // ── Consultas ──
   if (puede('notas')) {
@@ -256,6 +256,18 @@ function crearServidor(usuario) {
       },
       annotations: ESCRITURA
     }, ejecutar(a => escritura.crearCompra(usuario, a)));
+
+    servidor.registerTool('vender_de_compra', {
+      title: 'Registrar piezas vendidas de una compra',
+      description: 'Anota que se vendieron piezas de un lote ya registrado en Compras ("vendí 2 de los faros que compré a Depo a $1,800"). Suma las piezas a las ya vendidas y guarda el precio de venta promedio. Primero busca la compra con resumen_compras para tener su id; confirma con la persona pieza, cantidad y precio antes de guardar. No modifica ventas, notas ni inventario.',
+      inputSchema: {
+        id: z.string().min(1).describe('Id de la compra, de resumen_compras'),
+        pieza: z.string().min(1).describe('Nombre (o parte) del artículo dentro de esa compra'),
+        cantidad_vendida: z.number().int().min(1).describe('Piezas que se vendieron ahora'),
+        precio_venta: z.number().positive().describe('Precio de venta por pieza de esta venta, en pesos')
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.venderDeCompra(usuario, a)));
 
     servidor.registerTool('eliminar_compra', {
       title: 'Eliminar compra',

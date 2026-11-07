@@ -90,6 +90,16 @@ export const TUTORIALES = {
     ]
   },
 
+  compras: {
+    titulo: 'Compras',
+    pasos: [
+      { el: '[onclick*="comprasNueva"]', titulo: 'Registrar una compra', texto: 'Anota cada lote: proveedor, piezas, cuántas compraste y a cuánto. Cuando vendas, pon cuántas y a qué precio.' },
+      { el: '.m-compras-metricas', titulo: 'Cuánto llevas', texto: 'Lo invertido, lo que ya recuperaste, la utilidad bruta y las piezas que te quedan por vender.' },
+      { el: '#compras-busqueda', titulo: 'Buscar', texto: 'Encuentra una compra por pieza, proveedor o fecha (por ejemplo 07/11/2026).' },
+      { el: '#mod-compras .table-card', titulo: 'Editar o vender', texto: 'Con Editar compra registras piezas vendidas. También se lo puedes pedir a Pepito: "vendí 2 faros del lote de Depo a 1,800".' }
+    ]
+  },
+
   proveedores: {
     titulo: 'Proveedores',
     pasos: [

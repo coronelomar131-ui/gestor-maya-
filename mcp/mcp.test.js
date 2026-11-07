@@ -890,3 +890,24 @@ test('nota sin precio: el cliente marcado (p. ej. JEIC) recibe notas sin precios
   assert.match(otro, /PRECIO/);
   assert.match(otro, /10,672\.00/);
 });
+
+test('compras: vender_de_compra suma piezas vendidas con precio promedio y no pasa de lo comprado', async () => {
+  const escritura = require('./escritura');
+  const datos = require('./datos');
+  await db.guardar('compras', 'k1', { fecha: '2026-11-01', proveedor: 'Depo', articulos: [
+    { pieza: 'Faro derecho Creta', cantidadComprada: 5, costoUnitario: 1000, cantidadVendida: 1, precioVenta: 1500 },
+    { pieza: 'Calavera izquierda', cantidadComprada: 2, costoUnitario: 400, cantidadVendida: 0, precioVenta: 0 }
+  ] });
+  const r = await escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'faro', cantidad_vendida: 2, precio_venta: 1800 });
+  assert.equal(r.vendidas_en_total, 3);
+  assert.equal(r.sin_vender, 2);
+  assert.equal(r.precio_venta_promedio, 1700, '(1×1500 + 2×1800) / 3');
+  assert.equal(r.utilidad_bruta_del_articulo, 2100);
+  const guardada = db.cols.compras.get('k1').articulos[0];
+  assert.equal(guardada.cantidadVendida, 3);
+  assert.equal(db.cols.compras.get('k1').articulos[1].cantidadVendida, 0, 'el otro artículo no cambia');
+  await assert.rejects(escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'faro', cantidad_vendida: 3, precio_venta: 1800 }), /Solo quedan 2/);
+  await assert.rejects(escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'espejo', cantidad_vendida: 1, precio_venta: 10 }), /no hay un artículo/);
+  const resumen = await datos.compras({ limite: 10 });
+  assert.equal(resumen.compras.find(c => c.id === 'k1').articulos[0].ingresos_venta, 5100);
+});

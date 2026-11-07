@@ -27,7 +27,7 @@ const MODULOS = [
   { id: 'busqueda-ventas', nombre: 'Buscar ventas', corto: 'Buscar', icono: 'search', grupo: 'Ventas', desc: 'Encuentra ventas por siniestro, cliente o monto' },
   { id: 'documentos', nombre: 'Documentos', corto: 'Documentos', icono: 'folder-open', grupo: 'Ventas', desc: 'Notas de venta y facturas' },
   { id: 'inventario', nombre: 'Inventario', corto: 'Inventario', icono: 'package', grupo: 'Almacén', desc: 'Piezas, precios y existencias' },
-  { id: 'compras', nombre: 'Compras', corto: 'Compras', icono: 'package', grupo: 'Almacén', desc: 'Costos de compra y utilidad por lote' },
+  { id: 'compras', nombre: 'Compras', corto: 'Compras', icono: 'shopping-cart', grupo: 'Almacén', desc: 'Costos de compra y utilidad por lote' },
   { id: 'proveedores', nombre: 'Proveedores', corto: 'Proveedores', icono: 'factory', grupo: 'Almacén', desc: 'Quién te surte y cómo contactarlo' },
   { id: 'mercadolibre', nombre: 'Mercado Libre', corto: 'Mercado L.', icono: 'store', grupo: 'Almacén', desc: 'Publicaciones, órdenes y alertas' },
   { id: 'entregas', nombre: 'Entregas', corto: 'Entregas', icono: 'truck', grupo: 'Logística', desc: 'Entregas a domicilio y su estatus' },

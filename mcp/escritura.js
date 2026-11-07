@@ -313,6 +313,44 @@ async function crearCompra(u, a) {
   };
 }
 
+// Venta de piezas de un lote ya comprado: suma las piezas vendidas y deja el precio de venta promedio, para que
+// los ingresos registrados antes no cambien. No toca ventas, notas ni inventario (Compras es independiente).
+async function venderDeCompra(u, a) {
+  const id = texto(a.id);
+  const compra = id && await fb().obtener('compras', id);
+  if (!compra) throw new ErrorUsuario('No encontré esa compra. Búscala primero con resumen_compras para tener su id.');
+  if (!Array.isArray(compra.articulos) || !compra.articulos.length) {
+    throw new ErrorUsuario('Esta compra se capturó con el formato anterior; edítala en el gestor (Compras → Editar compra).');
+  }
+  const q = datos.norm(a.pieza);
+  const exactos = compra.articulos.map((x, i) => i).filter(i => datos.norm(compra.articulos[i].pieza) === q);
+  const parecidos = exactos.length ? exactos : compra.articulos.map((x, i) => i).filter(i => q && datos.norm(compra.articulos[i].pieza).includes(q));
+  if (!parecidos.length) throw new ErrorUsuario('En esa compra no hay un artículo "' + a.pieza + '". Tiene: ' + compra.articulos.map(x => x.pieza).join(', ') + '.');
+  if (parecidos.length > 1) throw new ErrorUsuario('Varios artículos coinciden con "' + a.pieza + '": ' + parecidos.map(i => compra.articulos[i].pieza).join(', ') + '. ¿Cuál?');
+  const i = parecidos[0];
+  const art = Object.assign({}, compra.articulos[i]);
+  const nuevas = Number(a.cantidad_vendida);
+  const precio = Number(a.precio_venta);
+  const antes = Number(art.cantidadVendida) || 0;
+  const compradas = Number(art.cantidadComprada) || 0;
+  if (!Number.isInteger(nuevas) || nuevas < 1) throw new ErrorUsuario('La cantidad vendida debe ser un entero mayor a cero');
+  if (antes + nuevas > compradas) throw new ErrorUsuario('Solo quedan ' + (compradas - antes) + ' piezas sin vender de "' + art.pieza + '"');
+  if (!Number.isFinite(precio) || precio <= 0) throw new ErrorUsuario('El precio de venta por pieza debe ser mayor a cero');
+  const ingresos = antes * (Number(art.precioVenta) || 0) + nuevas * precio;
+  art.cantidadVendida = antes + nuevas;
+  art.precioVenta = redondear2(ingresos / art.cantidadVendida);
+  const articulos = compra.articulos.slice();
+  articulos[i] = art;
+  await fb().actualizar('compras', id, { articulos, updatedAt: fb().marcaTiempo(), updatedBy: u.uid });
+  datos.olvidarCache();
+  return {
+    id, pieza: art.pieza, vendidas_ahora: nuevas, precio_venta_ahora: redondear2(precio),
+    vendidas_en_total: art.cantidadVendida, sin_vender: compradas - art.cantidadVendida,
+    precio_venta_promedio: art.precioVenta,
+    utilidad_bruta_del_articulo: redondear2(art.cantidadVendida * (art.precioVenta - (Number(art.costoUnitario) || 0)))
+  };
+}
+
 const BORRABLES = ['notasEntrega', 'ventas', 'clientes', 'productos', 'cotizaciones', 'proveedores', 'entregas', 'envios', 'compras'];
 
 // Como deleteItem() de la app, pero antes guarda una copia en "papelera" para poder recuperarlo
@@ -337,5 +375,5 @@ async function eliminarRegistro(u, a) {
 module.exports = {
   ErrorUsuario, BORRABLES,
   crearNotaEntrega, crearVenta, cambiarEstatusVenta, guardarCliente, guardarProducto, guardarEntrega, crearCotizacion, guardarProveedor,
-  crearCompra, eliminarRegistro
+  crearCompra, venderDeCompra, eliminarRegistro
 };

@@ -1260,7 +1260,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="compras-table">
               <thead><tr>
-                <th>Fecha</th><th>Artículos</th><th>Proveedor</th><th>Piezas</th><th>Total de compra</th><th>Ingresos por venta</th><th>Utilidad</th><th>Acciones</th>
+                <th>Fecha</th><th>Artículos</th><th>Proveedor</th><th>Piezas (sin vender)</th><th>Total de compra</th><th>Ingresos por venta</th><th>Utilidad</th><th>Acciones</th>
               </tr></thead>
               <tbody id="compras-body">
                 <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Aún no hay compras</div><div class="empty-desc">Registra una compra para empezar a medir costos y utilidad.</div></div></td></tr>
@@ -1992,7 +1992,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
         <div class="form-group">
           <label for="compra-proveedor">Proveedor</label>
-          <input id="compra-proveedor" type="text" maxlength="120" placeholder="Nombre del proveedor">
+          <input id="compra-proveedor" type="text" maxlength="120" placeholder="Nombre del proveedor" list="compras-proveedores" autocomplete="off">
+          <datalist id="compras-proveedores"></datalist>
         </div>
         <div class="m-compras-campo-completo">
           <div class="m-compras-articulos-cabecera">
