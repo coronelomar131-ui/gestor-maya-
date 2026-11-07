@@ -256,7 +256,64 @@ async function guardarProveedor(u, a) {
   return { creado: await fb().agregar('proveedores', proveedor), nombre: proveedor.nombre };
 }
 
-const BORRABLES = ['notasEntrega', 'ventas', 'clientes', 'productos', 'cotizaciones', 'proveedores', 'entregas', 'envios'];
+async function crearCompra(u, a) {
+  const fecha = a.fecha || hoy();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || isNaN(Date.parse(fecha + 'T12:00:00'))) {
+    throw new ErrorUsuario('La fecha debe usar el formato AAAA-MM-DD');
+  }
+  if (!Array.isArray(a.articulos) || !a.articulos.length || a.articulos.length > 100) {
+    throw new ErrorUsuario('La compra debe tener de 1 a 100 artículos');
+  }
+  const articulos = a.articulos.map((articulo, indice) => {
+    const pieza = texto(articulo.pieza);
+    const cantidadComprada = Number(articulo.cantidad_comprada);
+    const costoUnitario = Number(articulo.costo_unitario);
+    const cantidadVendida = Number(articulo.cantidad_vendida) || 0;
+    const precioVenta = Number(articulo.precio_venta) || 0;
+    const linea = indice + 1;
+    if (!pieza) throw new ErrorUsuario('Falta el nombre del artículo ' + linea);
+    if (!Number.isInteger(cantidadComprada) || cantidadComprada < 1) {
+      throw new ErrorUsuario('La cantidad comprada del artículo ' + linea + ' debe ser un entero mayor a cero');
+    }
+    if (!Number.isFinite(costoUnitario) || costoUnitario < 0) {
+      throw new ErrorUsuario('El costo unitario del artículo ' + linea + ' debe ser válido y no negativo');
+    }
+    if (!Number.isInteger(cantidadVendida) || cantidadVendida < 0 || cantidadVendida > cantidadComprada) {
+      throw new ErrorUsuario('La cantidad vendida del artículo ' + linea + ' debe estar entre cero y lo comprado');
+    }
+    if (!Number.isFinite(precioVenta) || precioVenta < 0 || (cantidadVendida > 0 && precioVenta <= 0)) {
+      throw new ErrorUsuario('El precio de venta del artículo ' + linea + ' debe ser mayor a cero cuando ya se vendió');
+    }
+    return {
+      pieza, cantidadComprada, costoUnitario: redondear2(costoUnitario),
+      cantidadVendida, precioVenta: redondear2(precioVenta)
+    };
+  });
+  const compra = Object.assign({
+    fecha,
+    proveedor: texto(a.proveedor),
+    notas: texto(a.notas),
+    articulos,
+    createdAt: fb().marcaTiempo()
+  }, autor(u));
+  const id = await fb().agregar('compras', compra);
+  datos.olvidarCache();
+  return {
+    id,
+    fecha: compra.fecha,
+    proveedor: compra.proveedor || null,
+    articulos: articulos.map(articulo => ({
+      pieza: articulo.pieza,
+      cantidad_comprada: articulo.cantidadComprada,
+      costo_unitario: articulo.costoUnitario,
+      cantidad_vendida: articulo.cantidadVendida,
+      precio_venta_unitario: articulo.precioVenta,
+      utilidad_bruta: redondear2(articulo.cantidadVendida * (articulo.precioVenta - articulo.costoUnitario))
+    }))
+  };
+}
+
+const BORRABLES = ['notasEntrega', 'ventas', 'clientes', 'productos', 'cotizaciones', 'proveedores', 'entregas', 'envios', 'compras'];
 
 // Como deleteItem() de la app, pero antes guarda una copia en "papelera" para poder recuperarlo
 async function eliminarRegistro(u, a) {
@@ -279,5 +336,6 @@ async function eliminarRegistro(u, a) {
 
 module.exports = {
   ErrorUsuario, BORRABLES,
-  crearNotaEntrega, crearVenta, cambiarEstatusVenta, guardarCliente, guardarProducto, guardarEntrega, crearCotizacion, guardarProveedor, eliminarRegistro
+  crearNotaEntrega, crearVenta, cambiarEstatusVenta, guardarCliente, guardarProducto, guardarEntrega, crearCotizacion, guardarProveedor,
+  crearCompra, eliminarRegistro
 };

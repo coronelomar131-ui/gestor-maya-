@@ -288,6 +288,8 @@ test('solo administración y almacén pueden consultar compras con Pepito', asyn
   const pepito = require('./pepito');
   const admin = await pepito.herramientasDe(ADMIN, 'gestor');
   assert.ok(admin.tools.some(tool => tool.name === 'resumen_compras'));
+  assert.ok(admin.tools.some(tool => tool.name === 'crear_compra' && admin.escribe('crear_compra')));
+  assert.ok(admin.tools.some(tool => tool.name === 'eliminar_compra' && admin.escribe('eliminar_compra')));
   const adminResultado = await admin.llamar('resumen_compras', {});
   assert.equal(adminResultado.error, false);
   assert.equal(JSON.parse(adminResultado.texto).resumen.utilidad_bruta, 280);
@@ -295,6 +297,8 @@ test('solo administración y almacén pueden consultar compras con Pepito', asyn
 
   const almacen = await pepito.herramientasDe({ uid: 'a-1', nombre: 'Almacén', rol: 'almacen' }, 'gestor');
   assert.ok(almacen.tools.some(tool => tool.name === 'resumen_compras'));
+  assert.ok(almacen.tools.some(tool => tool.name === 'crear_compra' && almacen.escribe('crear_compra')));
+  assert.ok(almacen.tools.some(tool => tool.name === 'eliminar_compra' && almacen.escribe('eliminar_compra')));
   const resultado = await almacen.llamar('resumen_compras', { proveedor: 'faro' });
   assert.equal(resultado.error, false);
   assert.equal(JSON.parse(resultado.texto).compras_encontradas, 1);
@@ -303,10 +307,47 @@ test('solo administración y almacén pueden consultar compras con Pepito', asyn
   for (const usuario of [VENDEDOR, { uid: 'f-1', nombre: 'Facturación', rol: 'facturacion' }]) {
     const h = await pepito.herramientasDe(usuario, 'gestor');
     assert.ok(!h.tools.some(tool => tool.name === 'resumen_compras'));
+    assert.ok(!h.tools.some(tool => tool.name === 'crear_compra' || tool.name === 'eliminar_compra'));
     const generic = h.tools.find(tool => tool.name === 'buscar_registros');
     if (generic) assert.ok(!generic.input_schema.properties.modulo.enum.includes('compras'));
     await h.cerrar();
   }
+});
+
+test('Pepito propone crear y eliminar compras; ejecuta cada acción solo al confirmar', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const falsa = claudeFalso([
+    herramienta('crear_compra', {
+      fecha: '2026-11-06',
+      proveedor: 'Proveedor Prueba',
+      articulos: [
+        { pieza: 'Faro nuevo', cantidad_comprada: 2, costo_unitario: 1000, cantidad_vendida: 0, precio_venta: 0 }
+      ]
+    }),
+    texto('Voy a registrar 2 faros por $1,000 cada uno con Proveedor Prueba. ¿Confirmas?'),
+    texto('Compra registrada.'),
+    herramienta('eliminar_compra', { id: 'nuevo1', confirmar: true }),
+    texto('Voy a eliminar la compra de 2 faros de Proveedor Prueba. ¿Confirmas?'),
+    texto('Compra eliminada y respaldada.')
+  ]);
+  pepito._usarCliente(falsa);
+
+  const propuestaAlta = await pepito.conversar(ADMIN, 'Registra esta compra', 'gestor');
+  assert.equal(propuestaAlta.propuesta.herramienta, 'crear_compra');
+  assert.equal(db.cols.compras.has('nuevo1'), false, 'no guarda antes de la confirmación');
+  const alta = await pepito.resolverPropuesta(ADMIN, propuestaAlta.propuesta.id, true, 'gestor');
+  assert.equal(db.cols.compras.get('nuevo1').articulos[0].pieza, 'Faro nuevo');
+  assert.equal(alta.herramienta, 'crear_compra');
+
+  const propuestaBaja = await pepito.conversar(ADMIN, 'Elimina esa compra', 'gestor');
+  assert.equal(propuestaBaja.propuesta.herramienta, 'eliminar_compra');
+  assert.equal(db.cols.compras.has('nuevo1'), true, 'conserva la compra antes de confirmar el borrado');
+  const baja = await pepito.resolverPropuesta(ADMIN, propuestaBaja.propuesta.id, true, 'gestor');
+  assert.equal(db.cols.compras.has('nuevo1'), false);
+  const respaldo = [...db.cols.papelera.values()].find(doc => doc.coleccion === 'compras' && doc.idOriginal === 'nuevo1');
+  assert.equal(respaldo.datos.articulos[0].pieza, 'Faro nuevo');
+  assert.equal(baja.herramienta, 'eliminar_compra');
 });
 
 test('guardar_producto con id sí cambia el código; buscado por código no lo cambia', async () => {

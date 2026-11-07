@@ -99,6 +99,8 @@ Pepito también puede consultar los datos con **“¿Cuánto invertimos en compr
 artículo, proveedor y fechas. La herramienta **Consultar compras y utilidad** es de solo lectura y solo está disponible
 para los roles de administración y almacén. El agente usa los costos e ingresos capturados en Compras; no toma precios
 de Ventas, notas ni Inventario. Los cambios recientes pueden tardar hasta 5 minutos en aparecer en la consulta del agente.
+También puede proponer una compra nueva con sus artículos y precios, o eliminar una compra existente. Antes de guardar
+o borrar, Pepito presenta los datos y espera tu confirmación; al borrar, el registro queda respaldado en la papelera.
 
 ## 7. Pepito
 
