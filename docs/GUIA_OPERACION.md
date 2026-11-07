@@ -78,7 +78,31 @@ pendientes de cada área:
 
 Cada quien ve solo las áreas de su rol. No necesita cuenta de Claude (el artifact de claude.ai sí la pide).
 
-## 6. Pepito
+## 6. Compras y utilidad
+
+El módulo **Compras** es un registro separado, disponible para administración y almacén. No aumenta ni descuenta
+existencias del módulo Inventario y tampoco agrega datos a Ventas, notas o facturas.
+
+1. Entra a **Compras → Registrar compra** y captura fecha y proveedor. Agrega todos los artículos que vengan en esa
+   compra; para cada uno captura cantidad, precio de compra por pieza y, cuando corresponda, cantidad vendida y precio
+   de venta por pieza. Los totales y la utilidad se actualizan mientras escribes.
+2. Para corregir una compra después, toca **Editar compra**. Puedes cambiar sus artículos, precios, cantidades y datos
+   generales, agregar más artículos o quitar los que ya no correspondan.
+3. La utilidad bruta se calcula por artículo como **piezas vendidas × (precio de venta por pieza − precio de compra por
+   pieza)**. No incluye gastos
+   adicionales, impuestos ni comisiones.
+
+Los indicadores resumen todas las compras guardadas. Las piezas pendientes son solo las de este registro, no una copia
+del inventario general. Los registros anteriores de un solo artículo siguen apareciendo y se pueden editar.
+
+Pepito también puede consultar los datos con **“¿Cuánto invertimos en compras y cuál es la utilidad?”** o buscar por
+artículo, proveedor y fechas. La herramienta **Consultar compras y utilidad** es de solo lectura y solo está disponible
+para los roles de administración y almacén. El agente usa los costos e ingresos capturados en Compras; no toma precios
+de Ventas, notas ni Inventario. Los cambios recientes pueden tardar hasta 5 minutos en aparecer en la consulta del agente.
+También puede proponer una compra nueva con sus artículos y precios, o eliminar una compra existente. Antes de guardar
+o borrar, Pepito presenta los datos y espera tu confirmación; al borrar, el registro queda respaldado en la papelera.
+
+## 7. Pepito
 
 Mientras no haya presupuesto para la API, Pepito contesta por el buzón (*módulo Pepito*): alguien con acceso admin
 a Claude lo pone a revisar (por ejemplo `/loop 1m revisa el buzón de Pepito y contesta los pendientes`).
@@ -89,10 +113,11 @@ Con el MCP ya puede responder, además de ventas y notas:
 
 Para guardar algo, Pepito primero dice qué va a guardar y espera confirmación.
 
-## 7. Dónde se guarda cada cosa (Firebase)
+## 8. Dónde se guarda cada cosa (Firebase)
 
 | Dato | Dónde |
 |---|---|
+| Lotes de compra, costo unitario e ingresos de venta | colección `compras` (independiente de `ventas`, `notasEntrega` y `productos`) |
 | Etapa e historial de una pieza | `etapa` y `seguimiento` en la nota (`notasEntrega`) o venta (`ventas`) |
 | Facturas (datos del XML, notas ligadas, pagos, saldo) | colección `facturas` |
 | Factura ligada a una nota | `facturaId`, `facturaFolio`, `facturaUUID` en la nota o venta |

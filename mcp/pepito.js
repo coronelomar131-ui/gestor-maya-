@@ -180,7 +180,7 @@ async function herramientasDe(usuario, canal) {
 
 // ── Actividad para la Oficina 3D: qué área trabajó en cada pedido (config/pepito_actividad, últimos 12) ──
 const AREA_DE = {
-  historial_notas: 'reportes', resumen_ventas: 'reportes', buscar_ventas: 'reportes', buscar_registros: 'reportes',
+  historial_notas: 'reportes', resumen_ventas: 'reportes', buscar_ventas: 'reportes', buscar_registros: 'reportes', resumen_compras: 'entregas',
   ver_nota: 'facturacion', pendientes_facturar: 'facturacion', crear_nota_entrega: 'facturacion', crear_venta: 'facturacion',
   cobranza: 'cobranza',
   buscar_productos: 'entregas', buscar_productos_ml: 'entregas', guardar_producto: 'entregas', guardar_entrega: 'entregas',

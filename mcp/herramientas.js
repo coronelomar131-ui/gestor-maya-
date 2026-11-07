@@ -12,6 +12,7 @@ const PERMISOS = {
   clientes: ['admin', 'vendedor', 'facturacion'],
   facturas: ['admin', 'facturacion'],
   inventario: ['admin', 'almacen'],
+  compras: ['admin', 'almacen'],
   entregas: ['admin', 'vendedor', 'almacen'],
   envios: ['admin', 'vendedor', 'almacen'],
   visitas_talleres: ['admin', 'vendedor', 'almacen'],
@@ -80,11 +81,12 @@ function instrucciones(usuario) {
     'Hay dos tipos de nota: nota de entrega (folio NE-123) y nota de venta (folio NV #123). Salvo que se pida un tipo, el historial y el resumen incluyen ambas; no incluyen notas de venta canceladas ni las que se crean solas al guardar una nota de entrega (esa venta ya aparece como su NE).',
     'En cada nota: total = subtotal + iva - ajuste. Los totales del resumen son la suma exacta de las notas. Usa solo montos que vengan de las herramientas; no estimes ni inventes cifras.',
     'En las notas de venta no se guarda cantidad: cantidad y precio_unitario vienen en null y el importe es el precio capturado de la partida.',
+    'Compras es un registro independiente de ventas, notas e inventario. Usa resumen_compras para consultar el costo de compra, ingresos registrados y utilidad bruta por artículo; la utilidad es precio de venta por unidad menos costo unitario, multiplicado por unidades vendidas. No afirmes que estos datos actualizan ventas ni existencias.',
     'Si resumen.posibles_duplicados no está vacío, avísale al usuario: podría ser la misma venta capturada como nota de venta y como nota de entrega, y el total la estaría sumando dos veces.',
     'Algunas notas van sin precio a propósito (así las piden algunos clientes): resumen.notas_sin_importe dice cuántas están en $0 (folios en folios_sin_importe). Cuentan como nota pero no suman al total; menciónalo en una línea al dar totales, sin tratarlo como error.',
     'Una venta puede tener tres folios: NV #243 (su número en Ventas), NV-219 (el de Facturas) y F-219 (el de su factura). Si una nota trae otros_folios, son los de la venta ligada; úsalos al responder para que el usuario la reconozca.',
     'Para no agotar el límite diario de lecturas de Firebase, las consultas reutilizan los datos hasta 5 minutos: si alguien acaba de capturar algo en la app y no aparece, espera unos minutos. Lo que se guarda desde aquí aparece al momento.',
-    'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos.',
+    'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos. Las altas y bajas de compras también requieren confirmación explícita: presenta proveedor, fecha, artículos, cantidades y costos antes de crear; antes de eliminar, identifica la compra y pide confirmación.',
     'En notas, ventas y cotizaciones no pongas vendedor a menos que la persona diga quién vendió; no uses al usuario conectado como vendedor.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
@@ -221,6 +223,49 @@ function crearServidor(usuario) {
       },
       annotations: LECTURA
     }, ejecutar(a => datos.cobranza(a)));
+  }
+
+  if (puede('compras')) {
+    servidor.registerTool('resumen_compras', {
+      title: 'Consultar compras y utilidad',
+      description: 'Consulta compras independientes de Ventas, notas e Inventario. Calcula costo total, ingresos por unidades vendidas y utilidad bruta por artículo, con filtros opcionales por artículo, proveedor y fechas. No modifica datos. Los cambios recientes pueden tardar hasta 5 minutos en aparecer.',
+      inputSchema: {
+        texto: z.string().optional().describe('Parte del nombre de un artículo; también encuentra el proveedor o las notas de la compra'),
+        proveedor: z.string().optional().describe('Parte del nombre del proveedor'),
+        desde: FECHA.optional().describe('Primer día incluido (AAAA-MM-DD)'),
+        hasta: FECHA.optional().describe('Último día incluido (AAAA-MM-DD)'),
+        limite: z.number().int().min(1).max(100).default(30).describe('Máximo de compras a mostrar; el resumen considera todas las coincidencias')
+      },
+      annotations: LECTURA
+    }, ejecutar(a => datos.compras(a)));
+
+    servidor.registerTool('crear_compra', {
+      title: 'Registrar compra',
+      description: 'Registra una compra independiente de Ventas, notas e Inventario. Puede incluir varios artículos, cada uno con cantidad y costo unitario, y opcionalmente piezas vendidas y su precio de venta por pieza. Antes de proponerla, confirma con la persona todos los artículos, cantidades, costos, fecha y proveedor. Nunca inventes datos.',
+      inputSchema: {
+        fecha: FECHA.optional().describe('Fecha de compra; por omisión hoy'),
+        proveedor: z.string().max(120).optional(),
+        notas: z.string().max(500).optional(),
+        articulos: z.array(z.object({
+          pieza: z.string().min(1).max(160),
+          cantidad_comprada: z.number().int().min(1),
+          costo_unitario: z.number().min(0),
+          cantidad_vendida: z.number().int().min(0).default(0),
+          precio_venta: z.number().min(0).default(0)
+        })).min(1).max(100)
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => escritura.crearCompra(usuario, a)));
+
+    servidor.registerTool('eliminar_compra', {
+      title: 'Eliminar compra',
+      description: 'Elimina una compra después de que la persona confirme explícitamente. Primero busca la compra con resumen_compras o buscar_registros (módulo compras), presenta su proveedor, fecha e artículos, y pide confirmación. Al borrarla se guarda una copia recuperable en papelera. No elimina ventas, notas ni inventario.',
+      inputSchema: {
+        id: z.string().min(1).describe('Id del registro de compra obtenido de una búsqueda'),
+        confirmar: z.literal(true).describe('true solo después de que la persona haya confirmado el borrado')
+      },
+      annotations: BORRADO
+    }, ejecutar(({ id }) => escritura.eliminarRegistro(usuario, { coleccion: 'compras', id })));
   }
 
   const modulos = Object.keys(datos.MODULOS).filter(puede);

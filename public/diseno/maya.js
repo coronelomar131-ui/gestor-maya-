@@ -27,6 +27,7 @@ const MODULOS = [
   { id: 'busqueda-ventas', nombre: 'Buscar ventas', corto: 'Buscar', icono: 'search', grupo: 'Ventas', desc: 'Encuentra ventas por siniestro, cliente o monto' },
   { id: 'documentos', nombre: 'Documentos', corto: 'Documentos', icono: 'folder-open', grupo: 'Ventas', desc: 'Notas de venta y facturas' },
   { id: 'inventario', nombre: 'Inventario', corto: 'Inventario', icono: 'package', grupo: 'Almacén', desc: 'Piezas, precios y existencias' },
+  { id: 'compras', nombre: 'Compras', corto: 'Compras', icono: 'package', grupo: 'Almacén', desc: 'Costos de compra y utilidad por lote' },
   { id: 'proveedores', nombre: 'Proveedores', corto: 'Proveedores', icono: 'factory', grupo: 'Almacén', desc: 'Quién te surte y cómo contactarlo' },
   { id: 'mercadolibre', nombre: 'Mercado Libre', corto: 'Mercado L.', icono: 'store', grupo: 'Almacén', desc: 'Publicaciones, órdenes y alertas' },
   { id: 'entregas', nombre: 'Entregas', corto: 'Entregas', icono: 'truck', grupo: 'Logística', desc: 'Entregas a domicilio y su estatus' },
@@ -40,7 +41,8 @@ const MODULOS = [
 const PERMISOS = {
   dashboard: ['admin', 'vendedor', 'almacen', 'facturacion'], pepito: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
   oficina: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'], seguimiento: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
-  facturacion: ['admin', 'facturacion'], cobranza: ['admin', 'facturacion'], ventas: ['admin', 'vendedor', 'facturacion'], inventario: ['admin', 'almacen'],
+  facturacion: ['admin', 'facturacion'], cobranza: ['admin', 'facturacion'],
+  ventas: ['admin', 'vendedor', 'facturacion'], inventario: ['admin', 'almacen'], compras: ['admin', 'almacen'],
   clientes: ['admin', 'vendedor', 'facturacion'], cotizaciones: ['admin', 'vendedor'], proveedores: ['admin', 'almacen'],
   entregas: ['admin', 'vendedor', 'almacen'], envios: ['admin', 'vendedor', 'almacen'], 'visitas-talleres': ['admin', 'vendedor', 'almacen'],
   reportes: ['admin'], mercadolibre: ['admin'], documentos: ['admin', 'vendedor', 'facturacion'], 'notas-entrega': ['admin', 'vendedor', 'almacen', 'facturacion'],
@@ -52,7 +54,7 @@ const FIJADOS_INICIALES = {
   facturacion: ['dashboard', 'oficina', 'facturacion', 'cobranza', 'seguimiento', 'pepito'],
   entregas: ['oficina', 'seguimiento', 'pepito'],
   vendedor: ['dashboard', 'pepito', 'notas-entrega', 'ventas', 'clientes', 'cotizaciones'],
-  almacen: ['dashboard', 'pepito', 'seguimiento', 'notas-entrega', 'inventario', 'entregas']
+  almacen: ['dashboard', 'pepito', 'seguimiento', 'notas-entrega', 'inventario', 'compras', 'entregas']
 };
 const MAX_FIJADOS = 8;
 const EN_BARRA = 4;

@@ -109,6 +109,9 @@ Colecciones principales:
 - `envios` — envíos registrados
 - `config` — configuración del sistema
 
+El módulo **Compras** guarda lotes y ventas acumuladas en `compras`. Su interfaz y cálculos están en
+`public/diseno/compras.js`; es independiente de `ventas`, `notasEntrega` y `productos`.
+
 **Importante:** NO modifiques la estructura de las colecciones desde Firebase console a mano. Siempre través del código de la app.
 
 ## Debugging (cómo encontrar errores)
