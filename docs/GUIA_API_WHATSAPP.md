@@ -125,3 +125,19 @@ https://developers.facebook.com/docs/whatsapp/pricing). Los mensajes dentro de l
 Con el número de prueba solo llegan a los 5 números que tengas dados de alta en Meta.
 
 En `https://gestor-maya.vercel.app/api/whatsapp` (diagnóstico) aparecen los envíos que Meta no entregó y por qué.
+
+## 7. Grupo "Entregas y cobranza" (pasa por Pepito)
+
+WhatsApp solo deja meter un número de empresa a grupos si es **cuenta oficial verificada (OBA)**, con máximo 8 personas.
+Mientras no la tengamos, el grupo funciona por medio de Pepito:
+
+- **Quién está:** el admin lo elige en el gestor → campanita → **Grupo** → *Quién está en el grupo* (máximo 8).
+- **Escribir al grupo por WhatsApp:** mandarle a Pepito un mensaje que empiece con `grupo:` (también `#grupo`, `al grupo` o 👥).
+  Ejemplo: `grupo: ya salió la ruta de la tarde`. Pepito se lo pasa a los demás con el nombre de quien lo escribió.
+  Sin los dos puntos ("Grupo Automotriz…") se toma como pregunta normal, para no confundir clientes que se llaman "Grupo".
+- **Con Pepito:** "avísale al grupo que LATAM ya pagó" o "¿qué dijeron en el grupo?".
+- **Desde el gestor:** campanita → **Grupo** para leer los últimos mensajes y escribir.
+- **Automático:** pieza en camino o entregada, factura nueva y pagos le llegan al grupo (una sola vez a cada miembro).
+- Igual que los demás avisos, por WhatsApp solo llega si esa persona le escribió a Pepito en las últimas 24 horas
+  (o con la plantilla `WHATSAPP_PLANTILLA_AVISO`); si no, se le entrega cuando escriba. En la campanita siempre llega.
+- Se guarda en `config/grupo_entregas_cobranza` (miembros y últimos 60 mensajes).
