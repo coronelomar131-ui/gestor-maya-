@@ -1710,3 +1710,21 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-aviso-duplicado[hidden] { display: none; }
 #c-guardar:disabled { opacity: .5; cursor: not-allowed; }
 .m-aviso-duplicado.es-parecido { border-color: rgba(245, 158, 11, .5); background: rgba(245, 158, 11, .12); color: #fcd34d; }
+
+/* ── Grupo Entregas y cobranza (en la campanita) ── */
+.m-avisos-grupo { padding: 10px 16px 12px; border-bottom: 1px solid var(--m-linea); max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
+.m-avisos-grupo h4 { display: flex; align-items: center; gap: 8px; margin: 0; font: 700 15px var(--m-f-titulo); color: var(--m-niebla); }
+.m-avisos-grupo h4 svg { color: var(--m-faro-claro); }
+.m-avisos-ico.t-grupo { background: rgba(124, 196, 120, 0.16); color: #9be29a; }
+.m-grupo-form { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+.m-grupo-form textarea { flex: 1; min-height: 44px; resize: vertical; padding: 9px 12px; border-radius: var(--m-r); border: 1px solid var(--m-vidrio-borde); background: var(--m-relleno); color: var(--m-niebla); font: 14px/1.4 var(--m-f-texto); }
+.m-grupo-form .btn { width: auto; flex: none; }
+.m-grupo-mensajes { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.m-grupo-mensajes li { padding: 8px 10px; border-radius: var(--m-r); background: rgba(255, 255, 255, 0.04); }
+.m-grupo-mensajes strong { font: 700 12.5px var(--m-f-texto); color: var(--m-faro-claro); }
+.m-grupo-mensajes p { margin: 2px 0 0; font-size: 13.5px; line-height: 1.42; color: var(--m-niebla); white-space: pre-line; overflow-wrap: anywhere; }
+.m-grupo-mensajes small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--m-texto-3); }
+.m-grupo-mensajes li.vacio p { color: var(--m-texto-3); }
+.m-grupo-admin { margin-top: 12px; }
+.m-grupo-admin summary { cursor: pointer; font: 600 13px var(--m-f-texto); color: var(--m-texto-2); padding: 4px 0; }
+.m-grupo-admin .btn { width: auto; margin-top: 6px; }

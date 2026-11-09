@@ -1006,3 +1006,54 @@ test('clientes repetidos: mismo nombre con o sin S.A. de C.V., RFC, teléfono o 
   assert.ok(p2.creado, 'con la confirmación sí se crea');
   assert.equal(dup.buscarParecido({ razonSocial: 'Taller' }, [{ id: 'z', razonSocial: 'Taler' }]), null, 'nombres cortos no se comparan así');
 });
+
+test('grupo Entregas y cobranza: "grupo:" se reparte a los demás, solo el admin elige miembros y los pagos llegan al grupo una vez', async () => {
+  const grupo = require('./grupo');
+  const avisos = require('./avisos');
+  const wa = whatsappFalso();
+  try {
+    assert.equal(grupo.textoParaGrupo('grupo: ya salió la guía de la NE-039'), 'ya salió la guía de la NE-039');
+    assert.equal(grupo.textoParaGrupo('#grupo mañana no hay ruta'), 'mañana no hay ruta');
+    assert.equal(grupo.textoParaGrupo('Al grupo, LATAM ya pagó'), 'LATAM ya pagó');
+    assert.equal(grupo.textoParaGrupo('Grupo Automotriz del Valle cuánto debe'), null, 'un cliente que se llama Grupo… no es para el grupo');
+    assert.equal(grupo.textoParaGrupo('grupo:'), null);
+
+    const ent = { uid: 'e-1', nombre: 'Israel Ruta', rol: 'entregas', whatsapp10: '5511110000' };
+    const cob = { uid: 'c-1', nombre: 'Gera Cobranza', rol: 'facturacion', whatsapp10: '5522220000' };
+    const fuera = { uid: 'z-1', nombre: 'Fuera Grupo', rol: 'vendedor', whatsapp10: '5533330000' };
+    [ent, cob, fuera, OMAR].forEach((u, i) => db.cols.usuarios.set('g' + i, u));
+    await assert.rejects(grupo.guardarMiembros(ent, ['e-1']), /Solo un admin/);
+    await assert.rejects(grupo.guardarMiembros(OMAR, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].map((x, i) => (db.cols.usuarios.set('m' + i, { uid: 'm' + i, nombre: 'M' + i }), 'm' + i))), /máximo 8/);
+    const r0 = await grupo.guardarMiembros(OMAR, ['e-1', 'c-1', 'o-1', 'no-existe']);
+    assert.deepEqual(r0.miembros.sort(), ['Gera Cobranza', 'Israel Ruta', 'Omar Coronel']);
+
+    await assert.rejects(grupo.mandar(fuera, 'hola'), /No estás en el grupo/);
+    const r1 = await grupo.mandar(ent, 'Ya salió la guía de la NE-039', { canal: 'whatsapp' });
+    assert.deepEqual(r1.enviado_a.sort(), ['Gera Cobranza', 'Omar Coronel'], 'a todos menos a quien lo escribió');
+    assert.ok(!db.cols.avisos_usuario.get('e-1'), 'a quien lo escribió no le llega');
+    assert.ok(!db.cols.avisos_usuario.get('z-1'), 'a quien no está en el grupo no le llega');
+    assert.match(db.cols.avisos_usuario.get('c-1').lista[0].texto, /👥 \*Entregas y cobranza\* · Israel:\nYa salió la guía de la NE-039/);
+    assert.equal(db.cols.avisos_usuario.get('c-1').lista[0].tipo, 'grupo');
+    assert.ok(wa.enviados.some(m => m.to.endsWith('5522220000') && /Ya salió la guía/.test(m.text.body)));
+    assert.equal((await grupo.ultimos())[0].de, 'Israel');
+
+    // Un pago: los del grupo lo reciben como mensaje del grupo (una sola vez); el resto como siempre
+    await db.guardar('facturas', 'fg', { serieFolio: 'A-10', clienteNombre: 'Refacciones Prueba', total: 1000, saldo: 0, estatus: 'pagada', notas: [{ col: 'notasEntrega', id: 'ne039', folio: 'NE-039' }] });
+    const antes = db.cols.avisos_usuario.get('o-1').lista.length;
+    await avisos.porEvento('pago', { id: 'fg', monto: 1000 }, cob);
+    const omar = db.cols.avisos_usuario.get('o-1').lista;
+    assert.equal(omar.length, antes + 1, 'Omar (admin y del grupo) lo recibe una vez');
+    assert.match(omar[0].texto, /Entregas y cobranza\* · Pepito:\n💰 Refacciones Prueba pagó \$1,000\.00 de la A-10\. Quedó pagada ✅ \(Gera\)/);
+    assert.equal(db.cols.avisos_usuario.get('c-1').lista.length, 1, 'quien registró el pago no recibe el aviso');
+
+    // Pepito tiene las herramientas del grupo solo si la persona está en él
+    process.env.ANTHROPIC_API_KEY = 'prueba';
+    const pepito = require('./pepito');
+    const falso = claudeFalso([texto('Hola'), texto('Hola')]);
+    pepito._usarCliente(falso);
+    await pepito.conversar(ent, 'hola', 'gestor');
+    await pepito.conversar(fuera, 'hola', 'gestor');
+    assert.ok(falso.llamadas[0].tools.some(t => t.name === 'mandar_al_grupo'));
+    assert.ok(!falso.llamadas[1].tools.some(t => t.name === 'mandar_al_grupo'));
+  } finally { wa.cerrar(); }
+});

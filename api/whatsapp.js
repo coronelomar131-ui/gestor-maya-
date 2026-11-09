@@ -5,6 +5,7 @@
 process.env.TZ = 'America/Mexico_City';
 const crypto = require('crypto');
 const pepito = require('../mcp/pepito');
+const grupo = require('../mcp/grupo');
 const acceso = require('../mcp/acceso');
 const documentos = require('../mcp/documentos');
 const voz = require('../mcp/voz');
@@ -172,7 +173,14 @@ module.exports = async (req, res) => {
     if (t !== null) {
       const conv = await fb().obtener('pepito_conversacion', usuario.uid);
       const corto = t.replace(/[.,!¡¿?\s]+$/g, '').trim();
-      if (!imagenes && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
+      const alGrupo = !imagenes && !encabezado ? grupo.textoParaGrupo(t) : null;
+      if (alGrupo) {
+        // "grupo: ya salió la guía": se reparte tal cual a los demás del grupo, sin pasar por Claude
+        try {
+          const r = await grupo.mandar(usuario, alGrupo, { canal: 'whatsapp' });
+          texto = r.enviado_a.length ? '👥 Listo, se lo mandé al grupo ' + grupo.NOMBRE + ': ' + r.enviado_a.join(', ') + '.' : '👥 Lo guardé en el grupo, pero todavía no hay nadie más en él.';
+        } catch (e) { texto = e.noMiembro ? e.message : 'No pude mandarlo al grupo: ' + e.message; }
+      } else if (!imagenes && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
         const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
         texto = r.texto;
         adjunto = documentos.deCreacion(r.herramienta, r.resultado);

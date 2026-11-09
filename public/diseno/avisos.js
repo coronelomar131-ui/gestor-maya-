@@ -18,7 +18,7 @@ const hace = t => {
   if (h < 24) return 'hace ' + h + ' h';
   return new Date(t).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) + ' · ' + new Date(t).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 };
-const ICONO = { resumen: 'sun', momento: 'bell', alarma: 'clock' };
+const ICONO = { resumen: 'sun', momento: 'bell', alarma: 'clock', grupo: 'users' };
 const PREFS = [
   ['whatsapp', 'También por WhatsApp', 'Si tu número está registrado en Usuarios'],
   ['resumen', 'Resumen de cada mañana', 'Lo de tu rol: ventas, por preparar, en camino, por cobrar'],
@@ -31,15 +31,74 @@ let uid = null;
 let abierto = false;
 const inicio = Date.now();
 
+async function llamarApi(evento, datos) {
+  const u = window.auth && window.auth.currentUser;
+  if (!u) throw new Error('Inicia sesión de nuevo');
+  const token = await u.getIdToken();
+  const r = await fetch('/api/avisos', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(Object.assign({ evento }, datos)) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || 'No se pudo (' + r.status + ')');
+  return j;
+}
+
 // ── Avisos al momento ──
 window.mayaAvisar = async function (evento, datos) {
-  try {
-    const u = window.auth && window.auth.currentUser;
-    if (!u) return;
-    const token = await u.getIdToken();
-    await fetch('/api/avisos', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(Object.assign({ evento }, datos)) });
-  } catch (e) { console.warn('avisos:', e.message); }
+  try { await llamarApi(evento, datos); } catch (e) { console.warn('avisos:', e.message); }
 };
+
+// ── Grupo Entregas y cobranza (los mensajes pasan por Pepito: le llegan a cada quien por WhatsApp y aquí) ──
+let grupo = null;
+async function cargarGrupo(evento = 'grupo_ver', datos) {
+  const caja = $('.m-avisos-grupo');
+  if (!caja) return;
+  if (!grupo) caja.innerHTML = '<p class="m-avisos-tip">Cargando el grupo…</p>';
+  try { grupo = await llamarApi(evento, datos); pintarGrupo(); return true; }
+  catch (e) {
+    if (window.toast) window.toast(e.message, 'error');
+    if (!grupo) caja.innerHTML = '<p class="m-avisos-tip">No se pudo abrir el grupo: ' + escapar(e.message) + '</p>';
+    return false;
+  }
+}
+function pintarGrupo() {
+  const caja = $('.m-avisos-grupo');
+  if (!caja || !grupo) return;
+  const g = grupo;
+  const miembros = g.miembros.length ? g.miembros.map(m => escapar(m.nombre) + (m.whatsapp ? '' : ' <small>(sin WhatsApp)</small>')).join(', ') : 'Nadie todavía';
+  let html = `<h4>${icono('users', 16)} ${escapar(g.grupo)}</h4><p class="m-avisos-tip">En el grupo: ${miembros}</p>`;
+  if (g.soy_miembro) {
+    html += `<form class="m-grupo-form"><textarea rows="2" maxlength="1500" placeholder="Escribe al grupo… (ej. ya salió la guía de la NE-245)" aria-label="Mensaje para el grupo"></textarea>
+      <button type="submit" class="btn btn-primary btn-sm">Mandar</button></form>
+      <p class="m-avisos-tip">Por WhatsApp: escríbele a Pepito empezando con <em>grupo:</em> y se lo pasa a los demás.</p>
+      <ul class="m-grupo-mensajes">${g.mensajes.length ? g.mensajes.map(m => `<li><strong>${escapar(m.de)}</strong><p>${formato(m.texto)}</p><small>${hace(m.ts)}</small></li>`).join('') : '<li class="vacio"><p>Todavía no hay mensajes.</p></li>'}</ul>`;
+  } else html += '<p class="m-avisos-tip">No estás en este grupo.' + (g.equipo ? '' : ' Pídele al admin que te agregue.') + '</p>';
+  if (g.equipo) {
+    const dentro = new Set(g.miembros.map(m => m.id));
+    html += `<details class="m-grupo-admin"${g.miembros.length ? '' : ' open'}><summary>Quién está en el grupo (máximo 8)</summary>
+      ${g.equipo.map(u => `<label class="m-avisos-pref"><span><strong>${escapar(u.nombre)}</strong><small>${escapar(u.rol)}${u.whatsapp ? '' : ' · sin WhatsApp registrado'}</small></span>
+        <input type="checkbox" data-miembro="${escapar(u.id)}"${dentro.has(u.id) ? ' checked' : ''}></label>`).join('')}
+      <button type="button" class="btn btn-secondary btn-sm m-grupo-guardar">Guardar miembros</button></details>`;
+  }
+  caja.innerHTML = html;
+  const form = $('.m-grupo-form', caja);
+  if (form) form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const area = $('textarea', form);
+    const texto = area.value.trim();
+    if (!texto) return;
+    const boton = $('button', form);
+    boton.disabled = true;
+    if (await cargarGrupo('grupo_mensaje', { texto })) { area.value = ''; if (window.toast) window.toast('Mandado al grupo', 'success'); }
+    boton.disabled = false;
+  });
+  const guardar = $('.m-grupo-guardar', caja);
+  if (guardar) guardar.addEventListener('click', async () => {
+    const ids = [...caja.querySelectorAll('[data-miembro]:checked')].map(x => x.dataset.miembro);
+    if (ids.length > 8) { if (window.toast) window.toast('Máximo 8 personas', 'error'); return; }
+    guardar.disabled = true;
+    if (await cargarGrupo('grupo_miembros', { miembros: ids }) && window.toast) window.toast('Grupo actualizado', 'success');
+    guardar.disabled = false;
+  });
+}
 
 // ── Campanita ──
 const nuevos = () => estado.lista.filter(a => a.ts > (estado.visto || 0)).length;
@@ -83,15 +142,22 @@ function abrir() {
     p.className = 'm-avisos-panel m-vidrio';
     p.setAttribute('role', 'dialog');
     p.setAttribute('aria-label', 'Avisos');
-    p.innerHTML = `<header><strong>Avisos</strong><button type="button" class="m-avisos-ajustes" aria-expanded="false">${icono('settings', 16)} Preferencias</button>
+    p.innerHTML = `<header><strong>Avisos</strong><button type="button" class="m-avisos-ajustes m-avisos-btn-grupo" aria-expanded="false">${icono('users', 16)} Grupo</button>
+      <button type="button" class="m-avisos-ajustes m-avisos-btn-prefs" aria-expanded="false">${icono('settings', 16)} Preferencias</button>
       <button type="button" class="m-btn-redondo m-avisos-cerrar" aria-label="Cerrar">${icono('x', 18)}</button></header>
-      <div class="m-avisos-prefs" hidden></div><ul class="m-avisos-lista"></ul>`;
+      <div class="m-avisos-grupo" hidden></div><div class="m-avisos-prefs" hidden></div><ul class="m-avisos-lista"></ul>`;
     document.body.appendChild(p);
     p.querySelector('.m-avisos-cerrar').addEventListener('click', cerrar);
-    p.querySelector('.m-avisos-ajustes').addEventListener('click', e => {
+    p.querySelector('.m-avisos-btn-prefs').addEventListener('click', e => {
       const prefs = p.querySelector('.m-avisos-prefs');
       prefs.hidden = !prefs.hidden;
       e.currentTarget.setAttribute('aria-expanded', String(!prefs.hidden));
+    });
+    p.querySelector('.m-avisos-btn-grupo').addEventListener('click', e => {
+      const caja = p.querySelector('.m-avisos-grupo');
+      caja.hidden = !caja.hidden;
+      e.currentTarget.setAttribute('aria-expanded', String(!caja.hidden));
+      if (!caja.hidden) cargarGrupo();
     });
     p.querySelector('.m-avisos-prefs').addEventListener('change', guardarPref);
   }
@@ -140,6 +206,7 @@ function escuchar(nuevoUid) {
   if (uid === nuevoUid) return;
   if (quitar) { quitar(); quitar = null; }
   uid = nuevoUid;
+  grupo = null;
   estado = { lista: [], visto: 0 };
   if (!uid) return;
   quitar = window.onSnapshot(window.doc(window.db, 'avisos_usuario', uid), snap => {
@@ -151,7 +218,11 @@ function escuchar(nuevoUid) {
       if (window.toast) window.toast(String(a.texto).replace(/\*/g, '').split('\n')[0].slice(0, 120), 'info');
     });
     pintarBoton();
-    if (abierto) { pintarPanel(); marcarVisto(); }
+    if (abierto) {
+      pintarPanel(); marcarVisto();
+      const caja = $('.m-avisos-grupo');
+      if (caja && !caja.hidden && estado.lista.some(a => !antes.has(a.id) && a.tipo === 'grupo')) cargarGrupo();
+    }
   }, err => console.warn('avisos:', err.message));
 }
 

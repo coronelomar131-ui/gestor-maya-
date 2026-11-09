@@ -4,6 +4,7 @@
 //  2. Tick cada 5 minutos (cron-job.org, gratis): /api/avisos?tarea=tick con el mismo encabezado Authorization.
 //     Manda las alarmas que ya tocan y, después de las AVISOS_HORA (8 por defecto), el resumen del día si no ha salido.
 //  3. Avisos al momento desde el gestor: POST { evento, ... } con el token de Firebase de quien hizo el cambio.
+//     También el grupo Entregas y cobranza: evento grupo_ver, grupo_mensaje { texto } y grupo_miembros { miembros } (admin).
 // Si alguien no le ha escrito a Pepito en 24 h, WhatsApp solo deja usar una plantilla aprobada
 // (WHATSAPP_PLANTILLA_REPORTE para el resumen, WHATSAPP_PLANTILLA_AVISO para lo demás); si no hay, queda guardado
 // y se le entrega cuando escriba. En la campanita del gestor siempre llega.
@@ -12,6 +13,7 @@ const { fb } = require('../mcp/firebase');
 const avisos = require('../mcp/avisos');
 const reporte = require('../mcp/reporte');
 const acceso = require('../mcp/acceso');
+const grupo = require('../mcp/grupo');
 
 const EVENTOS = ['nota_nueva', 'etapa', 'factura', 'pago'];
 const hoyCDMX = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -46,6 +48,14 @@ module.exports = async (req, res) => {
   if (req.method === 'POST' && d.evento) {
     const usuario = await acceso.porToken(req);
     if (!usuario) return res.status(401).json({ ok: false, error: 'Inicia sesión de nuevo' });
+    // Grupo Entregas y cobranza desde la campanita: ver, escribir y (admin) elegir quiénes están
+    if (d.evento === 'grupo_ver' || d.evento === 'grupo_mensaje' || d.evento === 'grupo_miembros') {
+      try {
+        if (d.evento === 'grupo_mensaje') await grupo.mandar(usuario, d.texto, { canal: 'gestor' });
+        if (d.evento === 'grupo_miembros') await grupo.guardarMiembros(usuario, d.miembros);
+        return res.status(200).json(Object.assign({ ok: true }, await grupo.verGrupo(usuario)));
+      } catch (e) { return res.status(400).json({ ok: false, error: e.message }); }
+    }
     if (!EVENTOS.includes(d.evento)) return res.status(400).json({ ok: false, error: 'Evento desconocido' });
     try { return res.status(200).json({ ok: true, avisos: await avisos.porEvento(d.evento, d, usuario) }); }
     catch (e) { console.error('avisos/evento:', e); return res.status(400).json({ ok: false, error: e.message }); }

@@ -12,6 +12,7 @@ const documentos = require('./documentos');
 const { PERMISOS } = require('./herramientas');
 const datos = require('./datos');
 const avisos = require('./avisos');
+const grupo = require('./grupo');
 
 const MODELO = process.env.PEPITO_MODELO || 'claude-sonnet-5-5';
 const ESFUERZO = process.env.PEPITO_ESFUERZO || 'medium';
@@ -156,20 +157,25 @@ async function herramientasDe(usuario, canal) {
   const servidor = crearServidor(usuario);
   const cliente = new Client({ name: 'pepito-api', version: '1.0.0' });
   await Promise.all([servidor.connect(lado2), cliente.connect(lado1)]);
-  const { tools } = await cliente.listTools();
+  // Un rol sin herramientas del gestor (p. ej. entregas) no registra ninguna y el MCP no responde la lista: queda vacía
+  const { tools } = await cliente.listTools().catch(() => ({ tools: [] }));
   const lista = tools.filter(t => !FUERA.has(t.name));
-  const propias = (wa.configurado() ? [HERRAMIENTA_WHATSAPP].concat(canal === 'whatsapp' && usuario.whatsapp10 ? [HERRAMIENTA_PDF] : []) : []).concat(HERRAMIENTAS_ALARMA);
+  const enGrupo = await grupo.esMiembro(usuario).catch(() => false);
+  const propias = (wa.configurado() ? [HERRAMIENTA_WHATSAPP].concat(canal === 'whatsapp' && usuario.whatsapp10 ? [HERRAMIENTA_PDF] : []) : []).concat(HERRAMIENTAS_ALARMA, enGrupo ? grupo.HERRAMIENTAS : []);
   return {
-    instrucciones: cliente.getInstructions(),
+    instrucciones: cliente.getInstructions() + (enGrupo ? '\n\nEsta persona está en el grupo "' + grupo.NOMBRE + '" (los mensajes del grupo pasan por ti). ' +
+      'Si te pide avisarle o decirle algo al grupo, usa mandar_al_grupo; si pregunta qué se dijo en el grupo, usa ver_grupo. ' +
+      'Por WhatsApp también puede escribir directo al grupo empezando su mensaje con "grupo:".' : ''),
     tools: lista.map(t => ({ name: t.name, description: t.description || t.title || t.name, input_schema: t.inputSchema })).concat(propias),
-    escribe: nombre => { if (nombre === HERRAMIENTA_PDF.name || ALARMA.has(nombre)) return false; const t = lista.find(x => x.name === nombre); return !t || !t.annotations || t.annotations.readOnlyHint !== true; },
-    titulo: nombre => (nombre === HERRAMIENTA_WHATSAPP.name ? 'Mandar WhatsApp' : nombre === HERRAMIENTA_PDF.name ? 'Mandar PDF' : nombre === 'crear_recordatorio' ? 'Alarma' : nombre === 'mis_recordatorios' ? 'Mis alarmas' : nombre === 'cancelar_recordatorio' ? 'Cancelar alarma' : ((lista.find(x => x.name === nombre) || {}).title || nombre)),
+    escribe: nombre => { if (nombre === HERRAMIENTA_PDF.name || ALARMA.has(nombre) || grupo.NOMBRES.has(nombre)) return false; const t = lista.find(x => x.name === nombre); return !t || !t.annotations || t.annotations.readOnlyHint !== true; },
+    titulo: nombre => (nombre === HERRAMIENTA_WHATSAPP.name ? 'Mandar WhatsApp' : nombre === HERRAMIENTA_PDF.name ? 'Mandar PDF' : nombre === 'crear_recordatorio' ? 'Alarma' : nombre === 'mis_recordatorios' ? 'Mis alarmas' : nombre === 'cancelar_recordatorio' ? 'Cancelar alarma' : nombre === 'mandar_al_grupo' ? 'Mensaje al grupo' : nombre === 'ver_grupo' ? 'Ver grupo' : ((lista.find(x => x.name === nombre) || {}).title || nombre)),
     async llamar(nombre, args) {
       if (nombre === HERRAMIENTA_WHATSAPP.name) return mandarWhatsApp(usuario, args || {});
       if (nombre === HERRAMIENTA_PDF.name) return mandarPdf(usuario, args || {});
       if (nombre === 'crear_recordatorio') return avisos.crearRecordatorio(usuario, args || {});
       if (nombre === 'mis_recordatorios') return avisos.misRecordatorios(usuario);
       if (nombre === 'cancelar_recordatorio') return avisos.cancelarRecordatorio(usuario, args || {});
+      if (grupo.NOMBRES.has(nombre)) return enGrupo ? grupo.llamar(usuario, nombre, args || {}, canal) : { error: true, texto: 'Esta persona no está en el grupo.' };
       const r = await cliente.callTool({ name: nombre, arguments: args || {} });
       const texto = (r.content || []).map(c => c.text || '').join('\n');
       return { error: !!r.isError, texto };
@@ -185,7 +191,7 @@ const AREA_DE = {
   cobranza: 'cobranza',
   buscar_productos: 'entregas', buscar_productos_ml: 'entregas', guardar_producto: 'entregas', guardar_entrega: 'entregas',
   cambiar_estatus_venta: 'entregas', guardar_proveedor: 'entregas',
-  mandar_pdf: 'facturacion', crear_recordatorio: 'direccion', mis_recordatorios: 'direccion', cancelar_recordatorio: 'direccion', buscar_clientes: 'direccion', guardar_cliente: 'direccion', crear_cotizacion: 'direccion', eliminar_registro: 'direccion', enviar_whatsapp: 'direccion'
+  mandar_pdf: 'facturacion', crear_recordatorio: 'direccion', mis_recordatorios: 'direccion', cancelar_recordatorio: 'direccion', mandar_al_grupo: 'entregas', ver_grupo: 'entregas', buscar_clientes: 'direccion', guardar_cliente: 'direccion', crear_cotizacion: 'direccion', eliminar_registro: 'direccion', enviar_whatsapp: 'direccion'
 };
 async function anotarActividad(usuario, eventos, canal) {
   if (!eventos.length) return;

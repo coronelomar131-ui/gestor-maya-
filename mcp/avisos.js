@@ -231,7 +231,19 @@ function resumenDe(persona, ctx) {
 
 // ── Avisos al momento ──
 // evento: nota_nueva {col, id} · etapa {col, id, etapa, nota} · factura {id} · pago {id, monto}
+// El texto para el grupo Entregas y cobranza (null si el evento no es de ese tema)
+function textoDeGrupo(evento, d, c) {
+  if (!c) return null;
+  const nota = d.nota ? ' · ' + String(d.nota).slice(0, 200) : '';
+  if (evento === 'etapa' && d.etapa === 'transito') return '🚚 ' + c.folio + ' de ' + c.cliente + ' ya va en camino' + nota;
+  if (evento === 'etapa' && d.etapa === 'entregada') return '✅ ' + c.folio + ' de ' + c.cliente + ' se entregó' + nota + (c.total > 0 ? ' · ' + pesos(c.total / 100) + ', lista para facturar' : '');
+  if (evento === 'factura') return '🧾 Se facturó ' + c.folios + ' de ' + c.cliente + ' con la ' + c.serieFolio + ' (' + pesos(c.total) + (c.pagada ? ', ya pagada' : ', vence en ' + c.dias + ' días') + ')';
+  if (evento === 'pago') return '💰 ' + c.cliente + ' pagó ' + pesos(d.monto) + ' de la ' + c.serieFolio + '. ' + (c.saldo <= 0.009 ? 'Quedó pagada ✅' : 'Saldo: ' + pesos(c.saldo));
+  return null;
+}
+
 async function porEvento(evento, d, actor) {
+  let contexto = null;
   const equipo = await fb().leerColeccion('usuarios');
   const fuera = u => actor && uidDe(u) === uidDe(actor);
   const destinos = new Map();
@@ -246,6 +258,7 @@ async function porEvento(evento, d, actor) {
     const piezas = piezasDe(r);
     const detalle = piezas.length ? '\n' + piezas.slice(0, 4).map(p => '• ' + p).join('\n') + (piezas.length > 4 ? '\n…y ' + (piezas.length - 4) + ' más' : '') : '';
     const vendedores = equipo.filter(u => esVendedor(u, r.vendedor));
+    contexto = { folio: r.folio, cliente: r.cliente || 'sin cliente', total: r.total };
     if (evento === 'nota_nueva') {
       conRol(equipo, 'almacen').forEach(u => a(u, '📦 Nueva ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + quien + ': ' + (piezas.length || 'sin') + (piezas.length === 1 ? ' pieza' : ' piezas') + ' por preparar.' + detalle));
     } else {
@@ -263,6 +276,7 @@ async function porEvento(evento, d, actor) {
     const docs = await Promise.all((f.notas || []).filter(n => ['notasEntrega', 'ventas'].includes(n.col)).map(n => fb().obtener(n.col, n.id).catch(() => null)));
     const vendedores = equipo.filter(u => docs.some(x => x && esVendedor(u, x.vendedor)));
     const folios = (f.notas || []).map(n => n.folio).join(', ');
+    contexto = { folios: folios || 'la nota', cliente: f.clienteNombre, serieFolio: f.serieFolio, total: f.total, pagada: f.estatus === 'pagada', dias: f.diasCredito || 0, saldo: Number(f.saldo) || 0 };
     if (evento === 'factura') {
       vendedores.forEach(u => a(u, '🧾 Se facturó ' + (folios || 'tu nota') + ' de ' + f.clienteNombre + ' con la ' + f.serieFolio + ' (' + pesos(f.total) + (f.estatus === 'pagada' ? ', ya pagada' : ', vence en ' + (f.diasCredito || 0) + ' días') + ').'));
     } else {
@@ -271,8 +285,20 @@ async function porEvento(evento, d, actor) {
       conRol(equipo, 'admin').forEach(u => a(u, texto));
     }
   } else throw new Error('Evento desconocido');
+  // Entregas y cobranza también le llegan al grupo; quien está en el grupo lo recibe una sola vez (como mensaje del grupo)
+  const paraGrupo = textoDeGrupo(evento, d, contexto);
+  let miembros = [];
+  if (paraGrupo) {
+    const grupo = require('./grupo');
+    miembros = (await grupo.leer().catch(() => ({ miembros: [] }))).miembros;
+    if (miembros.length) miembros.forEach(id => destinos.delete(id));
+  }
   const resultados = [];
   for (const { u, texto } of destinos.values()) resultados.push(await avisar(u, { tipo: 'momento', titulo: 'Aviso', texto }));
+  if (paraGrupo && miembros.length) {
+    try { resultados.push(await require('./grupo').mandar(null, paraGrupo + quien, { excluir: actor && uidDe(actor), canal: 'evento' })); }
+    catch (e) { console.error('avisos: grupo', e.message); }
+  }
   return resultados;
 }
 
