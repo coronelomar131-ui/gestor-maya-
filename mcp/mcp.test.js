@@ -121,6 +121,7 @@ function firestoreFalsa(inicial) {
     marcaTiempo() { return new Date(); },
     async borrar(c, id) { col(c).delete(id); },
     async tomar(c, id) { const d = col(c).get(id); col(c).delete(id); return d || null; },
+    async reservar(c, id, campo, valor) { const d = col(c).get(id) || {}; if (d[campo] === valor) return false; col(c).set(id, Object.assign(d, { [campo]: valor })); return true; },
     async perfil(uid) { return [...col('usuarios').values()].find(u => u.uid === uid) || null; },
     async verificarIdToken() { throw new Error('sin Firebase Auth en pruebas'); },
     cuentas: {},
@@ -543,6 +544,24 @@ test('Pepito API: consulta con herramientas del rol y propuesta que solo se guar
   assert.deepEqual(act.map(e => [e.accion, e.area]), [['guardó', 'direccion'], ['propuso', 'direccion'], ['consultó', 'reportes']]);
 });
 
+test('Pepito API: una foto por WhatsApp va como imagen a Claude y no se guarda en la conversación', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const falso = claudeFalso([texto('Veo una nota para Zeta Autopartes: 1 faro. ¿Qué precio le pongo?')]);
+  pepito._usarCliente(falso);
+  const r = await pepito.conversar(ADMIN, '(foto) Sácame la nota', 'whatsapp', { imagenes: [{ mime: 'image/jpeg', base64: 'QUJD' }] });
+  assert.match(r.texto, /Zeta/);
+  const ult = falso.llamadas[0].messages.at(-1);
+  assert.equal(ult.role, 'user');
+  assert.equal(ult.content[0].type, 'image');
+  assert.deepEqual(ult.content[0].source, { type: 'base64', media_type: 'image/jpeg', data: 'QUJD' });
+  assert.equal(ult.content.at(-1).type, 'text');
+  assert.match(ult.content.at(-1).text, /\(foto\) Sácame la nota/);
+  assert.match(falso.llamadas[0].system[0].text, /\(foto\)/);
+  const conv = db.cols.pepito_conversacion.get('admin-1');
+  assert.ok(!JSON.stringify(conv).includes('QUJD'), 'la imagen no se guarda');
+});
+
 test('Pepito API: un vendedor no recibe herramientas de su rol prohibido y hay límite diario', async () => {
   process.env.ANTHROPIC_API_KEY = 'prueba';
   const pepito = require('./pepito');
@@ -706,4 +725,233 @@ test('emparejar factura con notas: siniestro, pieza con abreviaturas, importe y 
   // 4) Una nota posterior a la factura no se sugiere
   const f4 = { fecha: dia('01'), subtotal: 1000, total: 1160, conceptos: [{ descripcion: 'TAPON DE TANQUE', importe: 1000 }] };
   assert.ok(!emparejar(f4, notas, deLatam).elegidas.some(e => e.clave === 'nv:5'));
+});
+
+// WhatsApp falso: guarda lo que se manda y contesta como Meta (aceptado con id, o error)
+function whatsappFalso() {
+  const enviados = [];
+  let n = 0, fallar = null;
+  const original = global.fetch;
+  global.fetch = async (url, op) => {
+    const cuerpo = JSON.parse(op.body);
+    enviados.push(cuerpo);
+    if (fallar && fallar(cuerpo)) return { ok: false, status: 400, text: async () => JSON.stringify({ error: { code: 131047, message: 'Re-engagement message' } }), json: async () => ({ error: { code: 131047, message: 'Re-engagement message' } }) };
+    const r = { messages: [{ id: 'wamid.' + (++n) }] };
+    return { ok: true, status: 200, text: async () => JSON.stringify(r), json: async () => r };
+  };
+  process.env.WHATSAPP_TOKEN = 'tok';
+  process.env.WHATSAPP_PHONE_ID = '123';
+  return {
+    enviados, ultimoId: () => 'wamid.' + n, fallarSi: f => { fallar = f; },
+    cerrar() { global.fetch = original; delete process.env.WHATSAPP_TOKEN; delete process.env.WHATSAPP_PHONE_ID; delete process.env.WHATSAPP_PLANTILLA_AVISO; }
+  };
+}
+const ISRAEL = { uid: 'i-1', nombre: 'Israel Ramírez', rol: 'entregas', whatsapp10: '5522222222' };
+const OMAR = { uid: 'o-1', nombre: 'Omar Coronel', rol: 'admin', whatsapp10: '5511111111' };
+
+test('WhatsApp: si Meta lo rechaza después (24 h) queda pendiente, se avisa a quien lo mandó y se entrega cuando escribe', async () => {
+  const avisos = require('./avisos');
+  const wa = whatsappFalso();
+  try {
+    const r = await avisos.mandarWhatsApp(ISRAEL.whatsapp10, 'Mensaje de Omar (vía Pepito):\nYa llegó el faro', { paraNombre: 'Israel Ramírez', de10: OMAR.whatsapp10, deNombre: 'Omar' });
+    assert.equal(r.ok, true, 'Meta lo aceptó al momento');
+    // Minutos después, Meta avisa al webhook que no se entregó
+    const notas = await avisos.procesarEstados([{ id: r.id, status: 'failed', recipient_id: '525522222222', errors: [{ code: 131047, title: 'Re-engagement message' }] }]);
+    assert.match(notas[0].paso, /no entregado/);
+    assert.equal(db.cols.whatsapp_pendientes.get('5522222222').mensajes.length, 1);
+    const aviso = wa.enviados[wa.enviados.length - 1];
+    assert.equal(aviso.to, '525511111111', 'se le avisa a Omar');
+    assert.match(aviso.text.body, /no le llegó.*24 horas.*se lo entrego/s);
+    // El mismo aviso de Meta repetido no hace nada otra vez
+    const antes = wa.enviados.length;
+    await avisos.procesarEstados([{ id: r.id, status: 'failed', errors: [{ code: 131047 }] }]);
+    assert.equal(wa.enviados.length, antes);
+    // Israel le escribe a Pepito: se le entrega lo guardado y Omar recibe la confirmación
+    assert.equal(await avisos.entregarPendientes('5522222222'), 1);
+    const [entregado, confirmacion] = wa.enviados.slice(-2);
+    assert.equal(entregado.to, '525522222222');
+    assert.match(entregado.text.body, /^📬 Te quedó pendiente .*\nMensaje de Omar \(vía Pepito\):\nYa llegó el faro$/s);
+    assert.match(confirmacion.text.body, /Ya le llegó a Israel/);
+    assert.equal(db.cols.whatsapp_pendientes.get('5522222222'), undefined);
+    // Con plantilla aprobada, el rechazo se reintenta como plantilla
+    process.env.WHATSAPP_PLANTILLA_AVISO = 'aviso_equipo';
+    const r2 = await avisos.mandarWhatsApp(ISRAEL.whatsapp10, 'Hola\notra vez', { paraNombre: 'Israel' });
+    await avisos.procesarEstados([{ id: r2.id, status: 'failed', errors: [{ code: 131047 }] }]);
+    const pl = wa.enviados[wa.enviados.length - 1];
+    assert.equal(pl.type, 'template');
+    assert.equal(pl.template.name, 'aviso_equipo');
+    assert.doesNotMatch(pl.template.components[0].parameters[0].text, /\n/);
+  } finally { wa.cerrar(); }
+});
+
+test('alarmas de Pepito: hora de la CDMX, no en el pasado, llegan una sola vez a campanita y WhatsApp', async () => {
+  const avisos = require('./avisos');
+  const wa = whatsappFalso();
+  try {
+    db.cols.usuarios.set('uo', OMAR);
+    db.cols.usuarios.set('ui', ISRAEL);
+    const ahora = Date.parse('2026-11-05T16:00:00Z'); // 10:00 en la CDMX
+    const pasada = await avisos.crearRecordatorio(OMAR, { mensaje: 'x', hora: '09:00' }, ahora);
+    assert.equal(pasada.error, true);
+    assert.match(pasada.texto, /ahora son las 10:00/);
+    const r = JSON.parse((await avisos.crearRecordatorio(OMAR, { mensaje: 'Cobrarle a LATAM', fecha: '2026-11-07', hora: '10:00' }, ahora)).texto);
+    assert.match(r.cuando, /sábado, 7 de noviembre a las 10:00/);
+    assert.equal(db.cols.recordatorios.get(r.id).cuando, Date.parse('2026-11-07T16:00:00Z'));
+    const otro = JSON.parse((await avisos.crearRecordatorio(OMAR, { mensaje: 'Pasar por el faro', en_minutos: 30, para: 'israel' }, ahora)).texto);
+    assert.equal(otro.para, 'Israel Ramírez');
+    const mias = JSON.parse((await avisos.misRecordatorios(OMAR)).texto);
+    assert.equal(mias.alarmas.length, 2);
+    // A los 31 minutos solo toca la de Israel
+    const enviadas = await avisos.alarmasVencidas(ahora + 31 * 60000);
+    assert.equal(enviadas.length, 1);
+    assert.equal(enviadas[0].whatsapp, 'texto');
+    assert.match(wa.enviados[0].text.body, /Recordatorio\* \(de Omar Coronel\):\nPasar por el faro/);
+    assert.match(db.cols.avisos_usuario.get('i-1').lista[0].texto, /Pasar por el faro/);
+    assert.equal((await avisos.alarmasVencidas(ahora + 40 * 60000)).length, 0, 'no se manda dos veces');
+    // Israel no puede cancelar la alarma de Omar para Omar
+    const can = await avisos.cancelarRecordatorio(ISRAEL, { id: r.id });
+    assert.equal(can.error, true);
+    assert.equal((await avisos.cancelarRecordatorio(OMAR, { id: r.id })).error, false);
+  } finally { wa.cerrar(); }
+});
+
+test('avisos al momento: nota nueva al almacén, en camino al vendedor, entregada a facturación y pagos; no a quien lo hizo', async () => {
+  const avisos = require('./avisos');
+  const wa = whatsappFalso();
+  try {
+    const almacen = { uid: 'a-1', nombre: 'Almacén Uno', rol: 'almacen', whatsapp10: '5533333333' };
+    const vendedora = { uid: 'v-9', nombre: 'Vendedora Uno', rol: 'vendedor', whatsapp10: '5544444444', avisos: { whatsapp: false } };
+    const fac = { uid: 'f-1', nombre: 'Geraldine', rol: 'facturacion' };
+    [almacen, vendedora, fac, OMAR].forEach((u, i) => db.cols.usuarios.set('x' + i, u));
+    let r = await avisos.porEvento('nota_nueva', { col: 'notasEntrega', id: 'ne039' }, OMAR);
+    assert.deepEqual(r.map(x => x.para), ['Almacén Uno']);
+    assert.match(wa.enviados[0].text.body, /📦 Nueva NE-039 de Refacciones Prueba \(Omar\): 1 pieza por preparar\.\n• Faro Derecho Creta \(2021\)/);
+    // La que hizo el cambio no recibe su propio aviso
+    r = await avisos.porEvento('nota_nueva', { col: 'notasEntrega', id: 'ne039' }, almacen);
+    assert.equal(r.length, 0);
+    r = await avisos.porEvento('etapa', { col: 'notasEntrega', id: 'ne039', etapa: 'transito', nota: 'Guía 123' }, almacen);
+    assert.deepEqual(r.map(x => x.para), ['Vendedora Uno']);
+    assert.equal(r[0].whatsapp, undefined, 'apagó WhatsApp: solo campanita');
+    assert.match(db.cols.avisos_usuario.get('v-9').lista[0].texto, /Tu NE-039 de Refacciones Prueba ya va en camino · Guía 123/);
+    r = await avisos.porEvento('etapa', { col: 'notasEntrega', id: 'ne039', etapa: 'entregada' }, almacen);
+    assert.deepEqual(r.map(x => x.para).sort(), ['Geraldine', 'Vendedora Uno']);
+    // La venta que se crea sola desde una NE no avisa dos veces
+    assert.equal((await avisos.porEvento('nota_nueva', { col: 'ventas', id: 'v243' }, OMAR)).length, 0);
+    await db.guardar('facturas', 'f9', { serieFolio: 'A-9', clienteNombre: 'Refacciones Prueba', total: 10672, saldo: 672, estatus: 'por_cobrar', notas: [{ col: 'notasEntrega', id: 'ne039', folio: 'NE-039' }] });
+    r = await avisos.porEvento('pago', { id: 'f9', monto: 10000 }, fac);
+    assert.deepEqual(r.map(x => x.para).sort(), ['Dirección', 'Omar Coronel', 'Vendedora Uno'], 'admins y la vendedora');
+    assert.match(db.cols.avisos_usuario.get('o-1').lista[0].texto, /Refacciones Prueba pagó \$10,000\.00 de la A-9\. Saldo: \$672\.00/);
+    // Con los avisos al momento apagados no llega nada
+    vendedora.avisos = { momento: false };
+    db.cols.usuarios.set('x1', vendedora);
+    r = await avisos.porEvento('etapa', { col: 'notasEntrega', id: 'ne039', etapa: 'transito' }, almacen);
+    assert.equal(r[0].omitido, 'avisos al momento apagados');
+  } finally { wa.cerrar(); }
+});
+
+test('resumen de la mañana por rol: almacén, entregas, vendedor y sus alarmas del día', async () => {
+  const avisos = require('./avisos');
+  const hoyISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const ayerISO = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  db.cols.notasEntrega.set('neHoy', { notaId: 'NE-300', fecha: hoyISO, cliente: 'LATAM PARTS', vendedor: 'Daniel', items: [{ descripcion: 'Calavera', cantidad: 1, precioUnit: 500 }], subtotal: 500, ivaTotal: 0, total: 500 });
+  db.cols.notasEntrega.set('neAyer', { notaId: 'NE-299', fecha: ayerISO, cliente: 'Zeta', vendedor: 'Daniel', etapa: 'transito', items: [{ descripcion: 'Faro', cantidad: 1, precioUnit: 1000 }], subtotal: 1000, ivaTotal: 0, total: 1000 });
+  await db.guardar('recordatorios', 'r1', { uid: 'd-1', para: 'd-1', texto: 'Llamar a Zeta', cuando: Date.now() + 3600000, estado: 'pendiente' });
+  const ctx = await avisos.contextoDiario();
+  const alm = avisos.resumenDe({ uid: 'a', nombre: 'Rosa', rol: 'almacen' }, ctx);
+  assert.match(alm, /Por preparar:\* \d+\n• NE-300 · LATAM PARTS · Calavera/, 'la más nueva primero');
+  assert.match(alm, /Stock bajo:\*\n• Faro izquierdo \(1 de 2 mín\.\)/);
+  const ent = avisos.resumenDe({ uid: 'e', nombre: 'Israel', rol: 'entregas' }, ctx);
+  assert.match(ent, /En tránsito:\* 1\n• NE-299 · Zeta · Faro/);
+  const ven = avisos.resumenDe({ uid: 'd-1', nombre: 'Daniel Hernández', rol: 'vendedor' }, ctx);
+  assert.match(ven, /Tus ventas de ayer:\* 1 nota por \$1,000\.00/);
+  assert.match(ven, /Tuyas en camino:\* 1/);
+  assert.match(ven, /Tus alarmas de hoy:\*\n• \d\d:\d\d Llamar a Zeta/);
+  assert.doesNotMatch(avisos.resumenDe({ uid: 'x', nombre: 'Otro', rol: 'vendedor' }, ctx), /alarmas/);
+});
+
+test('/api/avisos: el tick manda alarmas y el resumen una sola vez al día; eventos solo con sesión', async () => {
+  const api = require('../api/avisos');
+  const wa = whatsappFalso();
+  process.env.CRON_SECRET = 'sec';
+  process.env.AVISOS_HORA = '0';
+  const llamar = (url, op = {}) => new Promise(ok => {
+    const res = { status(c) { this.c = c; return this; }, json(j) { ok({ c: this.c, j }); } };
+    api(Object.assign({ method: 'GET', url, headers: {} }, op), res);
+  });
+  try {
+    db.cols.usuarios.set('uo', OMAR);
+    assert.equal((await llamar('/api/avisos?tarea=tick', { headers: { authorization: 'Bearer mal' } })).c, 401);
+    await db.guardar('recordatorios', 'r1', { uid: 'o-1', para: 'o-1', deNombre: 'Omar', texto: 'Ya', cuando: Date.now() - 1000, estado: 'pendiente' });
+    const a = await llamar('/api/avisos?tarea=tick', { headers: { authorization: 'Bearer sec' } });
+    assert.equal(a.c, 200);
+    assert.equal(a.j.alarmas.length, 1);
+    assert.ok(a.j.resumen.resultados.length >= 1, 'primer tick del día manda el resumen');
+    const b = await llamar('/api/avisos?tarea=tick', { headers: { authorization: 'Bearer sec' } });
+    assert.equal(b.j.resumen, undefined, 'el segundo tick ya no');
+    assert.equal(b.j.alarmas.length, 0);
+    assert.equal((await llamar('/api/avisos', { method: 'POST', body: { evento: 'pago', id: 'x' } })).c, 401, 'un evento necesita sesión');
+  } finally { wa.cerrar(); delete process.env.CRON_SECRET; delete process.env.AVISOS_HORA; }
+});
+
+test('nota sin precio: el cliente marcado (p. ej. JEIC) recibe notas sin precios ni totales; la venta sí los guarda', async () => {
+  const pdf = require('./pdf');
+  const clientes = [{ id: 'j', razonSocial: 'JEIC DISTRIBUIDORA', notaSinPrecio: true }, { id: 'z', razonSocial: 'Zeta' }];
+  const ne = { id: 'n', notaId: 'NE-301', fecha: '2026-11-05', cliente: 'JEIC DISTRIBUIDORA', items: [{ descripcion: 'Faro derecho Creta', cantidad: 1, precioUnit: 9200 }], subtotal: 9200, ivaTotal: 1472, total: 10672 };
+  const nv = { id: 'v', notaId: '310', fecha: Date.now(), clienteNombre: 'JEIC DISTRIBUIDORA', items: [{ pedido: 'Faro derecho Creta', precio: 9200, iva: 1472, ajuste: 0 }], subtotal: 9200, ivaTotal: 1472, total: 10672 };
+  const texto = async (tipo, r) => (await pdf.generar(tipo, r, { data: { clientes } })).datos.toString('latin1');
+  for (const [tipo, r] of [['nota_entrega', ne], ['nota_venta', nv]]) {
+    const t = await texto(tipo, r);
+    assert.match(t, /Faro derecho Creta/);
+    assert.doesNotMatch(t, /PRECIO|\(TOTAL\)|9,200|10,672/, tipo + ' sin precios');
+  }
+  const otro = await texto('nota_entrega', Object.assign({}, ne, { cliente: 'Zeta' }));
+  assert.match(otro, /PRECIO/);
+  assert.match(otro, /10,672\.00/);
+});
+
+test('compras: vender_de_compra suma piezas vendidas con precio promedio y no pasa de lo comprado', async () => {
+  const escritura = require('./escritura');
+  const datos = require('./datos');
+  await db.guardar('compras', 'k1', { fecha: '2026-11-01', proveedor: 'Depo', articulos: [
+    { pieza: 'Faro derecho Creta', cantidadComprada: 5, costoUnitario: 1000, cantidadVendida: 1, precioVenta: 1500 },
+    { pieza: 'Calavera izquierda', cantidadComprada: 2, costoUnitario: 400, cantidadVendida: 0, precioVenta: 0 }
+  ] });
+  const r = await escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'faro', cantidad_vendida: 2, precio_venta: 1800 });
+  assert.equal(r.vendidas_en_total, 3);
+  assert.equal(r.sin_vender, 2);
+  assert.equal(r.precio_venta_promedio, 1700, '(1×1500 + 2×1800) / 3');
+  assert.equal(r.utilidad_bruta_del_articulo, 2100);
+  const guardada = db.cols.compras.get('k1').articulos[0];
+  assert.equal(guardada.cantidadVendida, 3);
+  assert.equal(db.cols.compras.get('k1').articulos[1].cantidadVendida, 0, 'el otro artículo no cambia');
+  await assert.rejects(escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'faro', cantidad_vendida: 3, precio_venta: 1800 }), /Solo quedan 2/);
+  await assert.rejects(escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'espejo', cantidad_vendida: 1, precio_venta: 10 }), /no hay un artículo/);
+  const resumen = await datos.compras({ limite: 10 });
+  assert.equal(resumen.compras.find(c => c.id === 'k1').articulos[0].ingresos_venta, 5100);
+});
+
+test('emparejar: con muchas notas parecidas del cliente elige solo las de esa factura', async () => {
+  const { emparejar } = await import('../public/diseno/emparejar.js');
+  const dia = d => Date.parse('2026-11-' + d + 'T12:00:00Z');
+  const faro = (n, d, precio = 9200) => ({ clave: 'ne:' + n, cliente: 'LATAM', fecha: dia(d), total: precio * 1.16, items: [{ descripcion: 'Faro derecho Creta', anio: '2021', cantidad: 1, precioUnit: precio }] });
+  const notas = [faro(1, '01'), faro(2, '02'), faro(3, '03'), faro(4, '04'), faro(5, '05', 8800),
+    { clave: 'ne:6', cliente: 'LATAM', fecha: dia('03'), total: 2900, items: [{ descripcion: 'Espejo izquierdo Aveo', cantidad: 1, precioUnit: 2500 }] }];
+  const deLatam = n => n.cliente === 'LATAM';
+  // Una factura de un faro: solo UNA nota, la más cercana a la fecha de la factura
+  const f1 = { fecha: dia('06'), subtotal: 9200, total: 10672, conceptos: [{ descripcion: 'FARO DER CRETA 2021', importe: 9200 }] };
+  const r1 = emparejar(f1, notas, deLatam);
+  assert.deepEqual(r1.elegidas.map(e => e.clave), ['ne:4']);
+  assert.ok(r1.cuadra);
+  assert.ok(r1.otras.some(e => e.clave === 'ne:1'), 'las demás quedan como otras posibles');
+  // Dos faros: exactamente dos notas
+  const f2 = { fecha: dia('06'), subtotal: 18400, total: 21344, conceptos: [{ descripcion: 'FARO DER CRETA 2021', importe: 18400 }] };
+  assert.equal(emparejar(f2, notas, deLatam).elegidas.length, 2);
+  // El faro de 8,800 se distingue por su importe
+  const f3 = { fecha: dia('06'), subtotal: 8800, total: 10208, conceptos: [{ descripcion: 'FARO DERECHO CRETA', importe: 8800 }] };
+  assert.deepEqual(emparejar(f3, notas, deLatam).elegidas.map(e => e.clave), ['ne:5']);
+  // Si nada cuadra, no se marcan todas las parecidas: a lo más una por concepto
+  const f4 = { fecha: dia('06'), subtotal: 9300, total: 10788, conceptos: [{ descripcion: 'FARO DER CRETA 2021', importe: 9300 }] };
+  const r4 = emparejar(f4, notas, deLatam);
+  assert.ok(r4.elegidas.length <= 1);
+  assert.equal(r4.cuadra, false);
 });

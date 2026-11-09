@@ -93,7 +93,7 @@ function renderizar() {
   const busqueda = ($('compras-busqueda')?.value || '').trim().toLocaleLowerCase('es-MX');
   const lista = registros.filter(compra => {
     const nombres = articulosDe(compra).map(articulo => articulo.pieza).join(' ');
-    return `${nombres} ${compra.proveedor || ''} ${compra.fecha || ''}`.toLocaleLowerCase('es-MX').includes(busqueda);
+    return `${nombres} ${compra.proveedor || ''} ${compra.fecha || ''} ${fechaVisible(compra.fecha)} ${compra.notas || ''}`.toLocaleLowerCase('es-MX').includes(busqueda);
   });
 
   if (!lista.length) {
@@ -113,7 +113,7 @@ function renderizar() {
       <td data-label="Fecha">${escapar(fechaVisible(compra.fecha))}</td>
       <td data-label="Artículos" class="m-principal">${detalle}</td>
       <td data-label="Proveedor">${escapar(compra.proveedor || '—')}</td>
-      <td data-label="Piezas">${totales.compradas.toLocaleString('es-MX')}</td>
+      <td data-label="Piezas">${totales.compradas.toLocaleString('es-MX')}${totales.pendientes ? `<small class="m-compras-sin-vender">${totales.pendientes.toLocaleString('es-MX')} sin vender</small>` : '<small class="m-compras-sin-vender listo">todo vendido</small>'}</td>
       <td data-label="Total de compra">${dinero(redondear(totales.costo))}</td>
       <td data-label="Ingresos por venta">${dinero(redondear(totales.ingresos))}</td>
       <td data-label="Utilidad" class="${claseUtilidad}">${dinero(redondear(totales.utilidad))}</td>
@@ -206,6 +206,16 @@ function renderizarArticulos(articulos) {
   actualizarTotalesFormulario();
 }
 
+// Sugerencias de proveedor: los de Proveedores y los que ya se usaron en compras
+function llenarProveedores() {
+  const lista = $('compras-proveedores');
+  if (!lista) return;
+  const nombres = new Set();
+  ((window.data && window.data.proveedores) || []).forEach(p => p && p.nombre && nombres.add(String(p.nombre).trim()));
+  registros.forEach(c => c.proveedor && nombres.add(String(c.proveedor).trim()));
+  lista.innerHTML = [...nombres].filter(Boolean).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${escapar(n)}"></option>`).join('');
+}
+
 function limpiarFormulario() {
   editandoId = null;
   $('compras-modal-titulo').textContent = 'Registrar compra';
@@ -219,6 +229,7 @@ function limpiarFormulario() {
 window.comprasNueva = function() {
   if (!permitido()) return window.toast('Solo administración y almacén pueden registrar compras.', 'error');
   limpiarFormulario();
+  llenarProveedores();
   window.openModal('modal-compra');
 };
 
@@ -251,6 +262,7 @@ window.comprasEditar = function(id) {
   $('compra-proveedor').value = compra.proveedor || '';
   $('compra-notas').value = compra.notas || '';
   renderizarArticulos(articulosDe(compra));
+  llenarProveedores();
   window.openModal('modal-compra');
 };
 

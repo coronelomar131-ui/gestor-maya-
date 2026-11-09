@@ -1260,7 +1260,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="compras-table">
               <thead><tr>
-                <th>Fecha</th><th>Artículos</th><th>Proveedor</th><th>Piezas</th><th>Total de compra</th><th>Ingresos por venta</th><th>Utilidad</th><th>Acciones</th>
+                <th>Fecha</th><th>Artículos</th><th>Proveedor</th><th>Piezas (sin vender)</th><th>Total de compra</th><th>Ingresos por venta</th><th>Utilidad</th><th>Acciones</th>
               </tr></thead>
               <tbody id="compras-body">
                 <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Aún no hay compras</div><div class="empty-desc">Registra una compra para empezar a medir costos y utilidad.</div></div></td></tr>
@@ -1285,7 +1285,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="cli-table">
               <thead><tr>
-                <th>Código</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>Redes</th><th>Acciones</th>
+                <th>Código</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>Redes</th><th title="Sus notas de venta y de entrega salen sin precio">Nota sin precio</th><th>Acciones</th>
               </tr></thead>
               <tbody id="cli-body">
                 <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>
@@ -1992,7 +1992,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </div>
         <div class="form-group">
           <label for="compra-proveedor">Proveedor</label>
-          <input id="compra-proveedor" type="text" maxlength="120" placeholder="Nombre del proveedor">
+          <input id="compra-proveedor" type="text" maxlength="120" placeholder="Nombre del proveedor" list="compras-proveedores" autocomplete="off">
+          <datalist id="compras-proveedores"></datalist>
         </div>
         <div class="m-compras-campo-completo">
           <div class="m-compras-articulos-cabecera">
@@ -2172,6 +2173,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="form-group" style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="c-redes-sociales">
         <label for="c-redes-sociales" style="cursor:pointer;user-select:none">📱 Cliente de venta pública (Facebook / WhatsApp / Instagram / TikTok)</label>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="c-sin-precio">
+        <label for="c-sin-precio" style="cursor:pointer;user-select:none">🙈 Sus notas salen sin precio (la venta sí guarda los importes)</label>
       </div>
 
       <div style="border-top:2px solid #e5e7eb;margin:15px 0;padding:15px 0">
@@ -2638,6 +2643,7 @@ async function loadUserProfile(uid) {
     const snap = await getDocs(query(collection(db, 'usuarios'), where('uid', '==', uid)));
     if (!snap.empty) {
       const profile = snap.docs[0].data();
+      window.miPerfil = Object.assign({ id: snap.docs[0].id }, profile);
       currentRole = profile.rol || 'vendedor';
       document.getElementById('user-name-display').textContent = profile.nombre || currentUser.email;
       document.getElementById('user-role-display').textContent = profile.rol || 'Usuario';
@@ -2907,6 +2913,11 @@ function renderClientes() {
           ${c.redesSociales ? '📱✅' : '➕'}
         </span>
       </td>
+      <td style="text-align:center">
+        <span style="cursor:pointer" title="${c.notaSinPrecio ? 'Sus notas salen sin precio — clic para que salgan con precio' : 'Hacer que sus notas salgan sin precio'}" onclick="toggleClienteSinPrecio('${c.id}',${!!c.notaSinPrecio})">
+          ${c.notaSinPrecio ? '🙈✅' : '➕'}
+        </span>
+      </td>
       <td>${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('clientes','${c.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
@@ -3160,7 +3171,8 @@ window.saveVenta = async function() {
   };
   if (!obj.total) return toast('Ingresa el total de la venta', 'error');
   try {
-    await addDoc(collection(db, 'ventas'), obj);
+    const refAviso = await addDoc(collection(db, 'ventas'), obj);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: refAviso.id });
     closeModal('modal-venta');
 
     // Generar nota PDF automáticamente
@@ -3436,6 +3448,7 @@ window.saveVentaMultiLinea = async function() {
   try {
     console.log('💾 Guardando venta en Firebase:', venta);
     const docRef = await addDoc(collection(db, 'ventas'), venta);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: docRef.id });
     console.log('✅ Venta guardada con ID:', docRef.id);
 
     // Generar PDF de la nota
@@ -3512,6 +3525,7 @@ window.saveCliente = async function() {
       pais: document.getElementById('c-pais').value.trim() || 'México',
       codigoPostal: document.getElementById('c-codigoPostal').value.trim() || '',
       redesSociales: document.getElementById('c-redes-sociales').checked,
+      notaSinPrecio: document.getElementById('c-sin-precio').checked,
       createdAt: serverTimestamp()
     };
 
@@ -3527,6 +3541,7 @@ window.saveCliente = async function() {
         if (el && el.id !== 'c-codigo') el.value = '';
       });
     document.getElementById('c-redes-sociales').checked = false;
+    document.getElementById('c-sin-precio').checked = false;
     document.getElementById('c-estado').value = '';
     document.getElementById('c-pais').value = 'México';
   } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -3536,6 +3551,14 @@ window.toggleClienteRedes = async function(clienteId, actual) {
   try {
     await updateDoc(doc(db, 'clientes', clienteId), { redesSociales: !actual });
     toast(actual ? 'Cliente ya no marcado como venta pública' : '📱 Cliente marcado como venta pública', 'success');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+};
+
+// Clientes que piden sus notas sin precio: la venta guarda los importes, pero el PDF de la nota no los muestra
+window.toggleClienteSinPrecio = async function(clienteId, actual) {
+  try {
+    await updateDoc(doc(db, 'clientes', clienteId), { notaSinPrecio: !actual });
+    toast(actual ? 'Sus notas vuelven a salir con precio' : '🙈 Sus notas saldrán sin precio', 'success');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
@@ -4497,7 +4520,8 @@ window.cotToVenta = async function(id) {
       createdByName
     };
 
-    await addDoc(collection(db, "ventas"), venta);
+    const refAviso = await addDoc(collection(db, "ventas"), venta);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: refAviso.id });
     await deleteDoc(doc(db, "cotizaciones", id));
     setTimeout(() => window.generarNotaPDF(venta), 500);
     toast("Convertida a Venta " + notaId + " y PDF generado", "success");
@@ -8278,6 +8302,8 @@ window.generarNotaPDF = async function(venta) {
       return (venta.clienteId && c.id === venta.clienteId) || (c.razonSocial || c.nombre) === venta.clienteNombre;
     });
     var mostrarRedes = !!(clienteObjNV && clienteObjNV.redesSociales);
+    // Cliente que pide sus notas sin precio: la venta guarda los importes, pero la nota no los muestra
+    var sinPrecioNV = !!(clienteObjNV && clienteObjNV.notaSinPrecio);
     // siniestro badge
     var sins = venta.siniestros || (venta.items ? venta.items.map(function(i){return i.numSiniestro||'';}).filter(function(s){return s;}).join(' | ') : '') || (venta.numSiniestro||'');
     if (sins) {
@@ -8301,26 +8327,28 @@ window.generarNotaPDF = async function(venta) {
     // tabla
     if (venta.items && venta.items.length > 0 && doc.autoTable) {
       var rows = venta.items.map(function(item,idx){
+        if (sinPrecioNV) return [String(idx+1), item.pedido||'-', item.numSiniestro||'-'];
         return [String(idx+1), item.pedido||'-', item.numSiniestro||'-',
           '\$'+(item.precio||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
           '\$'+(item.iva||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
           '-\$'+(item.ajuste||0).toLocaleString('es-MX',{minimumFractionDigits:2})];
       });
       doc.autoTable({
-        head:[['#','DESCRIPCION','SINIESTRO','PRECIO','IVA','AJUSTE']],
+        head:[sinPrecioNV ? ['#','DESCRIPCION','SINIESTRO'] : ['#','DESCRIPCION','SINIESTRO','PRECIO','IVA','AJUSTE']],
         body:rows, startY:y, margin:{left:mg,right:mg},
         styles:{font:'helvetica',fontSize:8,cellPadding:4},
         headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',halign:'center'},
         bodyStyles:{textColor:negro},
         alternateRowStyles:{fillColor:[245,248,252]},
-        columnStyles:{0:{halign:'center',cellWidth:8},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
+        columnStyles: sinPrecioNV ? {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:40}} : {0:{halign:'center',cellWidth:8},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
       });
       y = doc.lastAutoTable.finalY + 8;
     } else if (venta.descripcion) {
-      doc.autoTable({head:[['DESCRIPCION','TOTAL']],body:[[venta.descripcion||'-','\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})]],startY:y,margin:{left:mg,right:mg},headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',fontSize:8},bodyStyles:{fontSize:8,textColor:negro,cellPadding:4}});
+      doc.autoTable({head:[sinPrecioNV ? ['DESCRIPCION'] : ['DESCRIPCION','TOTAL']],body:[sinPrecioNV ? [venta.descripcion||'-'] : [venta.descripcion||'-','\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})]],startY:y,margin:{left:mg,right:mg},headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',fontSize:8},bodyStyles:{fontSize:8,textColor:negro,cellPadding:4}});
       y = doc.lastAutoTable.finalY + 8;
     }
-    // caja totales
+    // caja totales (no va si el cliente pide la nota sin precio)
+    if (!sinPrecioNV) {
     var boxW=78; var boxX=pageW-mg-boxW; var boxH=32;
     doc.setFillColor(210,215,220);
     doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
@@ -8349,6 +8377,7 @@ window.generarNotaPDF = async function(venta) {
     doc.text('TOTAL',boxX+5,y+29);
     doc.text('\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
     y += boxH + 14;
+    } else { y += 6; }
     // caja de redes sociales (solo clientes marcados como "venta pública")
     if (mostrarRedes) {
       var rbTop = y;
@@ -9684,6 +9713,7 @@ window.saveNotaEntrega = async function() {
       total: total, createdAt: new Date().toISOString()
     };
     var ref = await window.addDoc(window.collection(window.db, 'notasEntrega'), payload);
+    if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'notasEntrega', id: ref.id });
     window.toast('Nota de entrega guardada', 'success');
 
     // 💰 Registrar también como venta (automático, si el checkbox está marcado)
@@ -9830,6 +9860,7 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
       return (nota.clienteId && c.id === nota.clienteId) || (c.razonSocial || c.nombre) === nota.cliente;
     });
     var mostrarRedesNE = !!(clienteObjNE && clienteObjNE.redesSociales);
+    var sinPrecioNE = !!(clienteObjNE && clienteObjNE.notaSinPrecio);
     y += 34;
     // badge detalle
     doc.setFillColor(azul[0], azul[1], azul[2]);
@@ -9846,12 +9877,11 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
           it.descripcion || '-',
           it.siniestro || '-',
           it.anio || '-',
-          String(it.cantidad || 1),
-          '\$' + (it.precioUnit || 0).toLocaleString('es-MX', {minimumFractionDigits:2})
-        ];
+          String(it.cantidad || 1)
+        ].concat(sinPrecioNE ? [] : ['\$' + (it.precioUnit || 0).toLocaleString('es-MX', {minimumFractionDigits:2})]);
       });
       doc.autoTable({
-        head: [['#','DESCRIPCIÓN','SINIESTRO','AÑO','CANT.','PRECIO UNIT.']],
+        head: [['#','DESCRIPCIÓN','SINIESTRO','AÑO','CANT.'].concat(sinPrecioNE ? [] : ['PRECIO UNIT.'])],
         body: rows, startY: y, margin: {left:mg, right:mg},
         styles: {font:'helvetica', fontSize:8, cellPadding:4},
         headStyles: {fillColor:azul, textColor:blanco, fontStyle:'bold', halign:'center'},
@@ -9861,7 +9891,8 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
       });
       y = doc.lastAutoTable.finalY + 8;
     }
-    // caja totales
+    // caja totales (no va si el cliente pide la nota sin precio)
+    if (!sinPrecioNE) {
     var boxW=78; var boxX=pageW-mg-boxW; var boxH=32;
     doc.setFillColor(210,215,220);
     doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
@@ -9886,6 +9917,7 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.text('TOTAL',boxX+5,y+29);
     doc.text('\$'+(nota.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
     y += boxH + 14;
+    } else { y += 6; }
     // caja de redes sociales (solo clientes marcados como "venta pública")
     if (mostrarRedesNE) {
       var rbTop = y;
@@ -10075,6 +10107,7 @@ window.previewNotaEntregaPDFById = function(id) {
 <script type="module" src="/diseno/pepito-chat.js"></script>
 <script type="module" src="/diseno/enlaces.js"></script>
 <script type="module" src="/diseno/operacion.js"></script>
+<script type="module" src="/diseno/avisos.js"></script>
 <script type="module" src="/diseno/compras.js"></script>
 </body>
 </html>

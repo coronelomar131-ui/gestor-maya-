@@ -8,6 +8,7 @@ const pepito = require('../mcp/pepito');
 const acceso = require('../mcp/acceso');
 const documentos = require('../mcp/documentos');
 const voz = require('../mcp/voz');
+const avisos = require('../mcp/avisos');
 const { fb } = require('../mcp/firebase');
 
 const wa = require('../mcp/whatsapp');
@@ -107,7 +108,15 @@ module.exports = async (req, res) => {
   try { datos = JSON.parse(raw.toString('utf8') || '{}'); } catch (e) { return res.status(400).send('json'); }
   const valor = datos.entry && datos.entry[0] && datos.entry[0].changes && datos.entry[0].changes[0] && datos.entry[0].changes[0].value;
   const msg = valor && valor.messages && valor.messages[0];
-  if (!msg) return res.status(200).json({ ok: true }); // avisos de entregado/leído
+  if (!msg) {
+    // Avisos de Meta sobre lo que mandamos: entregado, leído o fallido (p. ej. fuera de las 24 horas)
+    const estados = valor && valor.statuses;
+    if (estados && estados.length) {
+      try { for (const n of await avisos.procesarEstados(estados)) await anotar(n.paso, n.detalle); }
+      catch (e) { console.error('whatsapp: estados', e); await anotar('no se pudo revisar un aviso de entrega', e.message); }
+    }
+    return res.status(200).json({ ok: true });
+  }
   await anotar('llegó mensaje de WhatsApp', 'de ...' + String(msg.from).slice(-4) + ' · tipo ' + msg.type);
 
   // Meta reintenta si tardamos: no procesar dos veces el mismo mensaje
@@ -120,11 +129,17 @@ module.exports = async (req, res) => {
     await enviar(msg.from, 'Hola, soy Pepito Junior de Maya Autopartes. Este número no está dado de alta en el gestor; pídele a un administrador que lo registre.');
     return res.status(200).json({ ok: true });
   }
+  // Al escribir se abre su ventana de 24 horas: primero se le entrega lo que tenía guardado
+  try {
+    const n = await avisos.entregarPendientes(acceso.diez(msg.from));
+    if (n) await anotar('pendientes entregados', n + ' a ...' + String(msg.from).slice(-4));
+  } catch (e) { console.error('whatsapp: pendientes', e); }
   try {
     let texto;
     let adjunto = null;
     let t = null;
     let encabezado = '';
+    let imagenes = null;
     if (msg.type === 'text') {
       t = String(msg.text && msg.text.body || '').trim();
     } else if (msg.type === 'audio' && voz.configurada()) {
@@ -137,18 +152,32 @@ module.exports = async (req, res) => {
         await anotar('no se pudo transcribir la nota de voz', e.message);
         texto = 'No pude escuchar bien tu nota de voz. ¿Me la mandas otra vez o me lo escribes?';
       }
+    } else if (msg.type === 'image' || (msg.type === 'document' && /^image\//.test((msg.document && msg.document.mime_type) || ''))) {
+      // Foto de una nota, lista o factura: Claude la lee y propone la nota (se confirma como siempre)
+      const media = msg.image || msg.document;
+      try {
+        const { datos, mime } = await wa.bajarMedia(media.id);
+        if (!/^image\/(jpeg|png|webp|gif)$/.test(mime)) throw new Error('Formato no soportado: ' + mime);
+        if (datos.length > 4.5 * 1024 * 1024) throw new Error('La foto pesa más de 4.5 MB');
+        imagenes = [{ mime, base64: datos.toString('base64') }];
+        t = String(media.caption || '').trim() || 'Te mandé esta foto.';
+        await anotar('foto recibida', mime + ' · ' + Math.round(datos.length / 1024) + ' KB');
+      } catch (e) {
+        await anotar('no se pudo leer la foto', e.message);
+        texto = 'No pude abrir tu foto. ¿Me la mandas otra vez (que no pese tanto) o me escribes lo que necesitas?';
+      }
     } else {
-      texto = msg.type === 'audio' ? 'Todavía no puedo escuchar notas de voz. Escríbeme tu pedido, porfa.' : 'Por ahora solo entiendo mensajes de texto y notas de voz.';
+      texto = msg.type === 'audio' ? 'Todavía no puedo escuchar notas de voz. Escríbeme tu pedido, porfa.' : 'Por ahora entiendo texto, notas de voz y fotos.';
     }
     if (t !== null) {
       const conv = await fb().obtener('pepito_conversacion', usuario.uid);
       const corto = t.replace(/[.,!¡¿?\s]+$/g, '').trim();
-      if (conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
+      if (!imagenes && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
         const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
         texto = r.texto;
         adjunto = documentos.deCreacion(r.herramienta, r.resultado);
       } else {
-        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : '') + t, 'whatsapp');
+        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : imagenes ? '(foto) ' : '') + t, 'whatsapp', { imagenes });
         texto = r.texto + (r.propuesta ? '\n\nResponde *SÍ* para guardarlo o *NO* para cancelar.' : '');
       }
       texto = encabezado + texto;
