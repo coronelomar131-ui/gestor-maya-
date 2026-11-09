@@ -64,6 +64,17 @@ async function enviarPlantilla(para, nombre, idioma, parametros) {
   return { ok: false, status: r.status, codigo: e.error && e.error.code, error: (e.error && e.error.message) || 'Meta no aceptó la plantilla' };
 }
 
+// Descarga un archivo que la persona mandó (foto, audio): Meta da primero su URL con el id y luego el archivo, ambos con el token
+async function bajarMedia(mediaId) {
+  const h = { Authorization: 'Bearer ' + String(process.env.WHATSAPP_TOKEN || '').trim() };
+  const info = await fetch(`https://graph.facebook.com/${VERSION}/${encodeURIComponent(mediaId)}`, { headers: h });
+  if (!info.ok) throw new Error('Meta no dio el archivo (' + info.status + ')');
+  const { url, mime_type: mime } = await info.json();
+  const archivo = await fetch(url, { headers: h });
+  if (!archivo.ok) throw new Error('No se pudo descargar el archivo (' + archivo.status + ')');
+  return { datos: Buffer.from(await archivo.arrayBuffer()), mime: String(mime || '').split(';')[0] };
+}
+
 const fueraDeVentana = r => r && (r.codigo === 131047 || /24 hours|re-engagement/i.test(r.error || ''));
 
-module.exports = { enviarTexto, enviarDocumento, enviarPlantilla, fueraDeVentana, destino, configurado, VERSION };
+module.exports = { enviarTexto, enviarDocumento, enviarPlantilla, bajarMedia, fueraDeVentana, destino, configurado, VERSION };

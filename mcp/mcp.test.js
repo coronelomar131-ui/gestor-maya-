@@ -544,6 +544,24 @@ test('Pepito API: consulta con herramientas del rol y propuesta que solo se guar
   assert.deepEqual(act.map(e => [e.accion, e.area]), [['guardó', 'direccion'], ['propuso', 'direccion'], ['consultó', 'reportes']]);
 });
 
+test('Pepito API: una foto por WhatsApp va como imagen a Claude y no se guarda en la conversación', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const falso = claudeFalso([texto('Veo una nota para Zeta Autopartes: 1 faro. ¿Qué precio le pongo?')]);
+  pepito._usarCliente(falso);
+  const r = await pepito.conversar(ADMIN, '(foto) Sácame la nota', 'whatsapp', { imagenes: [{ mime: 'image/jpeg', base64: 'QUJD' }] });
+  assert.match(r.texto, /Zeta/);
+  const ult = falso.llamadas[0].messages.at(-1);
+  assert.equal(ult.role, 'user');
+  assert.equal(ult.content[0].type, 'image');
+  assert.deepEqual(ult.content[0].source, { type: 'base64', media_type: 'image/jpeg', data: 'QUJD' });
+  assert.equal(ult.content.at(-1).type, 'text');
+  assert.match(ult.content.at(-1).text, /\(foto\) Sácame la nota/);
+  assert.match(falso.llamadas[0].system[0].text, /\(foto\)/);
+  const conv = db.cols.pepito_conversacion.get('admin-1');
+  assert.ok(!JSON.stringify(conv).includes('QUJD'), 'la imagen no se guarda');
+});
+
 test('Pepito API: un vendedor no recibe herramientas de su rol prohibido y hay límite diario', async () => {
   process.env.ANTHROPIC_API_KEY = 'prueba';
   const pepito = require('./pepito');
