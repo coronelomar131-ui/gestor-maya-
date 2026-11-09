@@ -1704,3 +1704,9 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-video-tutorial video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
 .m-video-pie { display: flex; justify-content: flex-end; padding: 10px 14px; }
 .m-tour-video { color: var(--m-faro-claro) !important; }
+
+/* ── Cliente repetido: aviso en el alta ── */
+.m-aviso-duplicado { margin: 0 0 14px; padding: 10px 14px; border-radius: var(--m-r-md, 12px); border: 1px solid rgba(239, 68, 68, .45); background: rgba(239, 68, 68, .12); color: #fca5a5; font-weight: 600; line-height: 1.4; }
+.m-aviso-duplicado[hidden] { display: none; }
+#c-guardar:disabled { opacity: .5; cursor: not-allowed; }
+.m-aviso-duplicado.es-parecido { border-color: rgba(245, 158, 11, .5); background: rgba(245, 158, 11, .12); color: #fcd34d; }

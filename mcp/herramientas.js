@@ -349,13 +349,14 @@ function crearServidor(usuario) {
   if (puede('clientes')) {
     servidor.registerTool('guardar_cliente', {
       title: 'Alta o cambio de cliente',
-      description: 'Sin id da de alta un cliente (código CL consecutivo, como la app; si ya existe uno con ese nombre no lo duplica). ' +
+      description: 'Sin id da de alta un cliente (código CL consecutivo, como la app; nunca lo duplica: si ya hay uno con el mismo nombre —aunque cambie S.A. de C.V., acentos o espacios—, RFC, teléfono o correo, no lo crea y regresa ese cliente; díselo a la persona. Si el nombre es casi igual a otro, tampoco lo crea y pregunta: solo con es_otro_cliente: true, después de que la persona confirme que es distinto). ' +
         'Con id (de buscar_clientes) cambia solo los campos que mandes.',
       inputSchema: {
         id: opcional, nombre: z.string().optional().describe('Nombre o razón social; obligatorio para alta'), codigo: opcional, rfc: opcional,
         email: opcional, telefono: opcional, calle: opcional, numero_exterior: opcional, numero_interior: opcional, colonia: opcional,
         municipio: opcional, ciudad: opcional, estado: opcional, pais: opcional, codigo_postal: opcional,
-        venta_publica_redes: z.boolean().optional().describe('Cliente de venta pública (redes sociales)')
+        venta_publica_redes: z.boolean().optional().describe('Cliente de venta pública (redes sociales)'),
+        es_otro_cliente: z.boolean().optional().describe('Solo si la persona confirmó que es distinto a un cliente con nombre casi igual')
       },
       annotations: ESCRITURA
     }, ejecutar(a => escritura.guardarCliente(usuario, a)));
