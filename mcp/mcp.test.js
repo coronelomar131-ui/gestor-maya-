@@ -955,3 +955,54 @@ test('emparejar: con muchas notas parecidas del cliente elige solo las de esa fa
   assert.ok(r4.elegidas.length <= 1);
   assert.equal(r4.cuadra, false);
 });
+
+test('clientes repetidos: mismo nombre con o sin S.A. de C.V., RFC, teléfono o correo no se crean', async () => {
+  const dup = require('../public/diseno/duplicados.js');
+  assert.equal(dup.claveNombre('JEIC DISTRIBUIDORA, S.A. de C.V.'), dup.claveNombre('Jeic  Distribuidora SA DE CV'));
+  assert.equal(dup.claveNombre('Jeic Distribuidora'), dup.claveNombre('JEIC DISTRIBUIDORA S. de R.L. de C.V.'));
+  assert.equal(dup.claveNombre('Auto Partes León'), dup.claveNombre('autopartes leon'));
+  assert.notEqual(dup.claveNombre('Autopartes León'), dup.claveNombre('Autopartes Lerma'));
+  assert.equal(dup.claveNombre('Mesa'), 'mesa', 'un nombre de una palabra no se recorta');
+  assert.equal(dup.claveRfc('XAXX010101000'), '', 'el RFC genérico no cuenta');
+  assert.equal(dup.claveTelefono('+52 1 (55) 1234-5678'), '5512345678');
+
+  const escritura = require('./escritura');
+  const r1 = await escritura.guardarCliente(ADMIN, { nombre: 'Refaccionaria Única Prueba S.A. de C.V.', rfc: 'RUP010203AB1', telefono: '55 9876 0001', email: 'compras@unica-prueba.mx' });
+  assert.ok(r1.creado);
+  const antes = db.cols.clientes.size;
+  const casos = [
+    [{ nombre: 'REFACCIONARIA UNICA PRUEBA' }, 'el mismo nombre'],
+    [{ nombre: 'Otra Razón', rfc: 'rup-010203-ab1' }, 'el mismo RFC'],
+    [{ nombre: 'Otra Razón', telefono: '5598760001' }, 'el mismo teléfono'],
+    [{ nombre: 'Otra Razón', email: 'Compras@Unica-Prueba.mx ' }, 'el mismo correo']
+  ];
+  for (const [a, motivo] of casos) {
+    const r = await escritura.guardarCliente(ADMIN, a);
+    assert.ok(r.ya_existia && r.no_se_creo, JSON.stringify(a));
+    assert.equal(r.id, r1.creado);
+    assert.equal(r.motivo, motivo);
+  }
+  assert.equal(db.cols.clientes.size, antes, 'no se creó ninguno repetido');
+  // Un RFC genérico no bloquea a otro cliente distinto
+  const r2 = await escritura.guardarCliente(ADMIN, { nombre: 'Público en General Prueba', rfc: 'XAXX010101000' });
+  const r3 = await escritura.guardarCliente(ADMIN, { nombre: 'Mostrador Prueba', rfc: 'XAXX010101000' });
+  assert.ok(r2.creado && r3.creado);
+  // Al editar no se puede dejar igual a otro cliente, pero sí guardar sus propios datos
+  await assert.rejects(escritura.guardarCliente(ADMIN, { id: r3.creado, telefono: '55-9876-0001' }), /Ya existe el cliente .*Refaccionaria Única Prueba/);
+  const r4 = await escritura.guardarCliente(ADMIN, { id: r1.creado, telefono: '5598760001' });
+  assert.equal(r4.actualizado, r1.creado);
+  // Para limpiar lo que ya existe: agrupa los clientes que ya están repetidos entre sí
+  const grupos = dup.gruposRepetidos([{ id: 'a', razonSocial: 'Taller X SA' }, { id: 'b', razonSocial: 'taller x' }, { id: 'c', razonSocial: 'Otro', telefono: '5511112222' }, { id: 'd', razonSocial: 'Otro 2', telefono: '55 1111 2222' }, { id: 'e', razonSocial: 'Solo' }]);
+  assert.deepEqual(grupos.map(g => g.map(c => c.id).sort()), [['a', 'b'], ['c', 'd']]);
+  // Relleno que no cuenta como dato real
+  assert.equal(dup.claveRfc('xxxxxxxxxxxx'), '');
+  assert.equal(dup.claveTelefono('5555555555'), '');
+  // Nombre casi igual (como "Sergiho" y "Sergio"): no se crea hasta confirmar que es otro
+  await escritura.guardarCliente(ADMIN, { nombre: 'Multiservicio Automotriz Sergiho Prueba' });
+  const p1 = await escritura.guardarCliente(ADMIN, { nombre: 'Multiservicio Automotriz Sergio Prueba' });
+  assert.ok(p1.no_se_creo && p1.parecido);
+  assert.match(p1.aviso, /Se parece mucho a .*Sergiho/);
+  const p2 = await escritura.guardarCliente(ADMIN, { nombre: 'Multiservicio Automotriz Sergio Prueba', es_otro_cliente: true });
+  assert.ok(p2.creado, 'con la confirmación sí se crea');
+  assert.equal(dup.buscarParecido({ razonSocial: 'Taller' }, [{ id: 'z', razonSocial: 'Taler' }]), null, 'nombres cortos no se comparan así');
+});

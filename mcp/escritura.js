@@ -15,11 +15,12 @@ const autor = u => ({ createdBy: u.uid, createdByName: u.nombre || u.email || 'U
 const sinNulos = o => Object.keys(o).reduce((r, k) => { if (o[k] !== undefined) r[k] = o[k]; return r; }, {});
 
 class ErrorUsuario extends Error {}
+const duplicados = require('../public/diseno/duplicados.js');
 
 // Usa el nombre del cliente registrado si coincide (sin acentos ni mayúsculas), para no crear variantes del mismo cliente
 async function resolverCliente(nombre) {
-  const n = datos.norm(nombre);
-  const c = (await fb().leerColeccion('clientes')).find(x => datos.norm(x.razonSocial || x.nombre) === n);
+  const n = duplicados.claveNombre(nombre);
+  const c = n ? (await fb().leerColeccion('clientes')).find(x => duplicados.claveNombre(x.razonSocial || x.nombre) === n) : null;
   return c ? { id: c.id, nombre: c.razonSocial || c.nombre, registrado: true } : { id: '', nombre: texto(nombre), registrado: false };
 }
 
@@ -152,15 +153,29 @@ async function guardarCliente(u, a) {
   if (a.venta_publica_redes !== undefined) cambios.redesSociales = !!a.venta_publica_redes;
 
   if (a.id) {
-    if (!(await fb().obtener('clientes', a.id))) throw new ErrorUsuario('No existe un cliente con id ' + a.id);
+    const actual = await fb().obtener('clientes', a.id);
+    if (!actual) throw new ErrorUsuario('No existe un cliente con id ' + a.id);
     if (!Object.keys(cambios).length) throw new ErrorUsuario('No mandaste ningún dato para cambiar');
+    // Solo se revisan los datos que cambian: que no lo dejen igual a otro cliente
+    const choque = duplicados.buscarDuplicado(cambios, await fb().leerColeccion('clientes'), a.id);
+    if (choque) throw new ErrorUsuario(duplicados.mensajeDuplicado(choque));
     await fb().actualizar('clientes', a.id, cambios);
     return { actualizado: a.id, campos: Object.keys(cambios) };
   }
   if (!cambios.razonSocial) throw new ErrorUsuario('Para dar de alta un cliente se necesita su nombre o razón social');
   const todos = await fb().leerColeccion('clientes');
-  const existente = todos.find(c => datos.norm(c.razonSocial || c.nombre) === datos.norm(cambios.razonSocial));
-  if (existente) return { ya_existia: true, id: existente.id, codigo: existente.codigoCliente || null, nombre: existente.razonSocial || existente.nombre };
+  // Nunca se crea un cliente repetido (mismo nombre sin "S.A. de C.V.", RFC, teléfono o correo): se regresa el que ya existe
+  const choque = duplicados.buscarDuplicado(cambios, todos);
+  if (choque) {
+    const e = choque.cliente;
+    return { ya_existia: true, no_se_creo: true, motivo: choque.motivo, aviso: duplicados.mensajeDuplicado(choque), id: e.id, codigo: e.codigoCliente || null, nombre: e.razonSocial || e.nombre };
+  }
+  // Nombre casi igual (una letra): no se crea hasta que la persona confirme que es otro cliente
+  const parecido = a.es_otro_cliente ? null : duplicados.buscarParecido(cambios, todos);
+  if (parecido) {
+    const e = parecido.cliente;
+    return { no_se_creo: true, parecido: true, aviso: duplicados.mensajeParecido(parecido) + ' Si la persona confirma que es distinto, vuelve a mandarlo con es_otro_cliente: true.', id: e.id, codigo: e.codigoCliente || null, nombre: e.razonSocial || e.nombre };
+  }
   const codigoCliente = texto(a.codigo) || 'CL' + (maxNumero(todos.filter(c => String(c.codigoCliente || '').startsWith('CL')), c => c.codigoCliente) + 1);
   const cliente = Object.assign({
     codigoCliente, razonSocial: '', rfc: '', email: '', telefono: '', calle: '', numeroExterior: '', numeroInterior: '',

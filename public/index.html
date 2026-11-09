@@ -901,6 +901,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="/diseno/duplicados.js"></script>
 </head>
 <body>
 <script>
@@ -2158,17 +2159,18 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     <div class="modal-body">
       <div class="grid-2">
         <div class="form-group"><label>Código Cliente</label><input type="text" id="c-codigo" placeholder="Auto-generado" readonly></div>
-        <div class="form-group"><label>Razón Social *</label><input type="text" id="c-razonSocial" placeholder="Nombre de la empresa" required></div>
+        <div class="form-group"><label>Razón Social *</label><input type="text" id="c-razonSocial" oninput="revisarClienteDuplicado()" placeholder="Nombre de la empresa" required></div>
       </div>
 
       <div class="grid-2">
-        <div class="form-group"><label>RFC</label><input type="text" id="c-rfc" placeholder="RFC"></div>
-        <div class="form-group"><label>Email</label><input type="email" id="c-email" placeholder="cliente@email.com"></div>
+        <div class="form-group"><label>RFC</label><input type="text" id="c-rfc" oninput="revisarClienteDuplicado()" placeholder="RFC"></div>
+        <div class="form-group"><label>Email</label><input type="email" id="c-email" oninput="revisarClienteDuplicado()" placeholder="cliente@email.com"></div>
       </div>
 
       <div class="grid-2">
-        <div class="form-group"><label>Teléfono</label><input type="tel" id="c-telefono" placeholder="(55) 1234-5678"></div>
+        <div class="form-group"><label>Teléfono</label><input type="tel" id="c-telefono" oninput="revisarClienteDuplicado()" placeholder="(55) 1234-5678"></div>
       </div>
+      <div id="c-duplicado" class="m-aviso-duplicado" role="alert" hidden></div>
 
       <div class="form-group" style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="c-redes-sociales">
@@ -2219,7 +2221,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-cliente')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveCliente()">Guardar Cliente</button>
+      <button class="btn btn-primary" id="c-guardar" onclick="saveCliente()">Guardar Cliente</button>
     </div>
   </div>
 </div>
@@ -3488,15 +3490,44 @@ window.saveProducto = async function() {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
+// Mientras se escribe: avisa si ya hay un cliente con ese nombre, RFC, teléfono o correo (con lo que ya está en pantalla)
+const datosClienteForm = () => ({
+  razonSocial: document.getElementById('c-razonSocial').value,
+  rfc: document.getElementById('c-rfc').value,
+  email: document.getElementById('c-email').value,
+  telefono: document.getElementById('c-telefono').value
+});
+function pintarDuplicado(d, parecido) {
+  const caja = document.getElementById('c-duplicado');
+  const boton = document.getElementById('c-guardar');
+  const texto = d ? '⚠️ ' + window.mayaDuplicados.mensajeDuplicado(d) : parecido ? '🤔 ' + window.mayaDuplicados.mensajeParecido(parecido) : '';
+  if (caja) { caja.hidden = !texto; caja.textContent = texto; caja.classList.toggle('es-parecido', !d && !!parecido); }
+  if (boton) boton.disabled = !!d;
+}
+window.revisarClienteDuplicado = function() {
+  if (!window.mayaDuplicados) return;
+  const lista = data.clientes || [];
+  const d = window.mayaDuplicados.buscarDuplicado(datosClienteForm(), lista);
+  pintarDuplicado(d, d ? null : window.mayaDuplicados.buscarParecido(datosClienteForm(), lista));
+};
+
 window.saveCliente = async function() {
   const razonSocial = document.getElementById('c-razonSocial').value.trim();
   if (!razonSocial) return toast('Razón Social es requerida', 'error');
+  if (!window.mayaDuplicados) return toast('No se pudo revisar si el cliente ya existe. Recarga la página.', 'error');
 
   try {
+    // Antes de crear: revisa contra todos los clientes guardados (no solo los de pantalla)
+    const existentes = await getDocs(collection(db, 'clientes'));
+    const lista = existentes.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    const repetido = window.mayaDuplicados.buscarDuplicado(datosClienteForm(), lista);
+    if (repetido) { pintarDuplicado(repetido); return toast(window.mayaDuplicados.mensajeDuplicado(repetido), 'error'); }
+    const parecido = window.mayaDuplicados.buscarParecido(datosClienteForm(), lista);
+    if (parecido && !confirm(window.mayaDuplicados.mensajeParecido(parecido) + '\n\nAcepta solo si es un cliente distinto.')) { pintarDuplicado(null, parecido); return; }
+
     // Auto-generate client code
     let codigoCliente = document.getElementById('c-codigo').value;
     if (!codigoCliente) {
-      const existentes = await getDocs(collection(db, 'clientes'));
       let maxNum = 0;
       existentes.forEach(doc => {
         const codigo = doc.data().codigoCliente || '';
@@ -3544,6 +3575,7 @@ window.saveCliente = async function() {
     document.getElementById('c-sin-precio').checked = false;
     document.getElementById('c-estado').value = '';
     document.getElementById('c-pais').value = 'México';
+    pintarDuplicado(null);
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
@@ -7267,6 +7299,9 @@ window.confirmImportClientes = async function(clientesJSON, modal) {
     document.body.appendChild(statusDiv);
 
     let imported = 0, skipped = 0;
+    const repetidos = [];
+    // Una sola lectura: todos los clientes guardados; los nuevos se van sumando para no repetir dentro del mismo Excel
+    const guardados = (await getDocs(collection(window.db, 'clientes'))).docs.map(d => Object.assign({ id: d.id }, d.data()));
 
     for (let i = 0; i < clientes.length; i++) {
       const c = clientes[i];
@@ -7275,16 +7310,19 @@ window.confirmImportClientes = async function(clientesJSON, modal) {
         continue;
       }
 
-      // Check if already exists
-      const q = query(collection(window.db, 'clientes'), where('codigoCliente', '==', c.codigoCliente));
-      const existing = await getDocs(q);
+      const mismoCodigo = guardados.some(g => String(g.codigoCliente || '').trim().toUpperCase() === String(c.codigoCliente).trim().toUpperCase());
+      const exacto = !mismoCodigo && window.mayaDuplicados && window.mayaDuplicados.buscarDuplicado(c, guardados);
+      const parecido = !mismoCodigo && !exacto && window.mayaDuplicados && window.mayaDuplicados.buscarParecido(c, guardados);
+      const repetido = exacto || parecido;
+      if (repetido) repetidos.push((c.razonSocial || c.codigoCliente) + (exacto ? ' (igual a ' : ' (se parece a ') + (repetido.cliente.razonSocial || repetido.cliente.codigoCliente) + ')');
 
-      if (existing.empty) {
+      if (!mismoCodigo && !repetido) {
         await addDoc(collection(window.db, 'clientes'), {
           ...c,
           createdAt: serverTimestamp(),
           estado: 'activo'
         });
+        guardados.push(Object.assign({ id: 'nuevo-' + i }, c));
         imported++;
       } else {
         skipped++;
@@ -7295,7 +7333,8 @@ window.confirmImportClientes = async function(clientesJSON, modal) {
 
     statusDiv.remove();
     modal.remove();
-    window.toast(`✅ ${imported} importados, ${skipped} omitidos`, 'success');
+    window.toast(`✅ ${imported} importados, ${skipped} omitidos` + (repetidos.length ? ` (${repetidos.length} ya existían)` : ''), 'success');
+    if (repetidos.length) alert('No se importaron porque ya existen o se parecen mucho a uno que ya está (si alguno sí es distinto, dalo de alta a mano):\n\n' + repetidos.slice(0, 20).join('\n') + (repetidos.length > 20 ? '\n…y ' + (repetidos.length - 20) + ' más' : ''));
     renderClientes();
   } catch (error) {
     window.toast('Error: ' + error.message, 'error');
