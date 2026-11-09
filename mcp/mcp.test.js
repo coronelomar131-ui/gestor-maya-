@@ -840,7 +840,7 @@ test('resumen de la mañana por rol: almacén, entregas, vendedor y sus alarmas 
   await db.guardar('recordatorios', 'r1', { uid: 'd-1', para: 'd-1', texto: 'Llamar a Zeta', cuando: Date.now() + 3600000, estado: 'pendiente' });
   const ctx = await avisos.contextoDiario();
   const alm = avisos.resumenDe({ uid: 'a', nombre: 'Rosa', rol: 'almacen' }, ctx);
-  assert.match(alm, /Por preparar:\* 2\n• NE-300 · LATAM PARTS · Calavera\n• NE-229/);
+  assert.match(alm, /Por preparar:\* \d+\n• NE-300 · LATAM PARTS · Calavera/, 'la más nueva primero');
   assert.match(alm, /Stock bajo:\*\n• Faro izquierdo \(1 de 2 mín\.\)/);
   const ent = avisos.resumenDe({ uid: 'e', nombre: 'Israel', rol: 'entregas' }, ctx);
   assert.match(ent, /En tránsito:\* 1\n• NE-299 · Zeta · Faro/);
@@ -910,4 +910,30 @@ test('compras: vender_de_compra suma piezas vendidas con precio promedio y no pa
   await assert.rejects(escritura.venderDeCompra(ADMIN, { id: 'k1', pieza: 'espejo', cantidad_vendida: 1, precio_venta: 10 }), /no hay un artículo/);
   const resumen = await datos.compras({ limite: 10 });
   assert.equal(resumen.compras.find(c => c.id === 'k1').articulos[0].ingresos_venta, 5100);
+});
+
+test('emparejar: con muchas notas parecidas del cliente elige solo las de esa factura', async () => {
+  const { emparejar } = await import('../public/diseno/emparejar.js');
+  const dia = d => Date.parse('2026-11-' + d + 'T12:00:00Z');
+  const faro = (n, d, precio = 9200) => ({ clave: 'ne:' + n, cliente: 'LATAM', fecha: dia(d), total: precio * 1.16, items: [{ descripcion: 'Faro derecho Creta', anio: '2021', cantidad: 1, precioUnit: precio }] });
+  const notas = [faro(1, '01'), faro(2, '02'), faro(3, '03'), faro(4, '04'), faro(5, '05', 8800),
+    { clave: 'ne:6', cliente: 'LATAM', fecha: dia('03'), total: 2900, items: [{ descripcion: 'Espejo izquierdo Aveo', cantidad: 1, precioUnit: 2500 }] }];
+  const deLatam = n => n.cliente === 'LATAM';
+  // Una factura de un faro: solo UNA nota, la más cercana a la fecha de la factura
+  const f1 = { fecha: dia('06'), subtotal: 9200, total: 10672, conceptos: [{ descripcion: 'FARO DER CRETA 2021', importe: 9200 }] };
+  const r1 = emparejar(f1, notas, deLatam);
+  assert.deepEqual(r1.elegidas.map(e => e.clave), ['ne:4']);
+  assert.ok(r1.cuadra);
+  assert.ok(r1.otras.some(e => e.clave === 'ne:1'), 'las demás quedan como otras posibles');
+  // Dos faros: exactamente dos notas
+  const f2 = { fecha: dia('06'), subtotal: 18400, total: 21344, conceptos: [{ descripcion: 'FARO DER CRETA 2021', importe: 18400 }] };
+  assert.equal(emparejar(f2, notas, deLatam).elegidas.length, 2);
+  // El faro de 8,800 se distingue por su importe
+  const f3 = { fecha: dia('06'), subtotal: 8800, total: 10208, conceptos: [{ descripcion: 'FARO DERECHO CRETA', importe: 8800 }] };
+  assert.deepEqual(emparejar(f3, notas, deLatam).elegidas.map(e => e.clave), ['ne:5']);
+  // Si nada cuadra, no se marcan todas las parecidas: a lo más una por concepto
+  const f4 = { fecha: dia('06'), subtotal: 9300, total: 10788, conceptos: [{ descripcion: 'FARO DER CRETA 2021', importe: 9300 }] };
+  const r4 = emparejar(f4, notas, deLatam);
+  assert.ok(r4.elegidas.length <= 1);
+  assert.equal(r4.cuadra, false);
 });

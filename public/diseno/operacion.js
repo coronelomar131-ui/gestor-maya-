@@ -361,10 +361,15 @@ function confirmarFactura(cfdi) {
     const porClave = new Map(pend.map(r => [r.col + ':' + r.id, r]));
     const esDelCliente = n => { const r = porClave.get(n.clave); return !!r && (norm(r.cliente) === norm(nombreCli) || (cliente && clientePorNombreORfc(r.cliente) === cliente)); };
     const res = emparejar(cfdi, pend.map(r => ({ clave: r.col + ':' + r.id, folio: r.folio, cliente: r.cliente, fecha: r.fecha, total: r.total, siniestro: r.siniestro, piezas: r.piezas, items: r.raw.items })), esDelCliente);
-    // Lo que se marcó en la bandeja antes de subir el XML también cuenta
+    // Lo marcado en la bandeja solo entra si es del mismo cliente; se marca solo si el emparejador no cuadró la factura
     const elegidas = new Map(res.elegidas.map(e => [e.clave, e]));
-    pend.forEach(r => { const k = r.col + ':' + r.id; if (seleccion.has(k) && !elegidas.has(k)) elegidas.set(k, { clave: k, razones: [{ tipo: 'cliente', texto: 'La marcaste en la bandeja' }] }); });
     const marcadas = new Set(elegidas.keys());
+    pend.forEach(r => {
+      const k = r.col + ':' + r.id;
+      if (!seleccion.has(k) || elegidas.has(k) || !esDelCliente({ clave: k })) return;
+      elegidas.set(k, { clave: k, razones: [{ tipo: 'cliente', texto: 'La marcaste en la bandeja' }] });
+      if (!res.cuadra) marcadas.add(k);
+    });
     const extras = new Map(); // notas que la persona agrega a mano desde el buscador
     const plazo = diasCredito(cliente);
     const pue = cfdi.metodoPago === 'PUE';
@@ -437,7 +442,7 @@ function confirmarFactura(cfdi) {
       const n = pend.filter(r => marcadas.has(r.col + ':' + r.id)).length;
       const cuadra = [cfdi.total, cfdi.subtotal].some(x => Math.abs(x - t) < 1);
       $('#cf-suma').innerHTML = `<b>${n} ${n === 1 ? 'nota' : 'notas'}</b> por <b>${pesos(t)}</b> de ${pesos(cfdi.total)}. ` +
-        (cuadra ? '<span class="m-op-ok">Cuadra con la factura</span>' : `<span class="m-op-dif">Faltan ${pesos(cfdi.total - t)} para el total</span>`);
+        (cuadra ? '<span class="m-op-ok">Cuadra con la factura</span>' : t > cfdi.total ? `<span class="m-op-dif">Sobran ${pesos(t - cfdi.total)}: quita las notas que no son de esta factura</span>` : `<span class="m-op-dif">Faltan ${pesos(cfdi.total - t)} para el total</span>`);
     };
     const caja = $('.m-op-caja:last-of-type') || document;
     caja.addEventListener('change', e => {

@@ -4,7 +4,8 @@
 //   • la pieza de la nota se parece a un concepto (palabras en común, con sinónimos: der/derecho, del/delantero…)
 //   • el importe de una partida es igual al de un concepto
 //   • mismo cliente (RFC o nombre) y fecha razonable (nota antes de la factura, hasta 120 días)
-// Se eligen las notas que pasan el umbral; si no alcanza, se busca la combinación de notas del cliente que suma el total.
+// Se eligen SOLO las notas de esa factura: las que traen su siniestro y, para completar, la combinación de notas del
+// cliente que cuadra con el total (la de más evidencia y menos notas). Si nada cuadra, a lo más una nota por concepto.
 // Funciones puras: no tocan la página, así se pueden probar.
 
 const VACIAS = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'con', 'para', 'por', 'en', 'a', 'al', 'un', 'una', 'pza', 'pzas', 'pieza', 'piezas', 'servicio', 'refaccion', 'refacciones', 'auto', 'parte', 'no', 'num', 'mod', 'modelo', 'marca']);
@@ -93,34 +94,52 @@ export function emparejar(cfdi, notas, esDelCliente = () => false) {
     if (importeIgual) { puntos += 30; razones.push({ tipo: 'importe', texto: 'Mismo importe' }); }
     // Fecha: la nota debe ser de antes de la factura y no muy vieja
     const dias = n.fecha ? (fechaF - n.fecha) / 86400000 : null;
-    if (dias != null && dias >= -1 && dias <= 120) puntos += 8;
+    // Más cerca de la fecha de la factura, más puntos (desempata entre notas iguales)
+    if (dias != null && dias >= -1 && dias <= 120) puntos += 8 * (1 - Math.max(0, dias) / 120);
     const posterior = dias != null && dias < -1; // una factura no cubre ventas que todavía no existían
     if (posterior) { puntos -= 40; razones.push({ tipo: 'fecha', texto: 'Es de después de la factura' }); }
     return { clave: n.clave, total: Number(n.total) || 0, puntos, razones, delCliente, posterior, fuerte: sinHallados.length > 0 };
   });
 
   const UMBRAL = 60;
-  // Una nota de otro cliente solo entra si trae el siniestro, salvo que el cliente de la factura no esté en el gestor
+  const BASE = 33; // lo que cualquier nota del cliente trae solo por ser suya y de fecha razonable
   const hayCliente = evaluadas.some(e => e.delCliente);
-  let elegidas = evaluadas.filter(e => !e.posterior && e.puntos >= UMBRAL && (e.fuerte || e.delCliente || (!hayCliente && e.puntos >= 90)));
   const sumaDe = lista => lista.reduce((s, e) => s + e.total, 0);
   const cuadraCon = s => cerca(s, cfdi.total) || cerca(s, cfdi.subtotal);
+  const conPrueba = e => e.razones.some(r => r.tipo === 'pieza' || r.tipo === 'importe');
 
-  // Si con lo encontrado no cuadra, busca la combinación de notas del cliente (hasta 5) que suma el total de la factura
+  // 1) Las que traen un siniestro escrito en la factura son de esa factura
+  const fuertes = evaluadas.filter(e => !e.posterior && e.fuerte);
+  let elegidas = fuertes.slice();
+
+  // 2) Si no cuadra, la combinación (hasta 6 notas) del cliente que completa el total con más evidencia y menos notas
   if (!cuadraCon(sumaDe(elegidas))) {
     const base = new Set(elegidas.map(e => e.clave));
-    const pool = evaluadas.filter(e => e.delCliente && !e.posterior && !base.has(e.clave) && e.total > 0).sort((a, b) => b.puntos - a.puntos).slice(0, 18);
-    const fijo = sumaDe(elegidas);
-    let mejor = null;
-    const buscar = (i, actual, suma) => {
-      if (mejor && mejor.length <= actual.length) return;
-      if (actual.length && cuadraCon(fijo + suma)) { mejor = actual.slice(); return; }
-      if (actual.length >= 5 || i >= pool.length || fijo + suma > Math.max(cfdi.total, cfdi.subtotal) + 1) return;
-      actual.push(pool[i]); buscar(i + 1, actual, suma + pool[i].total); actual.pop();
-      buscar(i + 1, actual, suma);
+    const pool = evaluadas
+      .filter(e => !e.posterior && !base.has(e.clave) && e.total > 0 && (e.delCliente || (!hayCliente && e.puntos >= 90)))
+      .sort((a, b) => b.puntos - a.puntos).slice(0, 20);
+    const fijo = sumaDe(elegidas), tope = Math.max(cfdi.total, cfdi.subtotal) + 1;
+    const valor = e => e.puntos - BASE - 6; // evidencia propia; cada nota de más cuesta un poco
+    let mejor = null, mejorValor = -Infinity;
+    const buscar = (i, actual, suma, val) => {
+      if (actual.length && cuadraCon(fijo + suma)) {
+        if (val > mejorValor + 1e-9 || (Math.abs(val - mejorValor) < 1e-9 && actual.length < mejor.length)) { mejor = actual.slice(); mejorValor = val; }
+        return;
+      }
+      if (actual.length >= 6 || i >= pool.length || fijo + suma > tope) return;
+      actual.push(pool[i]); buscar(i + 1, actual, suma + pool[i].total, val + valor(pool[i])); actual.pop();
+      buscar(i + 1, actual, suma, val);
     };
-    buscar(0, [], 0);
-    if (mejor) mejor.forEach(e => { e.razones.push({ tipo: 'suma', texto: 'Completa el total' }); elegidas.push(e); });
+    buscar(0, [], 0, 0);
+    if (mejor) {
+      mejor.forEach(e => { if (!conPrueba(e)) e.razones.push({ tipo: 'suma', texto: 'Completa el total' }); elegidas.push(e); });
+    } else if (!fuertes.length) {
+      // 3) Nada cuadra: a lo más una nota por concepto, solo las de mucha evidencia; lo demás queda en "otras posibles"
+      const usadas = new Set();
+      pool.filter(e => e.puntos >= UMBRAL && conPrueba(e)).forEach(e => {
+        if (usadas.size < cfdi.conceptos.length && sumaDe(elegidas) + e.total <= tope) { elegidas.push(e); usadas.add(e.clave); }
+      });
+    }
   }
 
   elegidas.sort((a, b) => b.puntos - a.puntos);
