@@ -632,6 +632,29 @@ function objetivoDe(paso) {
   }
   return null;
 }
+// Video de cada módulo (public/tutoriales/<módulo>.mp4): la pantalla real con voz, subtítulos y cada paso señalado
+const VIDEOS = new Set(['dashboard', 'notas-entrega', 'ventas', 'cotizaciones', 'clientes', 'inventario', 'compras', 'seguimiento', 'facturacion', 'cobranza', 'pepito', 'oficina']);
+function abrirVideo(id) {
+  if (!VIDEOS.has(id)) return;
+  $$('.m-video-tutorial').forEach(v => v.remove());
+  const def = TUTORIALES[id] || {};
+  const capa = crear('div', 'm-video-tutorial');
+  capa.setAttribute('role', 'dialog'); capa.setAttribute('aria-modal', 'true'); capa.setAttribute('aria-label', 'Video: ' + (def.titulo || id));
+  capa.innerHTML = `<div class="m-video-caja"><div class="m-video-cab"><strong>${icono('circle-help', 18)} ${escapar(def.titulo || '')} en video</strong>
+      <button type="button" class="m-btn-redondo" data-video="cerrar" aria-label="Cerrar video">${icono('x', 18)}</button></div>
+    <video src="/tutoriales/${id}.mp4" controls autoplay playsinline preload="auto"></video>
+    <div class="m-video-pie"><button type="button" class="btn btn-secondary btn-sm" data-video="recorrido">Ver el recorrido en pantalla</button></div></div>`;
+  const tecla = e => { if (e.key === 'Escape') cerrar(); };
+  const cerrar = () => { const v = $('video', capa); if (v) v.pause(); capa.remove(); document.removeEventListener('keydown', tecla); };
+  capa.addEventListener('click', e => {
+    if (e.target === capa || e.target.closest('[data-video="cerrar"]')) return cerrar();
+    if (e.target.closest('[data-video="recorrido"]')) { cerrar(); if (TUTORIALES[id]) iniciarTour(TUTORIALES[id], id); }
+  });
+  document.addEventListener('keydown', tecla);
+  document.body.appendChild(capa);
+  marcarTour(id);
+}
+
 function iniciarTour(def, clave) {
   terminarTour(false);
   quitarAviso();
@@ -647,6 +670,7 @@ function iniciarTour(def, clave) {
     if (!b) return;
     if (b.dataset.tour === 'siguiente') pasoTour(1);
     else if (b.dataset.tour === 'atras') pasoTour(-1);
+    else if (b.dataset.tour === 'video') { const c = tour.clave; terminarTour(true); abrirVideo(c); }
     else terminarTour(true);
   });
   window.addEventListener('resize', reubicarTour);
@@ -673,6 +697,7 @@ function pintarPaso() {
     <div class="m-tour-puntos" aria-hidden="true">${tour.pasos.map((_, k) => `<i class="${k === tour.i ? 'activo' : ''}"></i>`).join('')}</div>
     <div class="m-tour-acciones">
       <button type="button" class="m-saltar" data-tour="saltar">${ultimo ? 'Cerrar' : 'Saltar'}</button>
+      ${VIDEOS.has(tour.clave) ? '<button type="button" class="m-saltar m-tour-video" data-tour="video">▶ Video</button>' : ''}
       ${tour.i > 0 ? '<button type="button" class="btn btn-secondary btn-sm" data-tour="atras">Atrás</button>' : ''}
       <button type="button" class="btn btn-primary btn-sm" data-tour="siguiente" style="width:auto">${ultimo ? 'Listo' : 'Siguiente'}</button>
     </div>`;
@@ -745,12 +770,13 @@ function avisoTour(id) {
     aviso.setAttribute('role', 'status');
     aviso.innerHTML = `${icono('sparkles', 18)}<span>¿Primera vez en <b>${escapar(def.titulo)}</b>?</span>
       <button type="button" class="btn btn-primary btn-sm" data-aviso="ver" style="width:auto">Ver recorrido</button>
+      ${VIDEOS.has(id) ? '<button type="button" class="btn btn-secondary btn-sm" data-aviso="video">▶ Video</button>' : ''}
       <button type="button" class="btn btn-secondary btn-sm" data-aviso="no">Ahora no</button>`;
     aviso.addEventListener('click', e => {
       const b = e.target.closest('[data-aviso]');
       if (!b) return;
       aviso.remove();
-      if (b.dataset.aviso === 'ver') iniciarTour(def, id); else marcarTour(id);
+      if (b.dataset.aviso === 'ver') iniciarTour(def, id); else if (b.dataset.aviso === 'video') abrirVideo(id); else marcarTour(id);
     });
     document.body.appendChild(aviso);
     temporizadorAviso = setTimeout(() => aviso.remove(), 15000);
