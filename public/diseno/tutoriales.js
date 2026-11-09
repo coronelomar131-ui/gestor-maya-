@@ -36,20 +36,23 @@ export const TUTORIALES = {
   dashboard: {
     titulo: 'Resumen',
     pasos: [
-      { el: '.m-saludo', titulo: 'Tu resumen', texto: 'Lo primero que ves al entrar: cómo va el negocio este mes.' },
-      { el: '#m-accesos', titulo: 'Tus accesos', texto: 'Atajos a tus módulos favoritos. Toca <b>Editar</b> para ordenarlos o cambiarlos.' },
+      { el: '.m-saludo', titulo: 'Tu día', texto: 'Arriba ves tu saludo y la fecha. Desde aquí arranca tu día.' },
+      { el: '#m-accesos', titulo: 'Tus accesos', texto: 'Tus módulos favoritos están en tarjetas. Toca una y entras directo.' },
+      { el: '[data-accion="editar-accesos"]', titulo: 'Ordénalos a tu gusto', texto: 'Con <b>Editar</b> agregas, quitas o arrastras tus accesos. Cada persona tiene los suyos.' },
       { el: '#mod-dashboard .stats-grid', titulo: 'Los números del mes', texto: 'Ventas del mes, piezas en existencia, clientes y entregas pendientes. Se actualizan solos.' },
-      { el: '#dash-ventas-list', titulo: 'Últimas ventas', texto: 'Las ventas más recientes con su total. Para ver todas, entra a <b>Ventas</b>.' }
+      { el: '.m-campana', titulo: 'Tus avisos', texto: 'En la campanita te llega lo tuyo: el resumen de la mañana, tus alarmas y lo que pasa en el día.' },
+      { el: '[data-accion="ayuda"]', titulo: '¿Dudas?', texto: 'Este botón repite el recorrido del módulo donde estés.' }
     ]
   },
 
   'notas-entrega': {
     titulo: 'Notas de entrega',
     pasos: [
-      { el: '[onclick*="modal-nota-entrega"]', titulo: 'Nueva nota', texto: 'Eliges al cliente, agregas las piezas con cantidad y precio, y marcas si lleva IVA. Al guardar se descarga el PDF y, si lo dejas marcado, también se registra la venta.' },
-      { el: '#ne-filter-tipo', junto: '#ne-filter-hora', titulo: 'Encuentra cualquier nota', texto: 'Filtra por tipo (entrega o venta), cliente, mes, año, día u hora. El total de abajo suma solo lo que estás viendo.' },
+      { el: '[onclick*="modal-nota-entrega"]', titulo: 'Nueva nota', texto: 'Toca <b>Nueva nota</b>. Eliges al cliente, agregas cada pieza con cantidad, año, siniestro y precio, y marcas si lleva IVA.' },
+      { el: '[onclick*="modal-nota-entrega"]', titulo: 'Al guardar', texto: 'Al guardar se descarga el PDF y, si dejas marcada la casilla, la venta se registra sola. Al almacén le llega el aviso para prepararla.' },
+      { el: '#ne-filter-tipo', junto: '#ne-filter-hora', titulo: 'Encuentra cualquier nota', texto: 'Filtra por tipo, cliente, mes, año, día u hora. El total de abajo suma solo lo que estás viendo.' },
       { el: '[onclick*="descargarHistorialNE()"]', titulo: 'Descarga lo que filtraste', texto: 'Con <b>Excel</b> o <b>PDF</b> te llevas exactamente las notas de la lista.' },
-      { el: '#ne-table', titulo: 'Tu historial', texto: 'Cada renglón es una nota de entrega (NE) o de venta (NV), de la más nueva a la más vieja.' }
+      { el: '#ne-table', titulo: 'Tu historial', texto: 'Cada renglón es una nota de entrega o de venta, de la más nueva a la más vieja. Desde ahí la vuelves a descargar.' }
     ]
   },
 
@@ -57,7 +60,7 @@ export const TUTORIALES = {
     titulo: 'Ventas',
     pasos: [
       { el: '[onclick*="modal-venta"]', titulo: 'Nueva venta', texto: 'Registra una venta con sus partidas, IVA y ajustes. Si ya hiciste la nota de entrega, esa venta se registró sola.' },
-      { el: '#mod-ventas .search-box', titulo: 'Buscar', texto: 'Escribe folio, cliente o pieza y la tabla se filtra al instante.' },
+      { el: '#mod-ventas .search-box', titulo: 'Buscar', texto: 'Escribe folio, cliente, pieza o siniestro y la tabla se filtra al instante.' },
       { el: '#ventas-body select', titulo: 'Estatus', texto: 'Cambia el estatus aquí mismo: Pendiente, Conseguir, En proceso, Entregado o Cancelado. Se guarda al momento.' },
       { el: '#notasfacturas-table', titulo: 'Notas y facturas', texto: 'Cada nota con su factura, su siniestro y si ya se entregó.' }
     ]
@@ -66,17 +69,18 @@ export const TUTORIALES = {
   cotizaciones: {
     titulo: 'Cotizaciones',
     pasos: [
-      { el: '[onclick*="modal-cotizacion"]', titulo: 'Nueva cotización', texto: 'Arma una cotización con piezas, precios e IVA para mandarla al cliente.' },
+      { el: '[onclick*="modal-cotizacion"]', titulo: 'Nueva cotización', texto: 'Arma la cotización con piezas, precios e IVA. Sale en PDF para mandarla al cliente.' },
       { el: '#mod-cotizaciones .search-box', titulo: 'Buscar', texto: 'Encuentra una cotización por folio, cliente o pieza.' },
-      { el: '#cot-table', titulo: 'Tus cotizaciones', texto: 'Aquí quedan todas, con su estatus y su fecha.' }
+      { el: '#cot-table', titulo: 'Tus cotizaciones', texto: 'Aquí quedan todas, con su estatus y su fecha. Cuando el cliente acepta, la conviertes en venta sin volver a capturar.' }
     ]
   },
 
   clientes: {
     titulo: 'Clientes',
     pasos: [
-      { el: '[onclick*="modal-cliente"]', titulo: 'Agregar cliente', texto: 'Da de alta un cliente con su razón social, RFC y dirección para usarlo en notas y ventas.' },
+      { el: '[onclick*="modal-cliente"]', titulo: 'Agregar cliente', texto: 'Da de alta un cliente con razón social, RFC, correo, teléfono y dirección.' },
       { el: '#mod-clientes .search-box', titulo: 'Buscar', texto: 'Por nombre, RFC, teléfono o correo.' },
+      { el: '#mod-clientes table', titulo: 'Nota sin precio y venta pública', texto: 'En la tabla marcas a los clientes de venta pública y a los que piden su <b>nota sin precio</b>, como Jeic. La venta guarda los importes; la nota sale sin precios.' },
       { el: '#btn-import-excel', titulo: 'Importar y exportar', texto: 'Sube muchos clientes de una vez desde Excel, o descarga el directorio completo.' }
     ]
   },
@@ -84,19 +88,19 @@ export const TUTORIALES = {
   inventario: {
     titulo: 'Inventario',
     pasos: [
-      { el: '[onclick*="modal-producto"]', titulo: 'Agregar pieza', texto: 'Registra una pieza con código, descripción, marca, precio y existencias.' },
+      { el: '[onclick*="modal-producto"]', titulo: 'Agregar pieza', texto: 'Registra una pieza con código, descripción, marca, precio, existencias y el mínimo que quieres tener.' },
       { el: '#mod-inventario .search-box', titulo: 'Buscar pieza', texto: 'Por código, descripción, marca o el auto con el que es compatible.' },
-      { el: '[onclick*="sincronizarInventarioML()"]', titulo: 'Mercado Libre', texto: 'Trae tus publicaciones de Mercado Libre para verlas junto al inventario local.' }
+      { el: '[onclick*="sincronizarInventarioML()"]', titulo: 'Mercado Libre', texto: 'Trae tus publicaciones de Mercado Libre para verlas junto al inventario. Solo se guarda lo que cambió.' }
     ]
   },
 
   compras: {
     titulo: 'Compras',
     pasos: [
-      { el: '[onclick*="comprasNueva"]', titulo: 'Registrar una compra', texto: 'Anota cada lote: proveedor, piezas, cuántas compraste y a cuánto. Cuando vendas, pon cuántas y a qué precio.' },
+      { el: '[onclick*="comprasNueva"]', titulo: 'Registrar una compra', texto: 'Anota la fecha, el proveedor y cada pieza con cuántas compraste y a cuánto.' },
       { el: '.m-compras-metricas', titulo: 'Cuánto llevas', texto: 'Lo invertido, lo que ya recuperaste, la utilidad bruta y las piezas que te quedan por vender.' },
-      { el: '#compras-busqueda', titulo: 'Buscar', texto: 'Encuentra una compra por pieza, proveedor o fecha (por ejemplo 07/11/2026).' },
-      { el: '#mod-compras .table-card', titulo: 'Editar o vender', texto: 'Con Editar compra registras piezas vendidas. También se lo puedes pedir a Pepito: "vendí 2 faros del lote de Depo a 1,800".' }
+      { el: '#compras-busqueda', titulo: 'Buscar', texto: 'Encuentra una compra por pieza, proveedor o fecha.' },
+      { el: '#mod-compras .table-card', titulo: 'Editar o vender', texto: 'Con <b>Editar compra</b> anotas las piezas que vendiste y a qué precio. O díselo a Pepito: vendí dos faros del lote de Depo a mil ochocientos.' }
     ]
   },
 
@@ -155,8 +159,10 @@ export const TUTORIALES = {
   oficina: {
     titulo: 'Oficina virtual',
     pasos: [
-      { el: '#of-3d', titulo: 'La oficina en 3D', texto: 'Pepito Junior y los agentes de cada área. Cuando llega trabajo se juntan y lo atienden; los que dicen “Te necesita” tienen pendientes. Toca a uno para abrir su área.' },
-      { el: '#of-piso', titulo: 'Lo pendiente por área', texto: 'Aquí ves el número de pendientes de cada área; en rojo, lo urgente. Tócala para entrar.' }
+      { el: '#of-3d', titulo: 'La oficina en 3D', texto: 'Pepito Junior y los agentes de cada área. Cuando Pepito trabaja, el agente de esa área se mueve.' },
+      { el: '[data-giro]', titulo: 'Gírala', texto: 'Con estos botones, o arrastrándola, la ves en trescientos sesenta grados.' },
+      { el: '#of-piso', titulo: 'Lo pendiente por área', texto: 'Cuántos pendientes tiene cada área; en rojo, lo urgente. Toca un área para entrar.' },
+      { el: '#of-actividad', titulo: 'Lo que hizo Pepito', texto: 'Aquí queda lo último que Pepito hizo y para quién.' }
     ]
   },
 
@@ -164,17 +170,19 @@ export const TUTORIALES = {
     titulo: 'Seguimiento de piezas',
     pasos: [
       { el: '#seg-buscar', titulo: 'Busca una pieza', texto: 'Por cliente, folio, siniestro o pieza.' },
-      { el: '#seg-etapas', titulo: 'Filtra por etapa', texto: 'Registrada, en preparación, en tránsito, entregada, facturada y pagada. “Por entregar” muestra lo que sigue en camino.' },
-      { el: '#seg-lista', titulo: 'Mueve la etapa', texto: 'Toca una pieza para ver su línea de tiempo y moverla de etapa. Facturada y Pagada se ponen solas desde Facturación y Cobranza.' }
+      { el: '#seg-etapas', titulo: 'Filtra por etapa', texto: 'Registrada, en preparación, en tránsito, entregada, facturada y pagada. <b>Por entregar</b> muestra lo que sigue en camino.' },
+      { el: '#seg-resumen', titulo: 'Cuántas hay en cada etapa', texto: 'De un vistazo: cuántas piezas van en preparación, en tránsito, entregadas y por facturar.' },
+      { el: '#seg-lista', titulo: 'Mueve la etapa', texto: 'Toca una pieza, elige la etapa en <b>Mover a</b>, agrega la guía o quién recibió, y guarda. Al vendedor le llega el aviso. Facturada y Pagada se ponen solas.' }
     ]
   },
 
   facturacion: {
     titulo: 'Facturación',
     pasos: [
-      { el: '#fac-tabs', titulo: 'Pendientes y facturas', texto: 'En Pendientes ves las notas que faltan por facturar, agrupadas por cliente. En Facturas, las que ya subiste.' },
-      { el: '#fac-cuerpo', titulo: 'Prepara la factura', texto: 'Selecciona las notas y copia sus datos para capturarlos en CONTPAQi.' },
-      { el: '.m-op-subir', titulo: 'Sube el XML', texto: 'Cuando CONTPAQi timbre, sube aquí el XML. El gestor lee el UUID, el folio y el total, te sugiere las notas que cubre y la manda a Cobranza.' }
+      { el: '#fac-tabs', titulo: 'Pendientes y facturas', texto: 'En <b>Pendientes</b> ves las notas entregadas que faltan por facturar, agrupadas por cliente. En <b>Facturas</b>, las que ya subiste.' },
+      { el: '#fac-cuerpo', titulo: 'Prepara la factura', texto: 'Marca las notas y revisa la vista previa: cliente, piezas y totales, listos para capturarlos en CONTPAQi.' },
+      { el: '.m-op-subir', titulo: 'Sube el XML', texto: 'Cuando CONTPAQi timbre, sube aquí el XML. El gestor marca solo las notas de esa factura: por siniestro y por la combinación que cuadra con el total.' },
+      { el: '.m-op-subir', titulo: 'Revisa y guarda', texto: 'Revisa que diga <b>Cuadra con la factura</b>. Si sobra o falta algo, quita o agrega notas, pon los días de crédito y guarda. Pasa sola a Cobranza.' }
     ]
   },
 
@@ -182,16 +190,19 @@ export const TUTORIALES = {
     titulo: 'Cobranza',
     pasos: [
       { el: '#cob-resumen', titulo: 'Cómo vamos', texto: 'Lo que falta por cobrar, lo vencido y lo que vence esta semana.' },
-      { el: '#cob-cuerpo', titulo: 'Por cliente', texto: 'Cada factura con su saldo y vencimiento. Registra pagos completos o parciales; cuando el saldo llega a cero queda pagada.' }
+      { el: '#cob-cuerpo', titulo: 'Por cliente', texto: 'Cada factura con su saldo y su fecha de vencimiento, según los días de crédito del cliente.' },
+      { el: '[data-pagar]', titulo: 'Registra el pago', texto: 'Toca <b>Registrar pago</b>, pon monto, fecha y forma. Acepta pagos parciales; cuando el saldo llega a cero queda pagada.' }
     ]
   },
 
   pepito: {
     titulo: 'Pepito',
     pasos: [
-      { el: '#buzon-texto, #chat-texto', titulo: 'Escribe tu pedido', texto: 'Pregunta lo que necesites o pide una tarea: ventas de un cliente, buscar una nota, preparar una cotización.' },
-      { el: '#buzon-enviar, #chat-enviar', titulo: 'Envíalo', texto: 'Pepito revisa el buzón y te contesta aquí mismo; no tienes que recargar.' },
-      { el: '#buzon-estado, #chat-estado', titulo: 'Cómo te contesta', texto: 'Aquí ves la última vez que Pepito revisó. Si va a guardar algo, primero te dice qué y espera que confirmes con “Responder”.' }
+      { el: '#chat-sugerencias', titulo: 'Ideas para empezar', texto: 'Si no sabes qué pedir, toca una sugerencia.' },
+      { el: '#chat-texto', titulo: 'Escríbele', texto: 'Pídele lo que necesites como a un compañero: una nota, una cotización, las ventas de un cliente o una alarma.' },
+      { el: '#chat-enviar', titulo: 'Envía', texto: 'Pepito busca en el gestor y te contesta aquí mismo.' },
+      { el: '#chat-lista', titulo: 'Tú confirmas', texto: 'Si va a guardar algo, te enseña exactamente qué y espera a que tú toques <b>Guardar</b>. Nunca inventa precios.' },
+      { el: '#chat-wa', titulo: 'También por WhatsApp', texto: 'Con tu número registrado, le escribes o le mandas un audio por WhatsApp y te regresa el PDF.' }
     ]
   },
 
