@@ -6,6 +6,8 @@ process.env.TZ = 'America/Mexico_City';
 const crypto = require('crypto');
 const pepito = require('../mcp/pepito');
 const grupo = require('../mcp/grupo');
+const facturacion = require('../mcp/facturacion');
+const esXml = d => !!d && (/xml/i.test(d.mime_type || '') || /\.xml$/i.test(d.filename || ''));
 const acceso = require('../mcp/acceso');
 const documentos = require('../mcp/documentos');
 const voz = require('../mcp/voz');
@@ -141,6 +143,8 @@ module.exports = async (req, res) => {
     let t = null;
     let encabezado = '';
     let imagenes = null;
+    let documentos = null;
+    let propuestaDirecta = null;
     if (msg.type === 'text') {
       t = String(msg.text && msg.text.body || '').trim();
     } else if (msg.type === 'audio' && voz.configurada()) {
@@ -152,6 +156,34 @@ module.exports = async (req, res) => {
       } catch (e) {
         await anotar('no se pudo transcribir la nota de voz', e.message);
         texto = 'No pude escuchar bien tu nota de voz. ¿Me la mandas otra vez o me lo escribes?';
+      }
+    } else if (msg.type === 'document' && esXml(msg.document)) {
+      // Geraldine Bot: el XML de CONTPAQi se lee aquí mismo y se propone a qué notas ligarlo (sin gastar tokens)
+      try {
+        if (!facturacion.puedeFacturar(usuario)) throw Object.assign(new Error('Tu rol no puede subir facturas. Pídele a facturación o a dirección que la suban.'), { paraPersona: true });
+        const { datos } = await wa.bajarMedia(msg.document.id);
+        if (datos.length > 2 * 1024 * 1024) throw new Error('El XML pesa más de 2 MB');
+        const cfdi = facturacion.leerCFDI(datos.toString('utf8'), msg.document.filename || 'factura.xml');
+        const p = await facturacion.proponer(cfdi);
+        await anotar('factura XML recibida', cfdi.serieFolio + ' ' + cfdi.total);
+        if (p.repetida) texto = facturacion.textoPropuesta(p);
+        else propuestaDirecta = { herramienta: 'ligar_factura', titulo: 'Factura ' + cfdi.serieFolio, args: facturacion.argsDe(p), mensaje: '(factura XML) ' + cfdi.serieFolio + (msg.document.caption ? ' · ' + msg.document.caption : ''), texto: facturacion.textoPropuesta(p) };
+      } catch (e) {
+        await anotar('no se pudo leer el XML', e.message);
+        texto = e.paraPersona ? e.message : 'No pude leer esa factura: ' + e.message + '. Mándame el XML que genera CONTPAQi al timbrar.';
+      }
+    } else if (msg.type === 'document' && /pdf/i.test((msg.document && msg.document.mime_type) || '') ) {
+      // PDF de una factura: Claude lo lee (bloque document) y propone ligarla
+      try {
+        if (!facturacion.puedeFacturar(usuario)) throw Object.assign(new Error('Tu rol no puede subir facturas. Pídele a facturación o a dirección que la suban.'), { paraPersona: true });
+        const { datos } = await wa.bajarMedia(msg.document.id);
+        if (datos.length > 4.5 * 1024 * 1024) throw new Error('El PDF pesa más de 4.5 MB');
+        documentos = [{ mime: 'application/pdf', base64: datos.toString('base64'), nombre: msg.document.filename || 'factura.pdf' }];
+        t = String(msg.document.caption || '').trim() || 'Te mandé la factura en PDF.';
+        await anotar('factura PDF recibida', (msg.document.filename || '') + ' · ' + Math.round(datos.length / 1024) + ' KB');
+      } catch (e) {
+        await anotar('no se pudo leer el PDF', e.message);
+        texto = e.paraPersona ? e.message : 'No pude abrir el PDF: ' + e.message + '. Si puedes, mándame mejor el XML de CONTPAQi.';
       }
     } else if (msg.type === 'image' || (msg.type === 'document' && /^image\//.test((msg.document && msg.document.mime_type) || ''))) {
       // Foto de una nota, lista o factura: Claude la lee y propone la nota (se confirma como siempre)
@@ -168,24 +200,27 @@ module.exports = async (req, res) => {
         texto = 'No pude abrir tu foto. ¿Me la mandas otra vez (que no pese tanto) o me escribes lo que necesitas?';
       }
     } else {
-      texto = msg.type === 'audio' ? 'Todavía no puedo escuchar notas de voz. Escríbeme tu pedido, porfa.' : 'Por ahora entiendo texto, notas de voz y fotos.';
+      texto = msg.type === 'audio' ? 'Todavía no puedo escuchar notas de voz. Escríbeme tu pedido, porfa.' : 'Por ahora entiendo texto, notas de voz, fotos y facturas (XML o PDF).';
     }
-    if (t !== null) {
+    if (propuestaDirecta) {
+      const r = await pepito.proponerDirecto(usuario, propuestaDirecta, 'whatsapp');
+      texto = r.texto + '\n\nResponde *SÍ* para guardarla o *NO* para cancelar.';
+    } else if (t !== null) {
       const conv = await fb().obtener('pepito_conversacion', usuario.uid);
       const corto = t.replace(/[.,!¡¿?\s]+$/g, '').trim();
-      const alGrupo = !imagenes && !encabezado ? grupo.textoParaGrupo(t) : null;
+      const alGrupo = !imagenes && !documentos && !encabezado ? grupo.textoParaGrupo(t) : null;
       if (alGrupo) {
         // "grupo: ya salió la guía": se reparte tal cual a los demás del grupo, sin pasar por Claude
         try {
           const r = await grupo.mandar(usuario, alGrupo, { canal: 'whatsapp' });
           texto = r.enviado_a.length ? '👥 Listo, se lo mandé al grupo ' + grupo.NOMBRE + ': ' + r.enviado_a.join(', ') + '.' : '👥 Lo guardé en el grupo, pero todavía no hay nadie más en él.';
         } catch (e) { texto = e.noMiembro ? e.message : 'No pude mandarlo al grupo: ' + e.message; }
-      } else if (!imagenes && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
+      } else if (!imagenes && !documentos && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
         const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
         texto = r.texto;
         adjunto = documentos.deCreacion(r.herramienta, r.resultado);
       } else {
-        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : imagenes ? '(foto) ' : '') + t, 'whatsapp', { imagenes });
+        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : imagenes ? '(foto) ' : documentos ? '(factura PDF) ' : '') + t, 'whatsapp', { imagenes, documentos });
         texto = r.texto + (r.propuesta ? '\n\nResponde *SÍ* para guardarlo o *NO* para cancelar.' : '');
       }
       texto = encabezado + texto;

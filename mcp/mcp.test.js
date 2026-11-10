@@ -500,6 +500,7 @@ function claudeFalso(guion) {
 const usoFalso = { input_tokens: 100, output_tokens: 20 };
 const herramienta = (name, input, id) => ({ stop_reason: 'tool_use', usage: usoFalso, content: [{ type: 'tool_use', id: id || 't' + name, name, input }] });
 const texto = t => ({ stop_reason: 'end_turn', usage: usoFalso, content: [{ type: 'text', text: t }] });
+const texto_ = texto;
 
 test('Pepito API: consulta con herramientas del rol y propuesta que solo se guarda al confirmar', async () => {
   process.env.ANTHROPIC_API_KEY = 'prueba';
@@ -1056,4 +1057,120 @@ test('grupo Entregas y cobranza: "grupo:" se reparte a los demás, solo el admin
     assert.ok(falso.llamadas[0].tools.some(t => t.name === 'mandar_al_grupo'));
     assert.ok(!falso.llamadas[1].tools.some(t => t.name === 'mandar_al_grupo'));
   } finally { wa.cerrar(); }
+});
+
+const XML_CFDI = (extra = {}) => `<?xml version="1.0" encoding="utf-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="${extra.serie || 'A'}" Folio="${extra.folio || '219'}" Fecha="2026-11-05T10:15:00" SubTotal="${extra.subtotal || '9200.00'}" Moneda="MXN" Total="${extra.total || '10672.00'}" TipoDeComprobante="I" MetodoPago="${extra.metodo || 'PPD'}" FormaPago="99" Observaciones="SINIESTRO ${extra.siniestro || 'S-0002'}">
+  <cfdi:Emisor Rfc="MAY010101AAA" Nombre="MAYA AUTOPARTES" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="${extra.rfc || 'RPR990101AB1'}" Nombre="${extra.receptor || 'Refacciones Prueba'}" UsoCFDI="G03"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="25172504" NoIdentificacion="FAR-001" Cantidad="1" Descripcion="${extra.concepto || 'FARO DER. CRETA 2021 &amp; BASE'}" ValorUnitario="9200.00" Importe="${extra.subtotal || '9200.00'}">
+      <cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="9200.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="1472.00"/></cfdi:Traslados></cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="1472.00"><cfdi:Traslados><cfdi:Traslado Base="9200.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="1472.00"/></cfdi:Traslados></cfdi:Impuestos>
+  <cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="${extra.uuid || '0a1b2c3d-1111-2222-3333-444455556666'}" FechaTimbrado="2026-11-05T10:16:00"/></cfdi:Complemento>
+</cfdi:Comprobante>`;
+
+test('Geraldine Bot: el XML de CONTPAQi se lee, se liga a la nota por siniestro y queda igual que desde el gestor', async () => {
+  const facturacion = require('./facturacion');
+  const cfdi = facturacion.leerCFDI(XML_CFDI(), 'A-219.xml');
+  assert.equal(cfdi.uuid, '0A1B2C3D-1111-2222-3333-444455556666');
+  assert.equal(cfdi.serieFolio, 'A-219');
+  assert.equal(cfdi.total, 10672);
+  assert.equal(cfdi.iva, 1472);
+  assert.equal(cfdi.receptorNombre, 'Refacciones Prueba');
+  assert.deepEqual(cfdi.conceptos, [{ descripcion: 'FARO DER. CRETA 2021 & BASE', cantidad: 1, importe: 9200, clave: 'FAR-001' }]);
+  assert.throws(() => facturacion.leerCFDI(XML_CFDI().replace(/<tfd:TimbreFiscalDigital[^>]*\/>/, ''), 'x.xml'), /no está timbrado/);
+  assert.throws(() => facturacion.leerCFDI('<html></html>', 'x.xml'), /no es un CFDI/);
+
+  // La propuesta: en la base de prueba la misma venta está capturada dos veces (NE-039 y NV #71, ambas con S-0002),
+  // así que el emparejador trae las dos y avisa que sobran notas (igual que en el gestor)
+  const p = await facturacion.proponer(cfdi);
+  assert.deepEqual(p.elegidas.map(e => e.folio).sort(), ['NE-039', 'NV #71']);
+  assert.ok(!p.cuadra);
+  assert.equal(p.repetida, null);
+  let texto = facturacion.textoPropuesta(p);
+  assert.match(texto, /Factura A-219\* de Refacciones Prueba/);
+  assert.match(texto, /NE-039 .*Sin\. S-0002 .*\$10,672\.00/);
+  assert.match(texto, /sobran notas/);
+  // Con solo la NE-039 cuadra; se puede pedir por folio ("NE-039") en lugar de la clave
+  p.elegidas = p.elegidas.filter(e => e.folio === 'NE-039');
+  texto = facturacion.textoPropuesta(Object.assign({}, p, { suma: 10672, cuadra: true }));
+  assert.match(texto, /cuadra con la factura/);
+
+  // Un vendedor no puede ligar facturas
+  await assert.rejects(facturacion.ligar(VENDEDOR, facturacion.argsDe(p)), /no puede subir facturas/);
+
+  // Por WhatsApp: la propuesta se guarda directo y SÍ la ejecuta (como el botón del gestor)
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  pepito._usarCliente(claudeFalso([texto_('Listo: A-219 ligada a NE-039.')]));
+  const prop = await pepito.proponerDirecto(ADMIN, { herramienta: 'ligar_factura', titulo: 'Factura A-219', args: Object.assign(facturacion.argsDe(p), { notas: ['NE-039'] }), mensaje: '(factura XML) A-219', texto }, 'whatsapp');
+  assert.equal(db.cols.pepito_conversacion.get('admin-1').propuesta.herramienta, 'ligar_factura');
+  const antes = db.cols.facturas.size;
+  const r = await pepito.resolverPropuesta(ADMIN, prop.propuesta.id, true, 'whatsapp');
+  assert.equal(db.cols.facturas.size, antes + 1, 'se guardó la factura');
+  const f = [...db.cols.facturas.values()].find(x => x.uuid === cfdi.uuid);
+  assert.equal(f.estatus, 'por_cobrar');
+  assert.equal(f.saldo, 10672);
+  assert.equal(f.clienteNombre, 'Refacciones Prueba');
+  assert.deepEqual(f.notas.map(n => n.folio), ['NE-039']);
+  assert.equal(f.subidaDesde, 'whatsapp');
+  assert.ok(!('textoCompleto' in f), 'el XML completo no se guarda');
+  const ne = db.cols.notasEntrega.get('ne039');
+  assert.equal(ne.facturaId, [...db.cols.facturas.entries()].find(([, v]) => v === f)[0]);
+  assert.ok(!db.cols.ventas.get('v71').facturaId, 'la NV #71 no se ligó');
+  assert.equal(ne.facturaFolio, 'A-219');
+  assert.equal(ne.seguimiento.at(-1).etapa, 'facturada');
+  assert.match(r.texto, /A-219/);
+  // La misma factura no se sube dos veces, y ya no aparece como pendiente
+  const p2 = await facturacion.proponer(facturacion.leerCFDI(XML_CFDI(), 'A-219.xml'));
+  assert.ok(p2.repetida);
+  assert.match(facturacion.textoPropuesta(p2), /ya estaba subida/);
+  await assert.rejects(facturacion.ligar(ADMIN, facturacion.argsDe(p)), /ya estaba subida/);
+});
+
+test('Geraldine Bot: una orden directa (sin nota, p. ej. FLEC) se registra como venta ya facturada; PUE queda pagada', async () => {
+  const facturacion = require('./facturacion');
+  const cfdi = facturacion.leerCFDI(XML_CFDI({ serie: 'A', folio: '220', uuid: '0a1b2c3d-1111-2222-3333-444455557777', receptor: 'FLEC SEGUROS', rfc: 'FLE010101AAA', siniestro: 'B648770', metodo: 'PUE', concepto: 'PUERTA DELANTERA DERECHA VENTO 2019 SIN. B648770' }), 'A-220.xml');
+  const p = await facturacion.proponer(cfdi);
+  assert.equal(p.elegidas.length, 0, 'ninguna nota trae ese siniestro ni es de FLEC');
+  assert.match(facturacion.textoPropuesta(p), /venta directa/);
+  const args = facturacion.argsDe(p);
+  assert.equal(args.venta_directa, true);
+  assert.equal(args.pagada, true);
+  const ventasAntes = db.cols.ventas.size;
+  const r = await facturacion.ligar(ADMIN, args);
+  assert.equal(r.venta_directa, true);
+  assert.equal(r.estatus, 'pagada');
+  assert.equal(db.cols.ventas.size, ventasAntes + 1);
+  const v = [...db.cols.ventas.values()].find(x => x.fuente === 'factura_directa');
+  assert.equal(v.clienteNombre, 'FLEC SEGUROS');
+  assert.equal(v.total, 10672);
+  assert.equal(v.etapa, 'entregada');
+  assert.equal(v.items[0].numSiniestro, 'B648770', 'el siniestro se toma del concepto');
+  assert.ok(v.facturaId && v.facturaFolio === 'A-220');
+  const f = [...db.cols.facturas.values()].find(x => x.uuid === cfdi.uuid);
+  assert.equal(f.saldo, 0);
+  assert.equal(f.pagos.length, 1);
+
+  // Pepito con el rol facturación tiene las herramientas; un vendedor no
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const falso = claudeFalso([texto_('Hola'), texto_('Hola')]);
+  pepito._usarCliente(falso);
+  await pepito.conversar({ uid: 'f-2', nombre: 'Geraldine', rol: 'facturacion' }, 'hola', 'whatsapp');
+  await pepito.conversar(VENDEDOR, 'hola', 'whatsapp');
+  assert.ok(falso.llamadas[0].tools.some(t => t.name === 'ligar_factura') && falso.llamadas[0].tools.some(t => t.name === 'emparejar_factura'));
+  assert.match(falso.llamadas[0].system[0].text, /Geraldine Bot/);
+  assert.ok(!falso.llamadas[1].tools.some(t => t.name === 'ligar_factura'));
+  // Un PDF va a Claude como bloque document antes del texto
+  const falso2 = claudeFalso([texto_('Veo la factura A-221.')]);
+  pepito._usarCliente(falso2);
+  await pepito.conversar(ADMIN, '(factura PDF) Te mandé la factura', 'whatsapp', { documentos: [{ mime: 'application/pdf', base64: 'JVBERi0=', nombre: 'A-221.pdf' }] });
+  const ult = falso2.llamadas[0].messages.at(-1).content;
+  assert.equal(ult[0].type, 'document');
+  assert.equal(ult[0].source.media_type, 'application/pdf');
+  assert.equal(ult.at(-1).type, 'text');
 });
