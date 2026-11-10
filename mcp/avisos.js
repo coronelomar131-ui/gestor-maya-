@@ -148,6 +148,7 @@ function etapaDe(doc, facturas) {
   const f = doc.facturaId && facturas.get(doc.facturaId);
   if (f && f.estatus !== 'cancelada') return f.estatus === 'pagada' ? 'pagada' : 'facturada';
   if (doc.facturaId && !f) return 'facturada';
+  if (doc.etapa === 'cancelada') return 'cancelada';
   if (LOGISTICA.includes(doc.etapa)) return doc.etapa;
   const e = norm(doc.estatus);
   if (e === 'entregado') return 'entregada';
@@ -180,8 +181,9 @@ async function contextoDiario(ahora = Date.now()) {
   const desde = d => ahora - d * DIA;
   const fechaMs = r => (r.fecha ? r.fecha.getTime() : 0);
   const nuevas = arr => arr.sort((a, b) => fechaMs(b) - fechaMs(a));
+  const fact = await require('./facturacion').tablero(ahora).catch(e => { console.error('avisos: tablero', e.message); return null; });
   return {
-    rep, ops: ops.lista, facturas: ops.facturas, bajo: bajo.productos || [],
+    rep, ops: ops.lista, facturas: ops.facturas, bajo: bajo.productos || [], fact,
     porPreparar: nuevas(ops.lista.filter(r => ['registrada', 'preparacion'].includes(r.etapa) && fechaMs(r) >= desde(7))),
     enPreparacion: nuevas(ops.lista.filter(r => r.etapa === 'preparacion' && fechaMs(r) >= desde(14))),
     enTransito: nuevas(ops.lista.filter(r => r.etapa === 'transito' && fechaMs(r) >= desde(30))),
@@ -195,12 +197,30 @@ function lista(titulo, cosas, max = 5) {
   return [titulo + ' ' + cosas.length].concat(cosas.slice(0, max).map(lineaPieza), cosas.length > max ? ['   y ' + (cosas.length - max) + ' más'] : []);
 }
 
+// Lo de Geraldine Bot para el resumen: vencidas, listas hoy, por vencer y sin movimiento (de todo el negocio o solo de un vendedor)
+function textoGeraldine(t, titulo, filtro) {
+  if (!t) return [];
+  const notas = filtro ? t.notas.filter(filtro) : t.notas;
+  const de = k => notas.filter(n => n.estado === k);
+  const venc = de('vencida'), listas = de('lista'), prox = de('por_vencer'), quietas = de('sin_movimiento');
+  if (!venc.length && !listas.length && !prox.length && !quietas.length) return [];
+  const linea = n => '• ' + n.folio + ' · ' + n.cliente + (n.siniestro ? ' · Sin. ' + n.siniestro : '') + ' · ' + n.texto;
+  const l = [titulo];
+  if (venc.length) l.push('⚠️ Vencidas: ' + venc.length, ...venc.slice(0, 5).map(linea));
+  if (listas.length) l.push('✅ Listas para facturar hoy: ' + listas.length, ...listas.slice(0, 5).map(linea));
+  if (prox.length) l.push('⏳ Vencen mañana: ' + prox.length, ...prox.slice(0, 3).map(linea));
+  if (quietas.length) l.push('❓ Sin movimiento, ¿se mantienen o se cancelan?: ' + quietas.length, ...quietas.slice(0, 3).map(linea));
+  return l;
+}
+
 function resumenDe(persona, ctx) {
   const reporte = require('./reporte');
   const rol = persona.rol || 'vendedor';
   let partes;
   if (rol === 'admin' || rol === 'facturacion') {
     partes = [reporte.texto(ctx.rep, persona)];
+    const g = textoGeraldine(ctx.fact, '🧾 *Geraldine Bot, por facturar:*');
+    if (g.length) partes.push('', ...g);
     if (rol === 'admin' && ctx.enTransito.length) partes.push('', '🚚 *En tránsito:* ' + ctx.enTransito.length);
   } else {
     const l = ['Buenos días, ' + primerNombre(persona) + '. Esto es lo tuyo para hoy:'];
@@ -221,6 +241,8 @@ function resumenDe(persona, ctx) {
       const hoy0 = new Date(ctx.hoy + 'T00:00:00-06:00').getTime();
       const vencidas = ctx.facturas.filter(f => f.estatus === 'por_cobrar' && Number(f.saldo) > 0.009 && Number(f.vencimiento) < hoy0 && (f.notas || []).some(n => ids.has(n.col + ':' + n.id)));
       if (vencidas.length) l.push('', '💰 *Tus clientes con saldo vencido:*', ...vencidas.slice(0, 5).map(f => '• ' + f.serieFolio + ' · ' + f.clienteNombre + ' · ' + pesos(f.saldo) + ' (' + Math.round((hoy0 - Number(f.vencimiento)) / DIA) + ' días)'));
+      const g = textoGeraldine(ctx.fact, '🧾 *Tus notas por facturar (Geraldine Bot):*', n => esVendedor(persona, n.vendedor));
+      if (g.length) l.push('', ...g);
     }
     partes = [l.join('\n')];
   }
@@ -236,6 +258,7 @@ function textoDeGrupo(evento, d, c) {
   if (!c) return null;
   const nota = d.nota ? ' · ' + String(d.nota).slice(0, 200) : '';
   if (evento === 'etapa' && d.etapa === 'transito') return '🚚 ' + c.folio + ' de ' + c.cliente + ' ya va en camino' + nota;
+  if (evento === 'etapa' && d.etapa === 'cancelada') return '❌ ' + c.folio + ' de ' + c.cliente + ' se canceló' + nota;
   if (evento === 'etapa' && d.etapa === 'entregada') return '✅ ' + c.folio + ' de ' + c.cliente + ' se entregó' + nota + (c.total > 0 ? ' · ' + pesos(c.total / 100) + ', lista para facturar' : '');
   if (evento === 'factura') return '🧾 Se facturó ' + c.folios + ' de ' + c.cliente + ' con la ' + c.serieFolio + ' (' + pesos(c.total) + (c.pagada ? ', ya pagada' : ', vence en ' + c.dias + ' días') + ')';
   if (evento === 'pago') return '💰 ' + c.cliente + ' pagó ' + pesos(d.monto) + ' de la ' + c.serieFolio + '. ' + (c.saldo <= 0.009 ? 'Quedó pagada ✅' : 'Saldo: ' + pesos(c.saldo));
@@ -265,6 +288,10 @@ async function porEvento(evento, d, actor) {
       const nota = d.nota ? ' · ' + String(d.nota).slice(0, 200) : '';
       if (d.etapa === 'preparacion') conRol(equipo, 'entregas').forEach(u => a(u, '📦 ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + ' está en preparación; pronto sale a ruta' + nota + '.' + detalle));
       if (d.etapa === 'transito') vendedores.forEach(u => a(u, '🚚 Tu ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + ' ya va en camino' + nota + '.'));
+      if (d.etapa === 'cancelada') {
+        vendedores.forEach(u => a(u, '❌ Tu ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + ' se canceló' + nota + '. Ya no se factura.'));
+        conRol(equipo, 'facturacion').forEach(u => a(u, '❌ ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + ' se canceló' + nota + ': sale de pendientes de facturar.'));
+      }
       if (d.etapa === 'entregada') {
         vendedores.forEach(u => a(u, '✅ Tu ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + ' ya se entregó' + nota + '.'));
         if (r.total > 0) conRol(equipo, 'facturacion').forEach(u => a(u, '🧾 ' + r.folio + ' de ' + (r.cliente || 'sin cliente') + ' ya se entregó: lista para facturar (' + pesos(r.total / 100) + ').'));
@@ -379,6 +406,6 @@ async function alarmasVencidas(ahora = Date.now()) {
 }
 
 module.exports = {
-  avisar, mandarWhatsApp, procesarEstados, entregarPendientes, porEvento, contextoDiario, resumenDe,
+  textoGeraldine, avisar, mandarWhatsApp, procesarEstados, entregarPendientes, porEvento, contextoDiario, resumenDe,
   crearRecordatorio, misRecordatorios, cancelarRecordatorio, alarmasVencidas, esVendedor, etapaDe, cuandoDe, horaCDMX, prefs, clave
 };
