@@ -53,10 +53,34 @@
     if (d === plazo - 1) return { clave: 'por_vencer', dias: d, texto: 'Vence mañana', detalle: 'Mañana se cumplen los ' + plazo + ' días.' };
     return { clave: 'espera', dias: d, texto: 'Espera ' + (plazo - d) + ' d', detalle: 'Entregada hace ' + d + ' días; el cliente pide facturar a los ' + plazo + '.' };
   }
+  // Envíos: lo que lleva cada nota cuando sale por paquetería (nota.envio = { tipo, paqueteria, guia, estatus, fechaEnvio, fechaEntrega, observaciones })
+  const PAQUETERIAS = ['Paquete Express', 'Skydrops', 'Mercado Envíos', 'Estafeta', 'DHL', 'FedEx', 'Otra'];
+  const ESTATUS_ENVIO = [
+    { id: 'sin_guia', nombre: 'Sin guía' },
+    { id: 'guia_generada', nombre: 'Guía generada' },
+    { id: 'en_transito', nombre: 'En tránsito' },
+    { id: 'recibido', nombre: 'Recibido' },
+    { id: 'cancelado', nombre: 'Envío cancelado' }
+  ];
+  const nombreEnvio = id => { const e = ESTATUS_ENVIO.find(x => x.id === id); return e ? e.nombre : String(id || ''); };
+  const DIAS_ENVIO_QUIETO = 3;
+  // Alerta de un envío: sin guía (nacional sin guía), quieto (guía generada o en tránsito sin cambio en 3 días) o null
+  function alertaEnvio(doc, etapa, ahora) {
+    const e = doc && doc.envio;
+    if (!e || ['entregada', 'facturada', 'pagada', 'cancelada'].includes(etapa)) return null;
+    if (e.estatus === 'recibido' || e.estatus === 'cancelado') return null;
+    ahora = ahora || Date.now();
+    if (e.tipo === 'nacional' && (!e.guia || e.estatus === 'sin_guia')) return { clave: 'sin_guia', texto: 'Falta la guía', dias: 0 };
+    const desde = ms(e.actualizado) || ms(e.fechaEnvio) || ultimoMovimiento(doc);
+    const d = desde ? Math.floor((ahora - desde) / DIA) : 0;
+    if (['guia_generada', 'en_transito'].includes(e.estatus) && d >= DIAS_ENVIO_QUIETO) return { clave: 'quieto', texto: nombreEnvio(e.estatus) + ' ' + d + ' d sin cambio', dias: d };
+    return null;
+  }
+
   const ORDEN = ['vencida', 'lista', 'por_vencer', 'sin_movimiento', 'espera', 'en_entrega'];
   const NOMBRES = { vencida: 'Vencidas', lista: 'Listas para facturar', por_vencer: 'Por vencer', sin_movimiento: 'Sin movimiento', espera: 'En espera', en_entrega: 'En entrega' };
 
-  const api = { DIA, DIAS_FACTURAR, DIAS_SIN_MOVIMIENTO, MOTIVOS_CANCELACION, nombreMotivo, diasFacturarDe, entregadaEn, ultimoMovimiento, estadoFacturacion, ORDEN, NOMBRES };
+  const api = { DIA, DIAS_FACTURAR, DIAS_SIN_MOVIMIENTO, MOTIVOS_CANCELACION, nombreMotivo, diasFacturarDe, entregadaEn, ultimoMovimiento, estadoFacturacion, ORDEN, NOMBRES, PAQUETERIAS, ESTATUS_ENVIO, nombreEnvio, DIAS_ENVIO_QUIETO, alertaEnvio };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.mayaPlazos = api;
 })(typeof window !== 'undefined' ? window : globalThis);

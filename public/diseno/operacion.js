@@ -130,7 +130,10 @@ function pintarSeguimiento() {
     const et = etapa(r);
     const paso = ETAPAS.findIndex(e => e.id === et);
     const est = facturable(r) && r.total > 0 ? estadoFac(r) : null;
-    const alerta = est && ['vencida', 'lista', 'por_vencer', 'sin_movimiento'].includes(est.clave) ? ` <span class="m-op-etapa e-${est.clave}" title="${escapar(est.detalle)}">${escapar(est.texto)}</span>` : '';
+    const env = r.raw.envio;
+    const alEnv = env && plazos() ? plazos().alertaEnvio(r.raw, et) : null;
+    const chipEnv = env && env.guia ? ` <span class="m-op-guia${alEnv ? ' alerta' : ''}" title="${escapar((env.paqueteria || '') + ' · ' + (plazos() ? plazos().nombreEnvio(env.estatus) : env.estatus))}">${icono('truck', 12)} ${escapar(env.paqueteria || 'Guía')} ${escapar(env.guia)}${alEnv ? ' · ' + escapar(alEnv.texto) : ''}</span>` : (alEnv ? ` <span class="m-op-guia alerta">${icono('truck', 12)} ${escapar(alEnv.texto)}</span>` : '');
+    const alerta = (est && ['vencida', 'lista', 'por_vencer', 'sin_movimiento'].includes(est.clave) ? ` <span class="m-op-etapa e-${est.clave}" title="${escapar(est.detalle)}">${escapar(est.texto)}</span>` : '') + chipEnv;
     return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
       <span class="m-op-folio">${escapar(r.folio)}</span>
       <span class="m-op-info"><strong>${escapar(r.cliente || 'Sin cliente')}</strong><small>${escapar(r.piezas || '—')}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''}${et === 'cancelada' && r.raw.cancelacion ? ' · ' + escapar(plazos() ? plazos().nombreMotivo(r.raw.cancelacion.motivo) : r.raw.cancelacion.motivo) : ''}</small>${alerta}</span>
@@ -150,6 +153,9 @@ function abrirPieza(col, id) {
   const puedeMover = LOGISTICA.includes(et) || et === 'cancelada';
   const motivos = plazos() ? plazos().MOTIVOS_CANCELACION : [];
   const canc = r.raw.cancelacion;
+  const envio = r.raw.envio || {};
+  const P = plazos();
+  const puedeEnvio = P && (LOGISTICA.includes(et) || et === 'cancelada') && et !== 'entregada';
   dialogo(`${r.folio} · ${r.cliente || 'Sin cliente'}`, `
     <p class="m-op-sub">${escapar(r.piezas || '—')}${r.siniestro ? ' · Siniestro ' + escapar(r.siniestro) : ''} · ${pesos(r.total)}</p>
     <ol class="m-op-linea">
@@ -170,11 +176,28 @@ function abrirPieza(col, id) {
         <select id="pz-motivo">${motivos.map(m => `<option value="${m.id}">${escapar(m.nombre)}</option>`).join('')}</select>
         <input type="text" id="pz-detalle" placeholder="Detalle (obligatorio si es otra causa)">
       </div>
-    </div>` : `<p class="m-op-nota">${f ? 'Ligada a la factura ' + escapar(f.serieFolio) + '. ' : ''}Las etapas Facturada y Pagada se actualizan solas desde Facturación y Cobranza.</p>`}`,
+    </div>
+    ${puedeEnvio ? `<details class="m-op-envio"${envio.guia || envio.tipo === 'nacional' ? ' open' : ''}><summary>${icono('truck', 14)} Envío por paquetería${envio.guia ? ' · ' + escapar(envio.paqueteria || '') + ' ' + escapar(envio.guia) + ' · ' + escapar(P.nombreEnvio(envio.estatus)) : ''}</summary>
+      <div class="m-op-envio-form">
+        <label>Tipo<select id="pz-env-tipo"><option value="local"${(envio.tipo || 'local') === 'local' ? ' selected' : ''}>Entrega local (CDMX / Edo. Méx.)</option><option value="nacional"${envio.tipo === 'nacional' ? ' selected' : ''}>Envío nacional (paquetería)</option></select></label>
+        <label>Paquetería<input list="pz-paqueterias" id="pz-env-paq" value="${escapar(envio.paqueteria || '')}" placeholder="Paquete Express, Skydrops…"><datalist id="pz-paqueterias">${P.PAQUETERIAS.map(p => `<option value="${escapar(p)}">`).join('')}</datalist></label>
+        <label>Guía<input type="text" id="pz-env-guia" value="${escapar(envio.guia || '')}" placeholder="Número de guía"></label>
+        <label>Estatus<select id="pz-env-est">${P.ESTATUS_ENVIO.map(e => `<option value="${e.id}"${(envio.estatus || 'sin_guia') === e.id ? ' selected' : ''}>${escapar(e.nombre)}</option>`).join('')}</select></label>
+      </div>
+      <p class="m-op-nota">Con la guía la pieza pasa a En preparación; en tránsito, a En tránsito; recibido, a Entregada. El rastreo automático con la paquetería queda pendiente de su API.</p>
+    </details>` : ''}` : `<p class="m-op-nota">${f ? 'Ligada a la factura ' + escapar(f.serieFolio) + '. ' : ''}Las etapas Facturada y Pagada se actualizan solas desde Facturación y Cobranza.</p>`}`,
   puedeMover ? [{ texto: 'Guardar etapa', principal: true, accion: async () => {
     const nueva = $('#pz-etapa').value;
     let nota = $('#pz-nota').value.trim();
-    if (nueva === et && !nota) return true;
+    // Envío: qué cambió en el bloque (se revisa antes para que guardar solo la guía también cuente)
+    let nuevoEnvio = null;
+    if (puedeEnvio && $('#pz-env-tipo')) {
+      const n = { tipo: $('#pz-env-tipo').value, paqueteria: $('#pz-env-paq').value.trim(), guia: $('#pz-env-guia').value.trim(), estatus: $('#pz-env-est').value };
+      if (n.guia && n.estatus === 'sin_guia') n.estatus = 'guia_generada';
+      const previo = { tipo: envio.tipo || 'local', paqueteria: envio.paqueteria || '', guia: envio.guia || '', estatus: envio.estatus || 'sin_guia' };
+      if (['tipo', 'paqueteria', 'guia', 'estatus'].some(k => previo[k] !== n[k])) nuevoEnvio = n;
+    }
+    if (nueva === et && !nota && !nuevoEnvio) return true;
     const ev = { etapa: nueva, fecha: Date.now(), por: yo() };
     const cambios = { etapa: nueva };
     if (nueva === 'cancelada') {
@@ -190,10 +213,27 @@ function abrirPieza(col, id) {
       nota = 'Reactivada' + (nota ? ' · ' + nota : '');
     }
     if (nota) ev.nota = nota;
-    cambios.seguimiento = (r.raw.seguimiento || []).concat(ev);
+    // Si solo cambió el envío, la etapa no se repite en la línea de tiempo
+    cambios.seguimiento = (r.raw.seguimiento || []).concat(nueva !== et || nota ? [ev] : []);
+    // Envío: se guarda junto; su estatus también mueve la etapa (nunca hacia atrás)
+    let notaEnvio = '';
+    {
+      if (nuevoEnvio) {
+        if (['guia_generada', 'en_transito'].includes(nuevoEnvio.estatus) && !nuevoEnvio.guia) { aviso('Pon el número de guía', 'error'); return false; }
+        cambios.envio = Object.assign({}, envio, nuevoEnvio, { actualizado: Date.now(), por: yo(), fechaGuia: envio.fechaGuia || (nuevoEnvio.guia ? Date.now() : null), fechaEnvio: envio.fechaEnvio || (nuevoEnvio.estatus === 'en_transito' ? Date.now() : null), fechaEntrega: envio.fechaEntrega || (nuevoEnvio.estatus === 'recibido' ? Date.now() : null) });
+        const etapaEnvio = { guia_generada: 'preparacion', en_transito: 'transito', recibido: 'entregada' }[nuevoEnvio.estatus];
+        const orden = ['registrada', 'preparacion', 'transito', 'entregada'];
+        if (etapaEnvio && orden.indexOf(etapaEnvio) > orden.indexOf(cambios.etapa) && cambios.etapa !== 'cancelada') {
+          cambios.etapa = etapaEnvio;
+          notaEnvio = (nuevoEnvio.paqueteria ? nuevoEnvio.paqueteria + ' ' : '') + (nuevoEnvio.guia ? 'guía ' + nuevoEnvio.guia : '');
+          cambios.seguimiento = cambios.seguimiento.concat({ etapa: etapaEnvio, fecha: Date.now(), por: yo(), nota: notaEnvio });
+          if (col === 'ventas' && etapaEnvio === 'entregada') cambios.estatus = 'Entregado';
+        }
+      }
+    }
     await window.updateDoc(window.doc(window.db, col, id), cambios);
-    if (nueva !== et && window.mayaAvisar) window.mayaAvisar('etapa', { col, id, etapa: nueva, nota });
-    aviso(r.folio + ' → ' + nombreEtapa(nueva));
+    if (cambios.etapa !== et && window.mayaAvisar) window.mayaAvisar('etapa', { col, id, etapa: cambios.etapa, nota: nota || notaEnvio });
+    aviso(r.folio + ' → ' + nombreEtapa(cambios.etapa) + (cambios.envio ? ' · envío guardado' : ''));
     return true;
   } }] : []);
   // El motivo solo aparece cuando se elige "Cancelar nota…"

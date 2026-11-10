@@ -98,6 +98,27 @@ function crearServidor(usuario) {
 
   // ── Consultas ──
   if (puede('notas')) {
+    servidor.registerTool('envios_seguimiento', {
+      title: 'Envíos por paquetería',
+      description: 'Las notas que van por paquetería (Paquete Express, Skydrops, Mercado Envíos…) con su guía y estatus (sin_guia, guia_generada, en_transito, recibido, cancelado), ' +
+        'y sus alertas: falta la guía, o lleva 3 días sin cambio. Conteos por paquetería. Úsala para "¿qué envíos faltan?", "¿qué guía tiene la NE-245?".',
+      inputSchema: { estatus: z.enum(['sin_guia', 'guia_generada', 'en_transito', 'recibido', 'cancelado']).optional(), paqueteria: z.string().optional() },
+      annotations: LECTURA
+    }, ejecutar(a => require('./envios').tablero(Date.now(), a)));
+
+    servidor.registerTool('guardar_guia', {
+      title: 'Guía de envío de una nota',
+      description: 'Registra o actualiza el envío de una nota: tipo (local/nacional), paquetería, número de guía y estatus. ' +
+        'Con la guía la pieza pasa a En preparación; en_transito la pasa a En tránsito; recibido la marca Entregada (y avisa al vendedor). Identifica la nota por folio (NE-245, NV #71).',
+      inputSchema: {
+        folio: z.string(), tipo: z.enum(['local', 'nacional']).optional(),
+        paqueteria: z.string().optional().describe('Paquete Express, Skydrops, Mercado Envíos, Estafeta, DHL, FedEx u otra'),
+        guia: z.string().optional(), estatus: z.enum(['sin_guia', 'guia_generada', 'en_transito', 'recibido', 'cancelado']).optional(),
+        observaciones: z.string().optional()
+      },
+      annotations: ESCRITURA
+    }, ejecutar(async a => { try { return await require('./envios').guardarGuia(usuario, a); } catch (e) { throw new escritura.ErrorUsuario(e.message); } }));
+
     servidor.registerTool('seguimiento_facturacion', {
       title: 'Seguimiento de facturación (Geraldine Bot)',
       description: 'Cada nota pendiente de facturar con su estado según los días para facturar de su cliente (6 por defecto): ' +
