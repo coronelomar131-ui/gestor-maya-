@@ -7,12 +7,14 @@
 const crypto = require('crypto');
 const { fb } = require('./firebase');
 const datos = require('./datos');
-const { PERMISOS } = require('./herramientas');
+const plazos = require('../public/diseno/plazos.js');
+// herramientas.js registra las herramientas de este módulo: se pide aquí dentro para no cerrar un ciclo de require
+const permisos = () => require('./herramientas').PERMISOS;
 
 const DIA = 86400000;
 const pesos = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const norm = datos.norm;
-const puedeFacturar = u => !!u && (PERMISOS.facturas || []).includes(u.rol);
+const puedeFacturar = u => !!u && (permisos().facturas || []).includes(u.rol);
 const nombreDe = u => (u && (u.nombre || u.email)) || 'Pepito';
 // Medianoche de la Ciudad de México (UTC−6 todo el año) del día de esa fecha
 const inicioDiaCDMX = ms => { const d = new Date(ms - 6 * 3600000); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + 6 * 3600000; };
@@ -96,6 +98,72 @@ function normalizarCfdi(c) {
     conceptos, sinXml, xmlNombre: c.xmlNombre || (sinXml ? 'PDF' : 'XML'),
     textoCompleto: c.textoCompleto || [conceptos.map(x => x.descripcion + ' ' + x.clave).join(' '), siniestros.join(' ')].join(' ')
   };
+}
+
+// ── Etapa de una nota en el servidor (igual que diseno/operacion.js) ──
+const LOGISTICA = ['registrada', 'preparacion', 'transito', 'entregada'];
+function etapaDe(doc, facturasPorId) {
+  const f = doc.facturaId && facturasPorId.get(doc.facturaId);
+  if (f && f.estatus !== 'cancelada') return f.estatus === 'pagada' ? 'pagada' : 'facturada';
+  if (doc.facturaId && !f) return 'facturada';
+  if (doc.etapa === 'cancelada') return 'cancelada';
+  if (LOGISTICA.includes(doc.etapa)) return doc.etapa;
+  const e = norm(doc.estatus);
+  if (e === 'entregado') return 'entregada';
+  if (e === 'en proceso') return 'preparacion';
+  return 'registrada';
+}
+
+// ── Tablero de Geraldine Bot: cada nota pendiente con su estado según los días del cliente ──
+async function tablero(ahora = Date.now(), filtro = {}) {
+  const { lista, facturas, clientes } = await pendientes();
+  const porId = new Map(facturas.map(f => [f.id, f]));
+  const q = norm(filtro.cliente), v = norm(filtro.vendedor);
+  const notas = [];
+  lista.forEach(r => {
+    const etapa = etapaDe(r.raw, porId);
+    const cliente = clientePor(clientes, r.cliente);
+    const dias = plazos.diasFacturarDe(cliente);
+    const estado = plazos.estadoFacturacion(r.raw, etapa, dias, ahora);
+    if (!estado) return;
+    if (q && !norm(r.cliente).includes(q)) return;
+    const vendedor = r.raw.vendedor || '';
+    if (v && !norm(vendedor).includes(v)) return;
+    if (filtro.estado && estado.clave !== filtro.estado) return;
+    notas.push({ clave: r.clave, col: r.col, id: r.id, folio: r.folio, cliente: r.cliente || 'Sin cliente', vendedor, piezas: r.piezas, siniestro: r.siniestro, total: r.total,
+      etapa, dias_cliente: dias, estado: estado.clave, dias: estado.dias, texto: estado.texto, detalle: estado.detalle,
+      entregada: etapa === 'entregada' ? new Date(plazos.entregadaEn(r.raw)).toISOString().slice(0, 10) : null });
+  });
+  const orden = new Map(plazos.ORDEN.map((k, i) => [k, i]));
+  notas.sort((a, b) => orden.get(a.estado) - orden.get(b.estado) || b.dias - a.dias);
+  const conteo = {};
+  plazos.ORDEN.forEach(k => { conteo[k] = notas.filter(n => n.estado === k).length; });
+  const agrupar = campo => {
+    const g = {};
+    notas.forEach(n => { const k = n[campo] || 'Sin ' + campo; (g[k] = g[k] || { [campo]: k, notas: 0, total: 0, vencidas: 0, listas: 0 }); g[k].notas++; g[k].total += n.total; if (n.estado === 'vencida') g[k].vencidas++; if (n.estado === 'lista') g[k].listas++; });
+    return Object.values(g).sort((a, b) => b.vencidas - a.vencidas || b.notas - a.notas);
+  };
+  return { ahora: new Date(ahora).toISOString().slice(0, 10), conteo, notas, por_cliente: agrupar('cliente'), por_vendedor: agrupar('vendedor'), dias_por_defecto: plazos.DIAS_FACTURAR };
+}
+
+// ── Cancelar una nota (NE o NV) con motivo obligatorio; sale de pendientes de facturar y del seguimiento activo ──
+async function cancelarNota(usuario, a) {
+  const motivo = String(a.motivo || '').trim();
+  if (!plazos.MOTIVOS_CANCELACION.some(m => m.id === motivo)) throw new Error('Falta el motivo de cancelación. Opciones: ' + plazos.MOTIVOS_CANCELACION.map(m => m.id + ' (' + m.nombre + ')').join(', '));
+  const detalle = String(a.detalle || '').trim();
+  if (motivo === 'otra' && !detalle) throw new Error('Con motivo "otra" hay que decir cuál en detalle.');
+  const { lista } = await pendientes();
+  let r = a.clave ? lista.find(x => x.clave === a.clave) : null;
+  if (!r && a.folio) r = buscarPorFolio(lista, a.folio);
+  if (!r && a.id) r = lista.find(x => x.id === a.id);
+  if (!r) throw new Error('No encontré esa nota entre las pendientes de facturar (ya facturada, cancelada o folio incorrecto).');
+  const quien = nombreDe(usuario);
+  const ev = { etapa: 'cancelada', fecha: Date.now(), por: quien, nota: plazos.nombreMotivo(motivo) + (detalle ? ' · ' + detalle : '') };
+  const cambios = { etapa: 'cancelada', cancelacion: { motivo, detalle, por: quien, fecha: ev.fecha }, seguimiento: (r.raw.seguimiento || []).concat(ev) };
+  if (r.col === 'ventas') cambios.estatus = 'Cancelado';
+  await fb().actualizar(r.col, r.id, cambios);
+  datos.olvidarCache();
+  return { cancelada: true, col: r.col, id: r.id, folio: r.folio, cliente: r.cliente, motivo: plazos.nombreMotivo(motivo), detalle, aviso: 'Ya no aparece en pendientes de facturar. Desde Seguimiento se puede reactivar moviéndola a otra etapa.' };
 }
 
 // ── Notas pendientes de facturar, en la forma que pide emparejar() (importes en pesos, items crudos) ──
@@ -303,4 +371,4 @@ async function llamar(usuario, nombre, a) {
   } catch (e) { return { error: true, texto: e.message }; }
 }
 
-module.exports = { leerCFDI, normalizarCfdi, pendientes, proponer, textoPropuesta, argsDe, ligar, puedeFacturar, HERRAMIENTAS, NOMBRES, ESCRIBE, llamar };
+module.exports = { leerCFDI, normalizarCfdi, pendientes, proponer, textoPropuesta, argsDe, ligar, puedeFacturar, tablero, cancelarNota, etapaDe, HERRAMIENTAS, NOMBRES, ESCRIBE, llamar };

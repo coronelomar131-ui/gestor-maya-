@@ -1174,3 +1174,100 @@ test('Geraldine Bot: una orden directa (sin nota, p. ej. FLEC) se registra como 
   assert.equal(ult[0].source.media_type, 'application/pdf');
   assert.equal(ult.at(-1).type, 'text');
 });
+
+test('Geraldine Bot: estados por días del cliente (espera, por vencer, lista, vencida, sin movimiento) y tablero por cliente/vendedor', async () => {
+  const plazos = require('../public/diseno/plazos.js');
+  const facturacion = require('./facturacion');
+  const D = plazos.DIA;
+  const ahora = Date.parse('2026-11-10T18:00:00Z');
+  const entregada = hace => ({ etapa: 'entregada', seguimiento: [{ etapa: 'entregada', fecha: ahora - hace * D }] });
+  assert.equal(plazos.estadoFacturacion(entregada(2), 'entregada', 6, ahora).clave, 'espera');
+  assert.equal(plazos.estadoFacturacion(entregada(5), 'entregada', 6, ahora).clave, 'por_vencer');
+  assert.equal(plazos.estadoFacturacion(entregada(6), 'entregada', 6, ahora).clave, 'lista');
+  assert.equal(plazos.estadoFacturacion(entregada(7), 'entregada', 6, ahora).clave, 'vencida');
+  assert.equal(plazos.estadoFacturacion(entregada(3), 'entregada', 3, ahora).clave, 'lista', 'FLEC factura a los 3');
+  assert.equal(plazos.estadoFacturacion({ createdAt: new Date(ahora - 11 * D) }, 'transito', 6, ahora).clave, 'sin_movimiento');
+  assert.equal(plazos.estadoFacturacion({ createdAt: new Date(ahora - 2 * D) }, 'registrada', 6, ahora).clave, 'en_entrega');
+  assert.equal(plazos.estadoFacturacion(entregada(9), 'facturada', 6, ahora), null);
+  assert.equal(plazos.estadoFacturacion(entregada(9), 'cancelada', 6, ahora), null);
+  assert.equal(plazos.diasFacturarDe({ diasFacturar: 3 }), 3);
+  assert.equal(plazos.diasFacturarDe({ diasFacturar: 0 }), 0);
+  assert.equal(plazos.diasFacturarDe({}), 6);
+
+  // Base de prueba: NE-039 (Refacciones Prueba, 6 días) entregada hace 8 → vencida; NE-226 entregada hace 3 con cliente a 3 días → lista;
+  // NV #71 sin entregar y sin cambios en 12 días → sin movimiento
+  db.cols.clientes.set('cRP', { razonSocial: 'Refacciones Prueba', diasFacturar: 6 });
+  db.cols.clientes.set('cCR', { razonSocial: 'Clientes Redes', diasFacturar: 3 });
+  Object.assign(db.cols.notasEntrega.get('ne039'), entregada(8));
+  Object.assign(db.cols.notasEntrega.get('ne226'), entregada(3));
+  Object.assign(db.cols.ventas.get('v71'), { estatus: 'En Proceso', etapa: 'transito', createdAt: new Date(ahora - 12 * D), seguimiento: [] });
+  require('./datos').olvidarCache();
+  const t = await facturacion.tablero(ahora);
+  const por = f => t.notas.find(n => n.folio === f);
+  assert.equal(por('NE-039').estado, 'vencida');
+  assert.equal(por('NE-039').dias, 8);
+  assert.equal(por('NE-226').estado, 'lista');
+  assert.equal(por('NV #71').estado, 'sin_movimiento');
+  assert.equal(t.notas[0].folio, 'NE-039', 'las vencidas van primero');
+  assert.ok(t.conteo.vencida >= 1 && t.conteo.lista >= 1 && t.conteo.sin_movimiento >= 1);
+  assert.ok(t.por_cliente.find(c => c.cliente === 'Refacciones Prueba').vencidas >= 1);
+  assert.ok(t.por_vendedor.find(v => v.vendedor === 'Vendedora Uno'));
+  const soloVenc = await facturacion.tablero(ahora, { estado: 'vencida', cliente: 'refacciones' });
+  assert.deepEqual(soloVenc.notas.map(n => n.folio), ['NE-039']);
+
+  // El resumen de la mañana de facturación y del vendedor lo traen
+  const avisos = require('./avisos');
+  const ctx = await avisos.contextoDiario(ahora);
+  const fac = avisos.resumenDe({ uid: 'f', nombre: 'Geraldine', rol: 'facturacion' }, ctx);
+  assert.match(fac, /Geraldine Bot, por facturar:\*\n⚠️ Vencidas: \d+\n• NE-039 · Refacciones Prueba · Sin\. S-0002 · Vencida 8 d/);
+  assert.match(fac, /Listas para facturar hoy: \d+\n• NE-226/);
+  assert.match(fac, /Sin movimiento.*\n• NV #71/);
+  const ven = avisos.resumenDe({ uid: 'v', nombre: 'Vendedora Uno', rol: 'vendedor' }, ctx);
+  assert.match(ven, /Tus notas por facturar \(Geraldine Bot\):\*\n⚠️ Vencidas: 1\n• NE-039/);
+  assert.doesNotMatch(ven, /NE-226/, 'esa no es suya');
+});
+
+test('Geraldine Bot: cancelar una nota exige motivo, la saca de pendientes, avisa al vendedor y a facturación, y se puede reactivar', async () => {
+  const facturacion = require('./facturacion');
+  const avisos = require('./avisos');
+  const wa = whatsappFalso();
+  try {
+    await assert.rejects(facturacion.cancelarNota(ADMIN, { folio: 'NE-039' }), /Falta el motivo/);
+    await assert.rejects(facturacion.cancelarNota(ADMIN, { folio: 'NE-039', motivo: 'otra' }), /detalle/);
+    await assert.rejects(facturacion.cancelarNota(ADMIN, { folio: 'NE-999', motivo: 'reparada' }), /No encontré/);
+    const r = await facturacion.cancelarNota(ADMIN, { folio: 'NE-039', motivo: 'taller_no_acepto', detalle: 'Llegó rayado' });
+    assert.equal(r.cancelada, true);
+    const ne = db.cols.notasEntrega.get('ne039');
+    assert.equal(ne.etapa, 'cancelada');
+    assert.equal(ne.cancelacion.motivo, 'taller_no_acepto');
+    assert.match(ne.seguimiento.at(-1).nota, /El taller no aceptó la pieza · Llegó rayado/);
+    // Ya no está pendiente de facturar ni en el tablero
+    assert.ok(!(await facturacion.pendientes()).lista.some(x => x.folio === 'NE-039'));
+    assert.ok(!(await facturacion.tablero()).notas.some(x => x.folio === 'NE-039'));
+    const pend = await require('./datos').pendientesFacturar({});
+    assert.ok(!pend.por_cliente.some(g => g.folios.includes('NE-039')), 'tampoco en pendientes_facturar');
+    // Una venta cancelada queda también con estatus Cancelado
+    const rv = await facturacion.cancelarNota(ADMIN, { folio: 'NV #71', motivo: 'siniestro_cancelado' });
+    assert.equal(rv.col, 'ventas');
+    assert.equal(db.cols.ventas.get('v71').estatus, 'Cancelado');
+    // Aviso al vendedor y a facturación (y al grupo si existe)
+    const vendedora = { uid: 'v-9', nombre: 'Vendedora Uno', rol: 'vendedor', whatsapp10: '5544444444' };
+    const fac = { uid: 'f-1', nombre: 'Geraldine', rol: 'facturacion' };
+    [vendedora, fac, OMAR].forEach((u, i) => db.cols.usuarios.set('u' + i, u));
+    const av = await avisos.porEvento('etapa', { col: 'notasEntrega', id: 'ne039', etapa: 'cancelada', nota: 'El taller no aceptó la pieza' }, OMAR);
+    assert.deepEqual(av.map(x => x.para).sort(), ['Geraldine', 'Vendedora Uno']);
+    assert.match(db.cols.avisos_usuario.get('v-9').lista[0].texto, /❌ Tu NE-039 de Refacciones Prueba se canceló · El taller no aceptó la pieza\. Ya no se factura\./);
+    // Las herramientas existen para quien ve notas, y cancelar_nota pasa por confirmación en Pepito
+    process.env.ANTHROPIC_API_KEY = 'prueba';
+    const pepito = require('./pepito');
+    const h = await pepito.herramientasDe(fac, 'gestor');
+    assert.ok(h.tools.some(t => t.name === 'seguimiento_facturacion') && h.tools.some(t => t.name === 'cancelar_nota'));
+    assert.equal(h.escribe('cancelar_nota'), true);
+    assert.equal(h.escribe('seguimiento_facturacion'), false);
+    const seg = JSON.parse((await h.llamar('seguimiento_facturacion', { estado: 'sin_movimiento' })).texto);
+    assert.ok(Array.isArray(seg.notas) && 'conteo' in seg);
+    const err = await h.llamar('cancelar_nota', { folio: 'NE-226' });
+    assert.equal(err.error, true, 'sin motivo no cancela');
+    await h.cerrar();
+  } finally { wa.cerrar(); }
+});

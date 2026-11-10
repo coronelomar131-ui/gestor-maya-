@@ -90,7 +90,8 @@ function desdeVenta(v) {
 }
 
 function armarRegistros(notasEntrega, ventas) {
-  const lista = notasEntrega.map(desdeEntrega);
+  // Una nota cancelada con motivo (etapa "cancelada") ya no es venta: no cuenta en historial, resumen ni pendientes
+  const lista = notasEntrega.filter(n => n.etapa !== 'cancelada').map(desdeEntrega);
   const porFolio = new Map(lista.map(x => [x.folio, x]));
   ventas.forEach(v => {
     // Las ventas creadas desde una nota de entrega ya están como NE: sus folios quedan en la NE para encontrarla

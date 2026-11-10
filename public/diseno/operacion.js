@@ -29,7 +29,7 @@ function registros() {
     fecha: ms(n.fecha) || ms(n.createdAt), total: Number(n.total) || 0
   }));
   const nv = (D().ventas || [])
-    .filter(v => !(v.fuente === 'nota_entrega' || v.notaEntregaId) && !/^cancel/.test(norm(v.estatus)))
+    .filter(v => !(v.fuente === 'nota_entrega' || v.notaEntregaId) && (!/^cancel/.test(norm(v.estatus)) || v.etapa === 'cancelada'))
     .map(v => ({
       tipo: 'NV', col: 'ventas', id: v.id, folio: v.notaId ? 'NV #' + v.notaId : (v.notaNumero || 'NV'), raw: v,
       cliente: v.clienteNombre || v.cliente || '', siniestro: String(v.siniestros || (v.items || []).map(i => i.numSiniestro).filter(Boolean).join(' | ') || v.numeroReporte || ''),
@@ -49,7 +49,11 @@ const ETAPAS = [
   { id: 'pagada', nombre: 'Pagada', icono: 'wallet' }
 ];
 const LOGISTICA = ['registrada', 'preparacion', 'transito', 'entregada'];
-const nombreEtapa = id => (ETAPAS.find(e => e.id === id) || ETAPAS[0]).nombre;
+const CANCELADA = { id: 'cancelada', nombre: 'Cancelada', icono: 'x' };
+const nombreEtapa = id => (id === 'cancelada' ? CANCELADA.nombre : (ETAPAS.find(e => e.id === id) || ETAPAS[0]).nombre);
+const plazos = () => window.mayaPlazos;
+// Estado de facturación de una nota pendiente (días del cliente): vencida, lista, por_vencer, espera, en_entrega, sin_movimiento
+const estadoFac = r => { const p = plazos(); return p ? p.estadoFacturacion(r.raw, etapa(r), p.diasFacturarDe(clientePorNombreORfc(r.cliente))) : null; };
 
 let facturas = [];
 let quitarFacturas = null;
@@ -58,13 +62,14 @@ function etapa(r) {
   const f = facturaDe(r);
   if (f && f.estatus !== 'cancelada') return f.estatus === 'pagada' ? 'pagada' : 'facturada';
   if (r.raw.facturaId && !facturas.length) return 'facturada';
+  if (r.raw.etapa === 'cancelada') return 'cancelada';
   if (r.raw.etapa && LOGISTICA.includes(r.raw.etapa)) return r.raw.etapa;
   const e = norm(r.raw.estatus);
   if (e === 'entregado') return 'entregada';
   if (e === 'en proceso') return 'preparacion';
   return 'registrada';
 }
-const facturable = r => !r.raw.facturaId || (facturaDe(r) && facturaDe(r).estatus === 'cancelada');
+const facturable = r => etapa(r) !== 'cancelada' && (!r.raw.facturaId || (facturaDe(r) && facturaDe(r).estatus === 'cancelada'));
 
 function escucharFacturas() {
   if (quitarFacturas || !window.onSnapshot || !window.db) return;
@@ -107,12 +112,13 @@ function pintarSeguimiento() {
   }
   const todos = registros();
   const cuenta = id => todos.filter(r => etapa(r) === id).length;
-  $('#seg-etapas', mod).innerHTML = [{ id: 'activas', nombre: 'Por entregar' }, { id: 'todas', nombre: 'Todas' }].concat(ETAPAS)
-    .map(e => `<button type="button" data-etapa="${e.id}" class="${filtroSeg.etapa === e.id ? 'activo' : ''}">${escapar(e.nombre)}${ETAPAS.includes(e) ? ' <b>' + cuenta(e.id) + '</b>' : ''}</button>`).join('');
+  $('#seg-etapas', mod).innerHTML = [{ id: 'activas', nombre: 'Por entregar' }, { id: 'todas', nombre: 'Todas' }].concat(ETAPAS, [CANCELADA])
+    .map(e => `<button type="button" data-etapa="${e.id}" class="${filtroSeg.etapa === e.id ? 'activo' : ''}">${escapar(e.nombre)}${['activas', 'todas'].includes(e.id) ? '' : ' <b>' + cuenta(e.id) + '</b>'}</button>`).join('');
   const q = norm(filtroSeg.texto);
   const lista = todos.filter(r => {
     const et = etapa(r);
     if (filtroSeg.etapa === 'activas' && !['registrada', 'preparacion', 'transito'].includes(et)) return false;
+    if (filtroSeg.etapa === 'todas' && et === 'cancelada') return false;
     if (!['activas', 'todas'].includes(filtroSeg.etapa) && et !== filtroSeg.etapa) return false;
     return !q || norm([r.cliente, r.folio, r.siniestro, r.piezas].join(' ')).includes(q);
   });
@@ -123,9 +129,11 @@ function pintarSeguimiento() {
   $('#seg-lista', mod).innerHTML = lista.length ? lista.slice(0, 80).map(r => {
     const et = etapa(r);
     const paso = ETAPAS.findIndex(e => e.id === et);
+    const est = facturable(r) && r.total > 0 ? estadoFac(r) : null;
+    const alerta = est && ['vencida', 'lista', 'por_vencer', 'sin_movimiento'].includes(est.clave) ? ` <span class="m-op-etapa e-${est.clave}" title="${escapar(est.detalle)}">${escapar(est.texto)}</span>` : '';
     return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
       <span class="m-op-folio">${escapar(r.folio)}</span>
-      <span class="m-op-info"><strong>${escapar(r.cliente || 'Sin cliente')}</strong><small>${escapar(r.piezas || '—')}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''}</small></span>
+      <span class="m-op-info"><strong>${escapar(r.cliente || 'Sin cliente')}</strong><small>${escapar(r.piezas || '—')}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''}${et === 'cancelada' && r.raw.cancelacion ? ' · ' + escapar(plazos() ? plazos().nombreMotivo(r.raw.cancelacion.motivo) : r.raw.cancelacion.motivo) : ''}</small>${alerta}</span>
       <span class="m-op-pasos" aria-label="${escapar(nombreEtapa(et))}">${ETAPAS.map((e, i) => `<i class="${i <= paso ? 'hecho' : ''}" title="${e.nombre}"></i>`).join('')}</span>
       <span class="m-op-etapa e-${et}">${escapar(nombreEtapa(et))}</span>
     </button>`;
@@ -139,7 +147,9 @@ function abrirPieza(col, id) {
   const et = etapa(r);
   const f = facturaDe(r);
   const hist = (r.raw.seguimiento || []).slice().sort((a, b) => ms(a.fecha) - ms(b.fecha));
-  const puedeMover = LOGISTICA.includes(et);
+  const puedeMover = LOGISTICA.includes(et) || et === 'cancelada';
+  const motivos = plazos() ? plazos().MOTIVOS_CANCELACION : [];
+  const canc = r.raw.cancelacion;
   dialogo(`${r.folio} · ${r.cliente || 'Sin cliente'}`, `
     <p class="m-op-sub">${escapar(r.piezas || '—')}${r.siniestro ? ' · Siniestro ' + escapar(r.siniestro) : ''} · ${pesos(r.total)}</p>
     <ol class="m-op-linea">
@@ -150,22 +160,44 @@ function abrirPieza(col, id) {
           <small>${ev ? fechaCorta(ms(ev.fecha)) + ' · ' + escapar(ev.por || '') + (ev.nota ? ' · ' + escapar(ev.nota) : '') : (e.id === 'registrada' ? fechaCorta(r.fecha) : e.id === 'facturada' && f ? escapar(f.serieFolio) + ' · ' + fechaCorta(ms(f.fecha)) : '')}</small></div></li>`;
       }).join('')}
     </ol>
+    ${et === 'cancelada' ? `<p class="m-op-cancelada">${icono('x', 14)} Cancelada${canc ? ' · ' + escapar(plazos() ? plazos().nombreMotivo(canc.motivo) : canc.motivo) + (canc.detalle ? ' · ' + escapar(canc.detalle) : '') + ' · ' + escapar(canc.por || '') + ' · ' + fechaCorta(ms(canc.fecha)) : ''}. Para reactivarla, muévela a otra etapa.</p>` : ''}
     ${puedeMover ? `<div class="m-op-mover">
       <label>Mover a</label>
-      <select id="pz-etapa">${LOGISTICA.map(id => `<option value="${id}"${id === et ? ' selected' : ''}>${nombreEtapa(id)}</option>`).join('')}</select>
+      <select id="pz-etapa">${LOGISTICA.map(id => `<option value="${id}"${id === et ? ' selected' : ''}>${nombreEtapa(id)}</option>`).join('')}${et !== 'cancelada' && motivos.length ? '<option value="cancelada">Cancelar nota…</option>' : ''}</select>
       <input type="text" id="pz-nota" placeholder="Nota opcional (ej. guía, quién recibió)">
+      <div id="pz-cancel" class="m-op-cancel" hidden>
+        <label>Motivo de la cancelación (obligatorio)</label>
+        <select id="pz-motivo">${motivos.map(m => `<option value="${m.id}">${escapar(m.nombre)}</option>`).join('')}</select>
+        <input type="text" id="pz-detalle" placeholder="Detalle (obligatorio si es otra causa)">
+      </div>
     </div>` : `<p class="m-op-nota">${f ? 'Ligada a la factura ' + escapar(f.serieFolio) + '. ' : ''}Las etapas Facturada y Pagada se actualizan solas desde Facturación y Cobranza.</p>`}`,
   puedeMover ? [{ texto: 'Guardar etapa', principal: true, accion: async () => {
     const nueva = $('#pz-etapa').value;
-    const nota = $('#pz-nota').value.trim();
+    let nota = $('#pz-nota').value.trim();
     if (nueva === et && !nota) return true;
     const ev = { etapa: nueva, fecha: Date.now(), por: yo() };
+    const cambios = { etapa: nueva };
+    if (nueva === 'cancelada') {
+      const motivo = $('#pz-motivo').value, detalle = $('#pz-detalle').value.trim();
+      if (!motivo) { aviso('Elige el motivo de la cancelación', 'error'); return false; }
+      if (motivo === 'otra' && !detalle) { aviso('Escribe cuál es la otra causa', 'error'); return false; }
+      cambios.cancelacion = { motivo, detalle, por: yo(), fecha: ev.fecha };
+      if (col === 'ventas') cambios.estatus = 'Cancelado';
+      nota = plazos().nombreMotivo(motivo) + (detalle ? ' · ' + detalle : '') + (nota ? ' · ' + nota : '');
+    } else if (et === 'cancelada') {
+      cambios.cancelacion = null;
+      if (col === 'ventas') cambios.estatus = 'Pendiente';
+      nota = 'Reactivada' + (nota ? ' · ' + nota : '');
+    }
     if (nota) ev.nota = nota;
-    await window.updateDoc(window.doc(window.db, col, id), { etapa: nueva, seguimiento: (r.raw.seguimiento || []).concat(ev) });
+    cambios.seguimiento = (r.raw.seguimiento || []).concat(ev);
+    await window.updateDoc(window.doc(window.db, col, id), cambios);
     if (nueva !== et && window.mayaAvisar) window.mayaAvisar('etapa', { col, id, etapa: nueva, nota });
     aviso(r.folio + ' → ' + nombreEtapa(nueva));
     return true;
   } }] : []);
+  // El motivo solo aparece cuando se elige "Cancelar nota…"
+  queueMicrotask(() => { const sel = $('#pz-etapa'); if (sel) sel.addEventListener('change', () => { const c = $('#pz-cancel'); if (c) c.hidden = sel.value !== 'cancelada'; }); });
 }
 
 // ═══════════════════════ FACTURACIÓN (XML de CONTPAQi) ═══════════════════════
@@ -201,6 +233,8 @@ function pintarFacturacion() {
       if (copiar) return copiarParaContpaqi();
       if (e.target.closest('[data-limpiar]')) { seleccion.clear(); previaAbierta = false; pintarFacturacion(); }
       if (e.target.closest('[data-previa]')) { previaAbierta = !previaAbierta; pintarFacturacion(); }
+      const dias = e.target.closest('[data-dias-fac]');
+      if (dias) return editarDiasFacturar(dias.dataset.diasFac);
     });
   }
   $$('#fac-tabs [data-tab]', mod).forEach(b => b.classList.toggle('activo', b.dataset.tab === pestanaFac));
@@ -210,17 +244,28 @@ function pintarFacturacion() {
     const porCliente = {};
     pend.forEach(r => { (porCliente[r.cliente || 'Sin cliente'] = porCliente[r.cliente || 'Sin cliente'] || []).push(r); });
     const elegidas = pend.filter(r => seleccion.has(r.col + ':' + r.id));
+    const estados = new Map(pend.map(r => [r.col + ':' + r.id, estadoFac(r)]));
+    const P = plazos();
+    const conteo = P ? P.ORDEN.map(k => [k, pend.filter(r => (estados.get(r.col + ':' + r.id) || {}).clave === k).length]).filter(([, n]) => n) : [];
+    const pesoEstado = cli => { const l = porCliente[cli]; return Math.max(...l.map(r => { const e = estados.get(r.col + ':' + r.id); return e ? P.ORDEN.length - P.ORDEN.indexOf(e.clave) : 0; })); };
+    const puedeDias = ['admin', 'facturacion'].includes(rol());
     cuerpo.innerHTML = `<div class="m-fac-dos"><div class="m-fac-izq">` +
-      (Object.keys(porCliente).length ? Object.entries(porCliente).sort((a, b) => b[1].length - a[1].length).map(([cli, lista]) => `
+      (conteo.length ? `<div class="m-fac-estados">${conteo.map(([k, n]) => `<span class="m-op-etapa e-${k}">${escapar(P.NOMBRES[k])} <b>${n}</b></span>`).join('')}<small>Según los días para facturar de cada cliente (${P.DIAS_FACTURAR} si no tiene).</small></div>` : '') +
+      (Object.keys(porCliente).length ? Object.entries(porCliente).sort((a, b) => (P ? pesoEstado(b[0]) - pesoEstado(a[0]) : 0) || b[1].length - a[1].length).map(([cli, lista]) => {
+        const c = clientePorNombreORfc(cli);
+        const dias = P ? P.diasFacturarDe(c) : null;
+        return `
       <section class="m-op-grupo m-vidrio">
-        <header><strong>${escapar(cli)}</strong><span>${lista.length} ${lista.length === 1 ? 'nota' : 'notas'} · ${pesos(lista.reduce((s, r) => s + r.total, 0))}</span></header>
-        ${lista.map(r => `<label class="m-op-check">
+        <header><strong>${escapar(cli)}</strong><span>${lista.length} ${lista.length === 1 ? 'nota' : 'notas'} · ${pesos(lista.reduce((s, r) => s + r.total, 0))}</span>
+          ${c && P ? (puedeDias ? `<button type="button" class="m-op-link" data-dias-fac="${escapar(c.id)}">${c.diasFacturar != null && c.diasFacturar !== '' ? escapar(c.diasFacturar) + ' días para facturar' : 'Facturar a los ' + dias + ' días (cambiar)'}</button>` : `<small>Factura a los ${dias} días</small>`) : ''}</header>
+        ${lista.map(r => { const e = estados.get(r.col + ':' + r.id); return `<label class="m-op-check">
           <input type="checkbox" data-sel="${r.col}:${escapar(r.id)}"${seleccion.has(r.col + ':' + r.id) ? ' checked' : ''}>
           <span class="m-op-folio">${escapar(r.folio)}</span>
-          <span class="m-op-info"><strong>${escapar(r.piezas || '—')}</strong><small>${fechaCorta(r.fecha)}${r.siniestro ? ', siniestro ' + escapar(r.siniestro) : ''}, ${escapar(nombreEtapa(etapa(r)).toLowerCase())}</small></span>
+          <span class="m-op-info"><strong>${escapar(r.piezas || '—')}</strong><small>${fechaCorta(r.fecha)}${r.siniestro ? ', siniestro ' + escapar(r.siniestro) : ''}, ${escapar(nombreEtapa(etapa(r)).toLowerCase())}${e && e.clave === 'espera' ? ', entregada hace ' + e.dias + ' d' : ''}</small></span>
+          ${e ? `<span class="m-op-etapa e-${e.clave}" title="${escapar(e.detalle)}">${escapar(e.texto)}</span>` : ''}
           <span class="m-op-monto">${pesos(r.total)}</span>
-        </label>`).join('')}
-      </section>`).join('') : `<div class="m-op-vacio">${icono('check', 28)}<p>No hay notas pendientes de facturar.</p></div>`) +
+        </label>`; }).join('')}
+      </section>`; }).join('') : `<div class="m-op-vacio">${icono('check', 28)}<p>No hay notas pendientes de facturar.</p></div>`) +
       `<p class="m-op-nota">Las notas en $0 (sin precio a propósito) no aparecen aquí.</p></div>` + previaFactura(elegidas) + `</div>`;
   } else {
     const lista = facturas.slice().sort((a, b) => ms(b.fecha) - ms(a.fecha));
@@ -233,6 +278,20 @@ function pintarFacturacion() {
         ${rol() === 'admin' && f.estatus !== 'cancelada' ? `<button type="button" class="m-op-x" data-cancelar="${escapar(f.id)}" title="Marcar como cancelada">${icono('x', 14)}</button>` : ''}
       </div>`).join('')}</div>` : `<div class="m-op-vacio">${icono('receipt', 28)}<p>Todavía no se ha subido ninguna factura. Usa “Subir XML de CONTPAQi”.</p></div>`;
   }
+}
+
+// Días para facturar de un cliente (Geraldine Bot): a partir de la entrega, cuándo pide el cliente que se le facture
+function editarDiasFacturar(clienteId) {
+  const c = (D().clientes || []).find(x => x.id === clienteId);
+  if (!c || !plazos()) return;
+  const actual = plazos().diasFacturarDe(c);
+  dialogo('Días para facturar de ' + (c.razonSocial || c.nombre), `<div class="m-op-form"><label>Días después de la entrega<input type="number" id="df-dias" min="0" max="90" value="${actual}"></label></div>
+    <p class="m-op-nota">Ejemplo: Jake pide 6 días; FLEC, 3. Geraldine Bot avisa un día antes, el día que se cumple y cuando se pasa.</p>`,
+  [{ texto: 'Guardar', principal: true, accion: async () => {
+    await window.updateDoc(window.doc(window.db, 'clientes', clienteId), { diasFacturar: Math.max(0, Number($('#df-dias').value) || 0) });
+    aviso('Listo: ' + (c.razonSocial || c.nombre) + ' se factura a los ' + Math.max(0, Number($('#df-dias').value) || 0) + ' días');
+    return true;
+  } }]);
 }
 
 // Partidas de una nota tal como irían en la factura: pieza, siniestro, cantidad, importe sin IVA e IVA

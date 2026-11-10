@@ -1728,3 +1728,17 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-grupo-admin { margin-top: 12px; }
 .m-grupo-admin summary { cursor: pointer; font: 600 13px var(--m-f-texto); color: var(--m-texto-2); padding: 4px 0; }
 .m-grupo-admin .btn { width: auto; margin-top: 6px; }
+
+/* ── Geraldine Bot: estados de facturación y cancelación ── */
+.m-op-etapa.e-lista { background: rgba(61, 214, 140, 0.16); color: var(--m-verde); }
+.m-op-etapa.e-por_vencer { background: rgba(245, 185, 66, 0.16); color: var(--m-ambar); }
+.m-op-etapa.e-espera, .m-op-etapa.e-en_entrega { background: var(--m-relleno); color: var(--m-texto-3); }
+.m-op-etapa.e-sin_movimiento { background: rgba(226, 59, 63, 0.12); color: #ffb3b5; border: 1px dashed rgba(226, 59, 63, 0.45); }
+.m-fac-estados { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.m-fac-estados .m-op-etapa b { font-weight: 800; margin-left: 2px; }
+.m-fac-estados small { flex-basis: 100%; color: var(--m-texto-3); font-size: 12px; }
+.m-op-grupo header .m-op-link { margin-left: auto; }
+.m-op-grupo header small { margin-left: auto; color: var(--m-texto-3); font-size: 12px; }
+.m-op-cancel { display: grid; gap: 8px; margin-top: 8px; padding: 10px 12px; border-radius: var(--m-r); border: 1px dashed rgba(226, 59, 63, 0.45); background: rgba(226, 59, 63, 0.08); }
+.m-op-cancel label { font-size: 12.5px; color: #ff8a8d; font-weight: 600; }
+.m-op-cancelada { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: var(--m-r); background: rgba(226, 59, 63, 0.12); color: #ff8a8d; font-size: 13px; line-height: 1.4; }

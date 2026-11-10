@@ -98,6 +98,32 @@ function crearServidor(usuario) {
 
   // ── Consultas ──
   if (puede('notas')) {
+    servidor.registerTool('seguimiento_facturacion', {
+      title: 'Seguimiento de facturación (Geraldine Bot)',
+      description: 'Cada nota pendiente de facturar con su estado según los días para facturar de su cliente (6 por defecto): ' +
+        'vencida (se pasó del plazo), lista (hoy se cumple), por_vencer (mañana), espera, en_entrega y sin_movimiento (10 días sin cambios: posible cancelación). ' +
+        'Trae conteos y totales por cliente y por vendedor. Úsala para "¿qué falta facturar?", "¿qué venció?", "¿qué siniestros no se han movido?".',
+      inputSchema: {
+        estado: z.enum(['vencida', 'lista', 'por_vencer', 'espera', 'en_entrega', 'sin_movimiento']).optional(),
+        cliente: z.string().optional().describe('Parte del nombre del cliente'),
+        vendedor: z.string().optional().describe('Parte del nombre del vendedor')
+      },
+      annotations: LECTURA
+    }, ejecutar(a => require('./facturacion').tablero(Date.now(), a)));
+
+    servidor.registerTool('cancelar_nota', {
+      title: 'Cancelar nota (con motivo)',
+      description: 'Marca una nota de entrega o de venta como cancelada: ya no se facturará. El motivo es obligatorio: taller_no_acepto, reparada, ' +
+        'siniestro_cancelado (pago de daños), cambio_pieza u otra (con detalle). Identifícala por folio (NE-245, NV #71) o por la clave que da seguimiento_facturacion. ' +
+        'Pide confirmación antes: es la persona quien decide cancelar.',
+      inputSchema: {
+        folio: z.string().optional(), clave: z.string().optional(),
+        motivo: z.enum(['taller_no_acepto', 'reparada', 'siniestro_cancelado', 'cambio_pieza', 'otra']),
+        detalle: z.string().optional().describe('Qué pasó, con tus palabras')
+      },
+      annotations: ESCRITURA
+    }, ejecutar(async a => { try { return await require('./facturacion').cancelarNota(usuario, a); } catch (e) { throw new escritura.ErrorUsuario(e.message); } }));
+
     servidor.registerTool('historial_notas', {
       title: 'Historial de notas',
       description: 'Notas de entrega y de venta con sus artículos, precios y totales, igual que el historial de la app. ' +
