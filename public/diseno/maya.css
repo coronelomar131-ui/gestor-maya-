@@ -1752,3 +1752,4 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-op-envio-form label { display: grid; gap: 4px; font-size: 12px; color: var(--m-texto-2); }
 .m-op-envio-form input, .m-op-envio-form select { padding: 8px 10px; border-radius: var(--m-r-sm, 8px); border: 1px solid var(--m-vidrio-borde); background: var(--m-relleno); color: var(--m-niebla); font: 14px var(--m-f-texto); }
 @media (max-width: 640px) { .m-op-envio-form { grid-template-columns: 1fr; } }
+.m-op-cancel[hidden] { display: none; }
