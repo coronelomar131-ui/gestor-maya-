@@ -1332,3 +1332,66 @@ test('Mercado Libre: las órdenes pagadas entran como notas de venta una sola ve
     assert.ok(regs.some(x => x.cliente === 'Juan Pérez (JUANP)' && x.total === 232000));
   } finally { global.fetch = original; wa.cerrar(); }
 });
+
+test('Envíos: la guía vive en la nota, mueve la etapa, avisa, y el tablero alerta sin guía y sin movimiento', async () => {
+  const envios = require('./envios');
+  const plazos = require('../public/diseno/plazos.js');
+  const avisos = require('./avisos');
+  const wa = whatsappFalso();
+  const D = plazos.DIA;
+  try {
+    const vendedora = { uid: 'v-9', nombre: 'Vendedora Uno', rol: 'vendedor' };
+    const israel = { uid: 'e-1', nombre: 'Israel', rol: 'entregas' };
+    [vendedora, israel, OMAR].forEach((u, i) => db.cols.usuarios.set('eu' + i, u));
+    await assert.rejects(envios.guardarGuia(israel, { folio: 'NE-039', estatus: 'en_transito' }), /hace falta el número de guía/);
+    // Guía de Paquete Express: la pieza pasa a En preparación y el vendedor no recibe nada (ese aviso es para entregas)
+    const r1 = await envios.guardarGuia(israel, { folio: 'NE-039', tipo: 'nacional', paqueteria: 'Paquete Express', guia: 'PX123456' });
+    assert.equal(r1.envio.estatus, 'guia_generada');
+    assert.equal(r1.etapa, 'preparacion');
+    const ne = () => db.cols.notasEntrega.get('ne039');
+    assert.equal(ne().etapa, 'preparacion');
+    assert.match(ne().seguimiento.at(-1).nota, /Paquete Express guía PX123456/);
+    // Sale: En tránsito, y a la vendedora le llega el aviso con la guía
+    const r2 = await envios.guardarGuia(israel, { folio: 'NE-039', estatus: 'en_transito' });
+    assert.equal(r2.etapa, 'transito');
+    assert.match(db.cols.avisos_usuario.get('v-9').lista[0].texto, /Tu NE-039 .* ya va en camino · Paquete Express guía PX123456/);
+    // Tablero: NE-039 en tránsito; una venta nacional sin guía alerta; una guía quieta 4 días alerta
+    Object.assign(db.cols.ventas.get('v71'), { estatus: 'Pendiente', etapa: 'registrada', envio: { tipo: 'nacional', paqueteria: 'Skydrops', guia: '', estatus: 'sin_guia' } });
+    db.cols.notasEntrega.set('neq', { notaId: 'NE-500', fecha: '2026-11-01', cliente: 'Taller Lejos', vendedor: 'Vendedora Uno', items: [{ descripcion: 'Cofre', cantidad: 1, precioUnit: 100 }], total: 100, etapa: 'preparacion',
+      envio: { tipo: 'nacional', paqueteria: 'Paquete Express', guia: 'PX999', estatus: 'guia_generada', actualizado: Date.now() - 4 * D } });
+    require('./datos').olvidarCache();
+    const t = await envios.tablero();
+    const de = f => t.activos.find(x => x.folio === f);
+    assert.equal(de('NE-039').estatus, 'en_transito');
+    assert.equal(de('NE-039').alerta, null);
+    assert.equal(de('NV #71').alerta, 'sin_guia');
+    assert.equal(de('NE-500').alerta, 'quieto');
+    assert.equal(t.conteo.sin_guia, 1);
+    assert.equal(t.conteo.quietos, 1);
+    assert.equal(t.por_paqueteria['Paquete Express'], 2);
+    assert.equal(t.activos[0].folio, 'NV #71', 'primero lo que no tiene guía');
+    // En el resumen de entregas y de admin
+    const ctx = await avisos.contextoDiario();
+    const ent = avisos.resumenDe(israel, ctx);
+    assert.match(ent, /📦 \*Envíos:\* 1 en tránsito, 1 con guía por salir, 1 sin guía/);
+    assert.match(ent, /⚠️ Falta la guía:\n• NV #71 · Refacciones Prueba · Skydrops/);
+    assert.match(ent, /Sin movimiento 3 días o más:\n• NE-500 .* PX999 · Guía generada 4 d sin cambio/);
+    assert.match(avisos.resumenDe(OMAR, ctx), /📦 \*Envíos:\*/);
+    // Recibido: Entregada, y al vendedor y a facturación les llega lo de siempre
+    const r3 = await envios.guardarGuia(israel, { folio: 'NE-039', estatus: 'recibido', observaciones: 'Recibió Juan' });
+    assert.equal(r3.etapa, 'entregada');
+    assert.equal(ne().etapa, 'entregada');
+    assert.ok(ne().envio.fechaEntrega);
+    assert.match(db.cols.avisos_usuario.get('v-9').lista[0].texto, /ya se entregó/);
+    await assert.rejects(envios.guardarGuia(israel, { folio: 'NE-039', guia: 'OTRA' }), /ya está entregada/);
+    // Herramientas por rol: el vendedor las tiene (ve notas)
+    process.env.ANTHROPIC_API_KEY = 'prueba';
+    const pepito = require('./pepito');
+    const h = await pepito.herramientasDe(vendedora, 'gestor');
+    assert.ok(h.tools.some(x => x.name === 'guardar_guia') && h.tools.some(x => x.name === 'envios_seguimiento'));
+    assert.equal(h.escribe('guardar_guia'), true);
+    const seg = JSON.parse((await h.llamar('envios_seguimiento', { estatus: 'sin_guia' })).texto);
+    assert.deepEqual(seg.activos.map(x => x.folio), ['NV #71']);
+    await h.cerrar();
+  } finally { wa.cerrar(); }
+});

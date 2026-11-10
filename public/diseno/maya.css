@@ -1742,3 +1742,13 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-op-cancel { display: grid; gap: 8px; margin-top: 8px; padding: 10px 12px; border-radius: var(--m-r); border: 1px dashed rgba(226, 59, 63, 0.45); background: rgba(226, 59, 63, 0.08); }
 .m-op-cancel label { font-size: 12.5px; color: #ff8a8d; font-weight: 600; }
 .m-op-cancelada { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: var(--m-r); background: rgba(226, 59, 63, 0.12); color: #ff8a8d; font-size: 13px; line-height: 1.4; }
+
+/* ── Envíos por paquetería en Seguimiento ── */
+.m-op-guia { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: rgba(59, 188, 212, 0.12); color: var(--m-faro-claro); white-space: nowrap; }
+.m-op-guia.alerta { background: rgba(245, 185, 66, 0.16); color: var(--m-ambar); }
+.m-op-envio { margin-top: 12px; border: 1px solid var(--m-linea); border-radius: var(--m-r); padding: 8px 12px; }
+.m-op-envio summary { cursor: pointer; display: flex; align-items: center; gap: 8px; font: 600 13.5px var(--m-f-texto); color: var(--m-niebla); }
+.m-op-envio-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.m-op-envio-form label { display: grid; gap: 4px; font-size: 12px; color: var(--m-texto-2); }
+.m-op-envio-form input, .m-op-envio-form select { padding: 8px 10px; border-radius: var(--m-r-sm, 8px); border: 1px solid var(--m-vidrio-borde); background: var(--m-relleno); color: var(--m-niebla); font: 14px var(--m-f-texto); }
+@media (max-width: 640px) { .m-op-envio-form { grid-template-columns: 1fr; } }

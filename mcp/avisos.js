@@ -182,8 +182,9 @@ async function contextoDiario(ahora = Date.now()) {
   const fechaMs = r => (r.fecha ? r.fecha.getTime() : 0);
   const nuevas = arr => arr.sort((a, b) => fechaMs(b) - fechaMs(a));
   const fact = await require('./facturacion').tablero(ahora).catch(e => { console.error('avisos: tablero', e.message); return null; });
+  const env = await require('./envios').tablero(ahora).catch(e => { console.error('avisos: envios', e.message); return null; });
   return {
-    rep, ops: ops.lista, facturas: ops.facturas, bajo: bajo.productos || [], fact,
+    rep, ops: ops.lista, facturas: ops.facturas, bajo: bajo.productos || [], fact, env,
     porPreparar: nuevas(ops.lista.filter(r => ['registrada', 'preparacion'].includes(r.etapa) && fechaMs(r) >= desde(7))),
     enPreparacion: nuevas(ops.lista.filter(r => r.etapa === 'preparacion' && fechaMs(r) >= desde(14))),
     enTransito: nuevas(ops.lista.filter(r => r.etapa === 'transito' && fechaMs(r) >= desde(30))),
@@ -213,6 +214,17 @@ function textoGeraldine(t, titulo, filtro) {
   return l;
 }
 
+// Envíos para el resumen: sin guía, quietos y en tránsito
+function textoEnvios(t) {
+  if (!t || !t.activos.length) return [];
+  const sinGuia = t.activos.filter(x => x.alerta === 'sin_guia'), quietos = t.activos.filter(x => x.alerta === 'quieto');
+  const linea = x => '• ' + x.folio + ' · ' + x.cliente + (x.paqueteria ? ' · ' + x.paqueteria : '') + (x.guia ? ' ' + x.guia : '') + (x.alerta_texto ? ' · ' + x.alerta_texto : '');
+  const l = ['📦 *Envíos:* ' + t.conteo.en_transito + ' en tránsito, ' + t.conteo.guia_generada + ' con guía por salir' + (sinGuia.length ? ', ' + sinGuia.length + ' sin guía' : '')];
+  if (sinGuia.length) l.push('⚠️ Falta la guía:', ...sinGuia.slice(0, 4).map(linea));
+  if (quietos.length) l.push('⏳ Sin movimiento 3 días o más:', ...quietos.slice(0, 4).map(linea));
+  return l;
+}
+
 function resumenDe(persona, ctx) {
   const reporte = require('./reporte');
   const rol = persona.rol || 'vendedor';
@@ -222,14 +234,17 @@ function resumenDe(persona, ctx) {
     const g = textoGeraldine(ctx.fact, '🧾 *Geraldine Bot, por facturar:*');
     if (g.length) partes.push('', ...g);
     if (rol === 'admin' && ctx.enTransito.length) partes.push('', '🚚 *En tránsito:* ' + ctx.enTransito.length);
+    if (rol === 'admin') { const e = textoEnvios(ctx.env); if (e.length) partes.push('', ...e); }
   } else {
     const l = ['Buenos días, ' + primerNombre(persona) + '. Esto es lo tuyo para hoy:'];
     if (rol === 'almacen') {
       l.push('', ...(lista('📦 *Por preparar:*', ctx.porPreparar).length ? lista('📦 *Por preparar:*', ctx.porPreparar) : ['📦 Nada pendiente por preparar.']));
       if (ctx.bajo.length) l.push('', '⚠️ *Stock bajo:*', ...ctx.bajo.slice(0, 5).map(p => '• ' + p.descripcion + ' (' + p.stock + ' de ' + p.stock_minimo + ' mín.)'));
+      const e = textoEnvios(ctx.env); if (e.length) l.push('', ...e);
     } else if (rol === 'entregas') {
       const a = lista('📦 *Listas para salir:*', ctx.enPreparacion), b = lista('🚚 *En tránsito:*', ctx.enTransito);
       l.push('', ...(a.length || b.length ? a.concat(a.length && b.length ? [''] : [], b) : ['🚚 No hay piezas en camino ni por salir.']));
+      const e = textoEnvios(ctx.env); if (e.length) l.push('', ...e);
     } else {
       const mias = ctx.ops.filter(r => esVendedor(persona, r.vendedor));
       const deAyer = mias.filter(r => r.fecha && diaCDMX(r.fecha.getTime()) === ctx.ayer);
