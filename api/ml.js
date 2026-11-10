@@ -89,6 +89,11 @@ function tokenErrorResponse(res, error) {
 
 module.exports = async function handler(req, res) {
   try {
+    // Notificaciones de Mercado Libre (URL de callbacks de la app, tema orders_v2): hay que contestar 200 rápido
+    if (req.method === 'POST' && req.body && req.body.topic && req.body.resource) {
+      require('../mcp/mercadolibre').notificacion(req.body).then(r => console.log('ML notificación:', JSON.stringify(r))).catch(e => console.error('ML notificación:', e.message));
+      return res.status(200).json({ ok: true });
+    }
     const params = { ...req.query, ...(req.body || {}) };
     const { action, mlUserId, itemId, quantity, price, code } = params;
 

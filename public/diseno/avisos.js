@@ -46,6 +46,18 @@ window.mayaAvisar = async function (evento, datos) {
   try { await llamarApi(evento, datos); } catch (e) { console.warn('avisos:', e.message); }
 };
 
+// ── Ventas de Mercado Libre al gestor (las pagadas entran solas cada 5 min; este botón las trae ahora) ──
+window.importarVentasML = async function () {
+  const aviso = (m, t) => window.toast && window.toast(m, t || 'success');
+  aviso('Revisando ventas de Mercado Libre…', 'info');
+  try {
+    const r = await llamarApi('ml_importar');
+    const n = r.importadas.length;
+    aviso(n ? 'Entraron ' + n + (n === 1 ? ' venta nueva' : ' ventas nuevas') + ' de Mercado Libre: ' + r.importadas.map(v => v.folio).join(', ') : 'No hay ventas nuevas de Mercado Libre (' + r.revisadas + ' órdenes revisadas).', n ? 'success' : 'info');
+    if (n && window.showModule) window.showModule('ventas');
+  } catch (e) { aviso(e.message, 'error'); }
+};
+
 // ── Grupo Entregas y cobranza (los mensajes pasan por Pepito: le llegan a cada quien por WhatsApp y aquí) ──
 let grupo = null;
 async function cargarGrupo(evento = 'grupo_ver', datos) {
