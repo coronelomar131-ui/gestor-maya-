@@ -14,6 +14,7 @@ const avisos = require('../mcp/avisos');
 const reporte = require('../mcp/reporte');
 const acceso = require('../mcp/acceso');
 const grupo = require('../mcp/grupo');
+const mercadolibre = require('../mcp/mercadolibre');
 
 const EVENTOS = ['nota_nueva', 'etapa', 'factura', 'pago'];
 const hoyCDMX = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -48,6 +49,12 @@ module.exports = async (req, res) => {
   if (req.method === 'POST' && d.evento) {
     const usuario = await acceso.porToken(req);
     if (!usuario) return res.status(401).json({ ok: false, error: 'Inicia sesión de nuevo' });
+    // Mercado Libre: importar ahora las ventas pagadas (botón del módulo Mercado Libre)
+    if (d.evento === 'ml_importar') {
+      if (!['admin', 'almacen'].includes(usuario.rol)) return res.status(403).json({ ok: false, error: 'Solo dirección o almacén importan ventas de ML' });
+      try { return res.status(200).json(Object.assign({ ok: true }, await mercadolibre.importar())); }
+      catch (e) { return res.status(e.sinConexion ? 409 : 400).json({ ok: false, error: e.message }); }
+    }
     // Grupo Entregas y cobranza desde la campanita: ver, escribir y (admin) elegir quiénes están
     if (d.evento === 'grupo_ver' || d.evento === 'grupo_mensaje' || d.evento === 'grupo_miembros') {
       try {
@@ -71,7 +78,11 @@ module.exports = async (req, res) => {
     const solo = String(q.get('solo') || '').replace(/\D/g, '').slice(-10);
     if (solo) return res.status(200).json(Object.assign({ ok: true }, await resumenDiario(solo)));
     const salida = { ok: true };
-    if (q.get('tarea') === 'tick') salida.alarmas = await avisos.alarmasVencidas();
+    if (q.get('tarea') === 'tick') {
+      salida.alarmas = await avisos.alarmasVencidas();
+      // Ventas de Mercado Libre: si ML está conectado, lo pagado que falte entra al gestor
+      salida.mercadolibre = await mercadolibre.importar().then(r => ({ importadas: r.importadas.length, revisadas: r.revisadas })).catch(e => ({ error: e.sinConexion ? 'ML no conectado' : e.message }));
+    }
     // El resumen sale una vez al día: con el cron de Vercel, o con el primer tick después de la hora
     const toca = q.get('tarea') !== 'tick' || horaCDMX() >= (Number(process.env.AVISOS_HORA) || 8);
     if (toca && await fb().reservar('config', 'avisos_turno', 'dia', hoyCDMX())) salida.resumen = await resumenDiario('');

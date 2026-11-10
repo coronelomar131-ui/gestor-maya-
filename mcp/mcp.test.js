@@ -1271,3 +1271,64 @@ test('Geraldine Bot: cancelar una nota exige motivo, la saca de pendientes, avis
     await h.cerrar();
   } finally { wa.cerrar(); }
 });
+
+test('Mercado Libre: las órdenes pagadas entran como notas de venta una sola vez, con envío y aviso al almacén', async () => {
+  const ml = require('./mercadolibre');
+  const wa = whatsappFalso();
+  const original = global.fetch;
+  const llamadasML = [];
+  const orden = (id, extra = {}) => Object.assign({ id, status: 'paid', date_created: '2026-11-09T15:00:00.000-06:00', total_amount: 2320,
+    buyer: { id: 77, nickname: 'JUANP', first_name: 'Juan', last_name: 'Pérez' },
+    order_items: [{ item: { id: 'MLM1', title: 'Faro derecho Creta 2021', seller_sku: 'FAR-1' }, quantity: 1, unit_price: 2320 }],
+    shipping: { id: 44001 }, pack_id: null, tags: [] }, extra);
+  const anteriorFetch = global.fetch;
+  global.fetch = async (url, op) => {
+    if (String(url).startsWith('https://api.mercadolibre.com')) {
+      llamadasML.push(String(url));
+      if (/\/orders\/search/.test(url)) return { ok: true, status: 200, json: async () => ({ results: [orden(9001), orden(9002, { status: 'cancelled' }), orden(9003, { total_amount: 1160, order_items: [{ item: { id: 'MLM2', title: 'Espejo Aveo' }, quantity: 2, unit_price: 580 }], shipping: null })], paging: { total: 3 } }) };
+      if (/\/orders\/9004$/.test(url)) return { ok: true, status: 200, json: async () => orden(9004) };
+      return { ok: false, status: 404, text: async () => 'no' };
+    }
+    return anteriorFetch(url, op);
+  };
+  try {
+    await assert.rejects(ml.importar(), /no está conectado/);
+    db.cols.ml_tokens.set('123456', { access_token: 'tok', refresh_token: 'ref', expires_at: new Date(Date.now() + 3600000) });
+    db.cols.usuarios.set('alm', { uid: 'a-1', nombre: 'Almacén Uno', rol: 'almacen' });
+    const antes = db.cols.ventas.size;
+    const r = await ml.importar();
+    assert.equal(r.importadas.length, 2, 'las pagadas');
+    assert.equal(r.omitidas, 1, 'la cancelada no');
+    assert.equal(db.cols.ventas.size, antes + 2);
+    const v = [...db.cols.ventas.values()].find(x => x.mlOrderId === '9001');
+    assert.equal(v.fuente, 'mercadolibre');
+    assert.equal(v.clienteNombre, 'Juan Pérez (JUANP)');
+    assert.equal(v.vendedor, 'Mercado Libre');
+    assert.equal(v.total, 2320);
+    assert.equal(v.items[0].precio, 2000, 'ML trae IVA incluido: se desglosa');
+    assert.equal(v.items[0].iva, 320);
+    assert.equal(v.envio.guia, '44001');
+    assert.equal(v.envio.estatus, 'guia_generada');
+    const v2 = [...db.cols.ventas.values()].find(x => x.mlOrderId === '9003');
+    assert.equal(v2.envio.estatus, 'sin_guia');
+    assert.match(v2.items[0].pedido, /Espejo Aveo x2/);
+    assert.ok(Number(v.notaId) > 0 && Number(v2.notaId) === Number(v.notaId) + 1, 'folios consecutivos');
+    // Al almacén le llegó el aviso de nota nueva
+    assert.match(db.cols.avisos_usuario.get('a-1').lista[0].texto, /Nueva NV #\d+ de Juan Pérez/);
+    // Segunda pasada: nada se duplica
+    const r2 = await ml.importar();
+    assert.equal(r2.importadas.length, 0);
+    assert.equal(db.cols.ventas.size, antes + 2);
+    assert.ok(db.cols.config.get('ml_importacion').importadas >= 2);
+    // Notificación de ML de una orden nueva
+    const n = await ml.notificacion({ topic: 'orders_v2', resource: '/orders/9004', user_id: 123456 });
+    assert.ok(n.importada);
+    assert.equal(db.cols.ventas.size, antes + 3);
+    assert.deepEqual(await ml.notificacion({ topic: 'orders_v2', resource: '/orders/9004' }), { yaEstaba: true, orden: '9004' });
+    assert.deepEqual(await ml.notificacion({ topic: 'items', resource: '/items/MLM1' }), { ignorada: true });
+    // El historial del gestor las ve como ventas normales
+    const datos = require('./datos');
+    const regs = await datos.cargarRegistros();
+    assert.ok(regs.some(x => x.cliente === 'Juan Pérez (JUANP)' && x.total === 232000));
+  } finally { global.fetch = original; wa.cerrar(); }
+});
