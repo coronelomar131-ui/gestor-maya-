@@ -598,9 +598,9 @@ test('Acceso por WhatsApp: solo números registrados (52 o 521 + 10 dígitos)', 
 test('crear venta y cotización sin vendedor no ponen al usuario conectado; con vendedor sí lo guardan', async () => {
   const c = await conectar(ADMIN);
   const partidas = [{ descripcion: 'Cristal', precio: 1000, iva_porcentaje: 0 }];
-  const v = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas });
+  const v = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, forma_pago: 'contado' });
   assert.equal(db.cols.ventas.get(v.creada.id).vendedor, '');
-  const v2 = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, vendedor: 'Daniel' });
+  const v2 = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, vendedor: 'Daniel', forma_pago: 'contado' });
   assert.equal(db.cols.ventas.get(v2.creada.id).vendedor, 'Daniel');
   const cot = await c.llamar('crear_cotizacion', { cliente: 'Zeta Autopartes', partidas });
   assert.equal(db.cols.cotizaciones.get(cot.creada).vendedor, '');
@@ -978,7 +978,8 @@ test('clientes repetidos: mismo nombre con o sin S.A. de C.V., RFC, teléfono o 
   assert.equal(dup.claveTelefono('+52 1 (55) 1234-5678'), '5512345678');
 
   const escritura = require('./escritura');
-  const r1 = await escritura.guardarCliente(ADMIN, { nombre: 'Refaccionaria Única Prueba S.A. de C.V.', rfc: 'RUP010203AB1', telefono: '55 9876 0001', email: 'compras@unica-prueba.mx' });
+  const FISCAL = { tipo_persona: 'moral', regimen_fiscal: '601', uso_cfdi: 'G01', calle: 'Av. Tláhuac', numero_exterior: '123', municipio: 'Iztapalapa', estado: 'CDMX', codigo_postal: '09870', email: 'x@prueba.mx' };
+  const r1 = await escritura.guardarCliente(ADMIN, Object.assign({}, FISCAL, { nombre: 'Refaccionaria Única Prueba S.A. de C.V.', rfc: 'RUP010203AB1', telefono: '55 9876 0001', email: 'compras@unica-prueba.mx' }));
   assert.ok(r1.creado);
   const antes = db.cols.clientes.size;
   const casos = [
@@ -995,8 +996,8 @@ test('clientes repetidos: mismo nombre con o sin S.A. de C.V., RFC, teléfono o 
   }
   assert.equal(db.cols.clientes.size, antes, 'no se creó ninguno repetido');
   // Un RFC genérico no bloquea a otro cliente distinto
-  const r2 = await escritura.guardarCliente(ADMIN, { nombre: 'Público en General Prueba', rfc: 'XAXX010101000' });
-  const r3 = await escritura.guardarCliente(ADMIN, { nombre: 'Mostrador Prueba', rfc: 'XAXX010101000' });
+  const r2 = await escritura.guardarCliente(ADMIN, Object.assign({}, FISCAL, { nombre: 'Público en General Prueba', rfc: 'XAXX010101000', email: 'p1@prueba.mx' }));
+  const r3 = await escritura.guardarCliente(ADMIN, Object.assign({}, FISCAL, { nombre: 'Mostrador Prueba', rfc: 'XAXX010101000', email: 'p2@prueba.mx' }));
   assert.ok(r2.creado && r3.creado);
   // Al editar no se puede dejar igual a otro cliente, pero sí guardar sus propios datos
   await assert.rejects(escritura.guardarCliente(ADMIN, { id: r3.creado, telefono: '55-9876-0001' }), /Ya existe el cliente .*Refaccionaria Única Prueba/);
@@ -1009,11 +1010,11 @@ test('clientes repetidos: mismo nombre con o sin S.A. de C.V., RFC, teléfono o 
   assert.equal(dup.claveRfc('xxxxxxxxxxxx'), '');
   assert.equal(dup.claveTelefono('5555555555'), '');
   // Nombre casi igual (como "Sergiho" y "Sergio"): no se crea hasta confirmar que es otro
-  await escritura.guardarCliente(ADMIN, { nombre: 'Multiservicio Automotriz Sergiho Prueba' });
-  const p1 = await escritura.guardarCliente(ADMIN, { nombre: 'Multiservicio Automotriz Sergio Prueba' });
+  await escritura.guardarCliente(ADMIN, Object.assign({}, FISCAL, { nombre: 'Multiservicio Automotriz Sergiho Prueba', rfc: 'MAS010101AB1', email: 's1@prueba.mx' }));
+  const p1 = await escritura.guardarCliente(ADMIN, Object.assign({}, FISCAL, { nombre: 'Multiservicio Automotriz Sergio Prueba', rfc: 'MAS020202AB2', email: 's2@prueba.mx' }));
   assert.ok(p1.no_se_creo && p1.parecido);
   assert.match(p1.aviso, /Se parece mucho a .*Sergiho/);
-  const p2 = await escritura.guardarCliente(ADMIN, { nombre: 'Multiservicio Automotriz Sergio Prueba', es_otro_cliente: true });
+  const p2 = await escritura.guardarCliente(ADMIN, Object.assign({}, FISCAL, { nombre: 'Multiservicio Automotriz Sergio Prueba', rfc: 'MAS020202AB2', email: 's2@prueba.mx', es_otro_cliente: true }));
   assert.ok(p2.creado, 'con la confirmación sí se crea');
   assert.equal(dup.buscarParecido({ razonSocial: 'Taller' }, [{ id: 'z', razonSocial: 'Taler' }]), null, 'nombres cortos no se comparan así');
 });
@@ -1519,4 +1520,52 @@ test('Pepito fuera de rol: hace lo que el rol no tiene (menos finanzas, accesos 
     assert.match(falso.llamadas[0].system[0].text, /Reglas de calidad/);
     assert.match(falso.llamadas[0].system[0].text, /Nunca digas que algo quedó guardado/);
   } finally { wa.cerrar(); }
+});
+
+test('Proceso por Pepito: cliente con sus 7 datos fiscales, nota de venta propia con forma de pago, crédito solo si está autorizado', async () => {
+  const escritura = require('./escritura');
+  const sat = require('../public/diseno/sat.js');
+  const vend = { uid: 'v-7', nombre: 'Estefanía Ventas', rol: 'vendedor' };
+  // Faltan datos: no se registra y dice exactamente qué falta
+  await assert.rejects(escritura.guardarCliente(vend, { nombre: 'Estefanía Cervantes', rfc: 'CEES900123ABC' }),
+    /No registré al cliente\. Faltan: correo electrónico, tipo de persona \(física o moral\), régimen fiscal, calle y número, municipio o alcaldía, estado, código postal, uso de CFDI/);
+  const base = { nombre: 'Estefanía Cervantes', rfc: 'CEES900123ABC', email: 'estefania@taller.com', tipo_persona: 'fisica', regimen_fiscal: '621', calle: 'Av. Tláhuac', numero_exterior: '123', municipio: 'Iztapalapa', estado: 'CDMX', codigo_postal: '09870', uso_cfdi: 'G03' };
+  // Validaciones del SAT
+  await assert.rejects(escritura.guardarCliente(vend, Object.assign({}, base, { regimen_fiscal: '601' })), /601 \(General de Ley Personas Morales\) es de personas morales/);
+  await assert.rejects(escritura.guardarCliente(vend, Object.assign({}, base, { tipo_persona: 'moral' })), /persona moral lleva RFC de 12/);
+  await assert.rejects(escritura.guardarCliente(vend, Object.assign({}, base, { codigo_postal: '0987' })), /5 dígitos/);
+  await assert.rejects(escritura.guardarCliente(vend, Object.assign({}, base, { uso_cfdi: 'X99' })), /uso de CFDI X99 no está/);
+  assert.equal(sat.validarCliente({ razonSocial: 'X' }).ok, false);
+  // Completo: se registra con sus datos fiscales y pide seguir con la nota
+  const r = await escritura.guardarCliente(vend, base);
+  assert.ok(r.creado);
+  const c = db.cols.clientes.get(r.creado);
+  assert.equal(c.tipoPersona, 'fisica');
+  assert.equal(c.regimenFiscal, '621');
+  assert.equal(c.usoCfdi, 'G03');
+  assert.match(r.datos_fiscales.regimen_fiscal, /621 Incorporación Fiscal/);
+  assert.match(r.siguiente, /nota de venta/);
+  // Venta pública: sin datos fiscales
+  assert.ok((await escritura.guardarCliente(vend, { nombre: 'Cliente Facebook Prueba', venta_publica_redes: true })).creado);
+
+  // La nota: el vendedor es quien habla; no se puede a nombre de otro; cliente sin registrar no
+  const partidas = [{ descripcion: 'Faro delantero izq.', precio: 3750, iva_porcentaje: 16 }];
+  const v = await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', estatus: 'Pendiente' });
+  const venta = db.cols.ventas.get(v.creada.id);
+  assert.equal(venta.vendedor, 'Estefanía Ventas');
+  assert.equal(venta.formaPago, 'contado');
+  assert.equal(venta.total, 4350);
+  assert.ok(v.creada.folio);
+  await assert.rejects(escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', vendedor: 'Daniel' }), /Solo puedes registrar tus propias ventas/);
+  assert.ok(await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', vendedor: 'Estefanía' }), 'su propio nombre sí');
+  await assert.rejects(escritura.crearVenta(vend, { cliente: 'Taller Desconocido', partidas, forma_pago: 'contado' }), /no está registrado\. Primero regístralo/);
+  await assert.rejects(escritura.crearNotaEntrega(vend, { cliente: 'Taller Desconocido', articulos: [{ descripcion: 'Faro', cantidad: 1, precio_unitario: 1 }] }), /no está registrado/);
+  // Crédito: solo si está autorizado
+  await assert.rejects(escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' }), /no tiene crédito autorizado/);
+  c.diasCredito = 15;
+  const vc = await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' });
+  assert.equal(db.cols.ventas.get(vc.creada.id).diasCredito, 15);
+  // Dirección sigue pudiendo capturar por otros y a clientes sin registrar
+  const va = await escritura.crearVenta(ADMIN, { cliente: 'Taller Desconocido', partidas, forma_pago: 'contado', vendedor: 'Daniel' });
+  assert.equal(db.cols.ventas.get(va.creada.id).vendedor, 'Daniel');
 });
