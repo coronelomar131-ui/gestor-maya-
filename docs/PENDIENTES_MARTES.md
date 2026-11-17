@@ -3,16 +3,29 @@
 Todo lo de abajo ya está programado y publicado en gestor-maya.vercel.app. Solo faltan accesos y configuraciones que se hacen desde cuentas de la empresa.
 
 ## 1. Vercel (proyecto gestor-maya)
-Revisado en producción el 17 nov (sin ver valores): WhatsApp (token, phone id, verify token, app secret) y Claude (ANTHROPIC_API_KEY) **sí** están. **Faltan**:
-- `CRON_SECRET` (alarmas, resumen de la mañana, importación de Mercado Libre).
-- `GROQ_API_KEY` para que Pepito entienda **notas de voz** (gratis en console.groq.com → API Keys). Hoy contesta "todavía no puedo escuchar notas de voz".
+Revisado en producción el 17 nov (sin ver valores): WhatsApp (token, phone id, verify token, app secret) y Claude (ANTHROPIC_API_KEY) **sí** están. **Faltan** `CRON_SECRET` y `GROQ_API_KEY`.
+`ML_SECRET_KEY` ya debe estar (la usa Inventario). Si la importación de ventas de ML dice "no se puede renovar el token", falta esta variable.
 
-- `CRON_SECRET`: contraseña larga inventada (Production) + Redeploy. Sin esto no salen alarmas, resumen de la mañana ni la importación automática de Mercado Libre.
-- `ML_SECRET_KEY` ya debe estar (la usa Inventario). Si la importación de ventas de ML dice "no se puede renovar el token", falta esta variable.
+### Paso a paso: CRON_SECRET (alarmas, resumen de la mañana, ventas de ML solas)
+1. Inventa una contraseña larga (30 o más letras y números, sin espacios). Guárdala en un lugar seguro: la vas a pegar dos veces.
+2. Entra a vercel.com con la cuenta del equipo "prototipe" → proyecto **gestor-maya** → **Settings** → **Environment Variables**.
+3. **Add New**: Key `CRON_SECRET`, Value la contraseña, entorno **Production** (puedes marcar los tres). **Save**.
+4. **Deployments** → el de arriba → menú de tres puntos → **Redeploy**. Sin redeploy la variable no se ve.
+5. Prueba: abre `https://gestor-maya.vercel.app/api/avisos` sin clave. Debe decir "Clave incorrecta" (antes decía "Falta CRON_SECRET").
 
-## 2. cron-job.org (gratis)
-- Cronjob cada 5 minutos a `https://gestor-maya.vercel.app/api/avisos?tarea=tick`
-- Header `Authorization: Bearer <CRON_SECRET>`
+### Paso a paso: GROQ_API_KEY (notas de voz por WhatsApp)
+1. Entra a console.groq.com y crea cuenta (gratis, con el correo de la empresa).
+2. Menú **API Keys** → **Create API Key** → nombre "gestor-maya" → copia la llave (empieza con `gsk_`; solo se ve una vez).
+3. En Vercel → gestor-maya → Settings → Environment Variables → **Add New**: Key `GROQ_API_KEY`, Value la llave, **Production**. **Save**.
+4. **Redeploy** como en el paso 4 de arriba.
+5. Prueba: `https://gestor-maya.vercel.app/api/whatsapp` debe marcar las notas de voz como configuradas, y una nota de voz a Pepito ya se contesta.
+
+## 2. cron-job.org (gratis): el "tick" cada 5 minutos
+1. Crea cuenta en cron-job.org → **Create cronjob**.
+2. Title "Gestor Maya tick". URL `https://gestor-maya.vercel.app/api/avisos?tarea=tick`.
+3. Execution schedule: **Every 5 minutes**.
+4. Pestaña **Advanced** → **Headers** → Add: Key `Authorization`, Value `Bearer ` + la misma contraseña de CRON_SECRET (con el espacio después de Bearer).
+5. Request method GET. **Create**. Luego **Test run**: debe responder 200 con `"ok": true`.
 - Ese tick manda alarmas, el resumen diario (8:00) y trae las ventas pagadas de Mercado Libre.
 
 ## 3. Mercado Libre (developers.mercadolibre.com.mx → la app del gestor)

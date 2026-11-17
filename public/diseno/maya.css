@@ -1784,3 +1784,7 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-env-notas { margin: 0 0 18px; border-radius: var(--m-r-lg); }
 .m-env-notas h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font: 700 16px var(--m-f-titulo); color: var(--m-niebla); }
 .m-env-notas .m-op-lista { gap: 8px; }
+
+/* Tablas de piezas (Ventas y Cotizaciones): la tabla es clara, así que sus campos van con texto oscuro para leerse */
+#v-items-body input, #cot-items-body input { color: #10243a; background: #fff; -webkit-text-fill-color: #10243a; }
+#v-items-body input::placeholder, #cot-items-body input::placeholder { color: #8a9bb0; -webkit-text-fill-color: #8a9bb0; }
