@@ -382,6 +382,11 @@ async function conversar(usuario, texto, canal, opciones) {
   const limpio = String(texto || '').trim().slice(0, 4000);
   if (!limpio) throw new Error('Escribe tu pedido');
   const { id, uso } = await revisarLimite(usuario.uid);
+  // Presencia: Dirección ve en Usuarios cuándo le escribió cada quien a Pepito por WhatsApp
+  if (canal === 'whatsapp' && usuario.uid) {
+    const marca = { whatsapp: Date.now() };
+    fb().actualizar('presencia', usuario.uid, marca).catch(() => fb().guardar('presencia', usuario.uid, Object.assign({ uid: usuario.uid, nombre: usuario.nombre || '', rol: usuario.rolReal || usuario.rol || '' }, marca))).catch(() => {});
+  }
   const conv = await conversacion(usuario.uid);
   const h = await herramientasDe(usuario, canal);
   try {

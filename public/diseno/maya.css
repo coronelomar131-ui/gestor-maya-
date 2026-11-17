@@ -1788,3 +1788,23 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 /* Tablas de piezas (Ventas y Cotizaciones): la tabla es clara, así que sus campos van con texto oscuro para leerse */
 #v-items-body input, #cot-items-body input { color: #10243a; background: #fff; -webkit-text-fill-color: #10243a; }
 #v-items-body input::placeholder, #cot-items-body input::placeholder { color: #8a9bb0; -webkit-text-fill-color: #8a9bb0; }
+
+/* Equipo en línea (Usuarios, solo Dirección) */
+.m-presencia { background: var(--m-panel); border: 1px solid var(--m-panel-borde); border-radius: var(--m-r-lg); padding: 14px 16px; margin: 0 0 16px; }
+.m-presencia header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.m-presencia h3 { display: flex; align-items: center; gap: 8px; margin: 0; font: 600 1rem var(--m-f-titulo); color: var(--m-niebla); }
+.m-presencia-n { color: var(--m-texto-2); font-size: 0.85rem; }
+.m-presencia ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.m-presencia li { display: grid; grid-template-columns: 12px minmax(0, 1fr) minmax(0, 1.3fr); align-items: center; gap: 12px; padding: 9px 6px; border-top: 1px solid var(--m-linea); }
+.m-presencia li:first-child { border-top: 0; }
+.m-presencia-punto { width: 10px; height: 10px; border-radius: 50%; background: var(--m-texto-3); opacity: 0.6; }
+.m-presencia-en-linea .m-presencia-punto { background: var(--m-verde); opacity: 1; box-shadow: 0 0 0 4px rgba(61, 214, 140, 0.18); }
+.m-presencia-ausente .m-presencia-punto { background: var(--m-ambar); opacity: 1; }
+.m-presencia-quien b, .m-presencia-estado { display: block; color: var(--m-niebla); font-size: 0.92rem; font-weight: 600; overflow-wrap: anywhere; }
+.m-presencia-estado { font-weight: 500; }
+.m-presencia-fuera .m-presencia-estado { color: var(--m-texto-2); }
+.m-presencia small { display: block; color: var(--m-texto-3); font-size: 0.78rem; font-weight: 400; margin-top: 2px; }
+@media (max-width: 640px) {
+  .m-presencia li { grid-template-columns: 12px minmax(0, 1fr); }
+  .m-presencia-estado { grid-column: 2; }
+}

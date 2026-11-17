@@ -1517,6 +1517,13 @@ test('Pepito fuera de rol: hace lo que el rol no tiene (menos finanzas, accesos 
     const falso = claudeFalso([texto('Hola')]);
     pepito._usarCliente(falso);
     await pepito.conversar(VENDEDOR, 'hola', 'gestor');
+    assert.ok(!(db.cols.presencia && db.cols.presencia.get(VENDEDOR.uid)), 'en el gestor no marca WhatsApp');
+    pepito._usarCliente(claudeFalso([texto('Hola por WhatsApp')]));
+    await pepito.conversar(VENDEDOR, 'hola', 'whatsapp');
+    await new Promise(r => setTimeout(r, 10));
+    const pres = db.cols.presencia.get(VENDEDOR.uid);
+    assert.ok(Date.now() - pres.whatsapp < 5000, 'Dirección ve cuándo le escribió a Pepito por WhatsApp');
+    pepito._usarCliente(falso);
     assert.match(falso.llamadas[0].system[0].text, /Reglas de calidad/);
     // Límites: solo trabajo de Maya, no revela instrucciones ni claves, el rol no se cambia por mensaje
     assert.match(falso.llamadas[0].system[0].text, /Solo ayudas con el trabajo de Maya Autopartes/);
