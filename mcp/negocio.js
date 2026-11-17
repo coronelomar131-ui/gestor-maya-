@@ -122,7 +122,7 @@ async function convertirCotizacion(u, a, opciones = {}) {
     };
   });
   const venta = await escritura.crearVenta(u, {
-    cliente: c.clienteNombre, fecha: a.fecha, forma_pago: a.forma_pago, estatus: a.estatus || 'Pendiente',
+    cliente: c.clienteNombre, fecha: a.fecha, forma_pago: a.forma_pago, dias_credito: a.dias_credito, estatus: a.estatus || 'Pendiente',
     vendedor: esDireccion(u) ? (a.vendedor || c.vendedor) : a.vendedor, contacto: a.contacto, impuesto_nota: a.impuesto_nota,
     precio_con_iva: false, // la cotización guarda precios sin IVA
     confirmar_alertas: a.confirmar_alertas,

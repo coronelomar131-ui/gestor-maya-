@@ -1579,7 +1579,15 @@ test('Proceso por Pepito: cliente con sus 7 datos fiscales, nota de venta propia
   await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Taller Desconocido', partidas, forma_pago: 'contado' }), /no está registrado\. Primero regístralo/);
   await assert.rejects(escritura.crearNotaEntrega(vend, { cliente: 'Taller Desconocido', articulos: [{ descripcion: 'Faro', cantidad: 1, precio_unitario: 1 }] }), /no está registrado/);
   // Crédito: solo si está autorizado
-  await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' }), /no tiene crédito autorizado/);
+  // Crédito: sin días pregunta solo "¿7 o 14 días?"; con los días se le asignan al cliente sin trabas (y Dirección recibe aviso)
+  await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' }), /¿Le damos 7 o 14 días\?/);
+  await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito', dias_credito: 30 }), /7 o 14 días/);
+  db.cols.usuarios.set('adm-cred', { uid: 'adm-cred', nombre: 'Dirección', rol: 'admin' });
+  const v14 = await escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito', dias_credito: 14 });
+  assert.equal(v14.creada.dias_credito, 14);
+  assert.equal(v14.creada.credito_asignado_al_cliente, true);
+  assert.equal(c.diasCredito, 14);
+  assert.match(db.cols.avisos_usuario.get('adm-cred').lista[0].texto, /le dio 14 días de crédito a Estefanía Cervantes/);
   c.diasCredito = 15;
   const vc = await escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' });
   assert.equal(db.cols.ventas.get(vc.creada.id).diasCredito, 15);

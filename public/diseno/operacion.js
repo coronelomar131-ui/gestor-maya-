@@ -714,7 +714,9 @@ function registrarPago(id) {
 function cambiarDias(clienteId) {
   const c = (D().clientes || []).find(x => x.id === clienteId);
   if (!c) return;
-  dialogo('Crédito de ' + (c.razonSocial || c.nombre), `<div class="m-op-form"><label>Días de crédito<input type="number" id="dc-dias" min="0" max="365" value="${diasCredito(c)}"></label></div>
+  const actual = diasCredito(c);
+  const opciones = [[0, 'Solo contado'], [7, '7 días'], [14, '14 días']].concat([0, 7, 14].includes(actual) ? [] : [[actual, actual + ' días (anterior)']]);
+  dialogo('Crédito de ' + (c.razonSocial || c.nombre), `<div class="m-op-form"><label>Días de crédito<select id="dc-dias">${opciones.map(([v, t]) => `<option value="${v}"${v === actual ? ' selected' : ''}>${t}</option>`).join('')}</select></label></div>
     <p class="m-op-nota">Se usa para calcular el vencimiento de las facturas nuevas de este cliente. 0 = contado.</p>`,
   [{ texto: 'Guardar', principal: true, accion: async () => {
     await window.updateDoc(window.doc(window.db, 'clientes', clienteId), { diasCredito: Math.max(0, Number($('#dc-dias').value) || 0) });
