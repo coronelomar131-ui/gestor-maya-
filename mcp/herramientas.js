@@ -28,11 +28,16 @@ const PARTIDA = z.object({
   precio: z.number().min(0).describe('Precio de la partida completa, sin IVA'),
   iva_porcentaje: z.number().min(0).max(100).default(16).describe('IVA en % sobre el precio: 16 por omisión como en la app; 0 si no lleva'),
   ajuste: z.number().min(0).default(0).describe('Descuento en pesos que se resta'),
-  siniestro: z.string().optional(),
+  siniestro: z.string().optional()
+});
+// Partida de una venta: el precio es lo que pagó el cliente (IVA incluido, salvo precio_con_iva: false), con proveedor y costo
+const PARTIDA_VENTA = PARTIDA.extend({
+  precio: z.number().min(0).describe('Precio al que se vendió la partida completa: lo que paga el cliente, YA CON IVA (salvo que precio_con_iva sea false)'),
   proveedor: z.string().optional().describe('A quién se le compró la pieza'),
-  costo: z.number().min(0).optional().describe('Costo total de la partida sin IVA: pieza + guía + paquetería + logística'),
+  costo: z.number().min(0).optional().describe('Costo total de la partida: pieza + guía + paquetería + logística'),
   costo_desglose: z.string().optional().describe('Cómo se forma el costo, p. ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100"')
 });
+const PRECIO_CON_IVA = z.boolean().default(true).describe('true (normal): los precios son lo que pagó el cliente, IVA incluido, y el IVA se desglosa de ahí. false: los precios van sin IVA y el IVA se suma');
 const opcional = z.string().optional();
 
 const responder = obj => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
@@ -79,10 +84,13 @@ function instrucciones(usuario) {
       : 'Cada integrante registra SUS propias ventas: en notas y ventas el vendedor es siempre quien te habla (se pone solo). Nadie puede registrar una venta que no hizo; si te piden ponerla a nombre de otro, explica que esa persona la registre con su usuario.',
     'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente y estos datos obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
       '2) Al registrarlo, pregunta si quiere generar una nota de venta. 3) Para la nota pide productos, precio y forma de pago (contado o crédito; crédito solo si el cliente lo tiene autorizado). 4) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
-    'Registro de venta (obligatorio en todas las ventas, se usa para las comisiones). Pide, todo junto en un solo mensaje, lo que falte de: cliente, contacto, siniestro, pieza con su descripción completa, precio de venta (sin IVA), proveedor, impuesto (p. ej. "16% Masiva") y costo total. ' +
+    'Registro de venta (obligatorio en todas las ventas, se usa para las comisiones). Pide, todo junto en un solo mensaje, lo que falte de: cliente, contacto, siniestro, pieza con su descripción completa, precio al que se vendió (lo que paga el cliente, ya con IVA), proveedor, impuesto (p. ej. "16% Masiva") y costo total. ' +
+      'El precio que te dan ya trae IVA: no le sumes IVA; el sistema lo desglosa. Solo si la persona dice que su precio es "más IVA" usa precio_con_iva: false. ' +
       'El costo total es la suma de pieza + guía + paquetería + logística: pide cada parte, súmalas tú, ponlo en costo y el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No inventes costos: si no saben uno, pregúntalo. ' +
-      'Antes de guardar muestra el resumen con venta, costo total, utilidad (precio de venta − costo total) y % de utilidad (utilidad / precio de venta × 100), y espera el SÍ. Al guardar da el folio, la venta, el costo, la utilidad y su %. ' +
+      'Antes de guardar muestra el resumen con venta con IVA (y su IVA desglosado), costo total, utilidad (venta con IVA − costo total) y % de utilidad (utilidad / venta × 100), y espera el SÍ. Si en el resumen te corrigen algo, arma la propuesta otra vez con el dato bueno. Al guardar da el folio, la venta, el costo, la utilidad y su %. ' +
       'Si la utilidad sale negativa o muy baja (menos de 10%), avísalo antes de guardar. Para comisiones o "cuánto dejó" usa utilidad_comisiones.',
+    'Si alguien se equivocó en una venta ya guardada ("me equivoqué", "era 4,000", "el costo era otro", "quita la facia"), no hagas otra venta: busca la venta con buscar_ventas, di cómo está, y usa corregir_venta solo con lo que cambia; muestra antes → después (total y utilidad) y espera el SÍ. ' +
+      'Si la corrección también quedó mal, corregir_venta con deshacer_ultima: true la regresa a como estaba. Si la venta ya está facturada y quien habla no es Facturación ni Dirección, explica que se lo pida a Facturación.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
 }
@@ -386,9 +394,9 @@ function crearServidor(usuario) {
   if (puede('ventas')) {
     servidor.registerTool('crear_venta', {
       title: 'Crear nota de venta',
-      description: 'Registra una venta (nota de venta, folio consecutivo) igual que el módulo Ventas: cada partida con su precio, IVA, ajuste, proveedor y costo total ' +
-        '(pieza + guía + paquetería + logística). Calcula la utilidad (precio de venta sin IVA − costo total) y su %, que se usa para las comisiones. ' +
-        'Confirma con el usuario antes de usarla.',
+      description: 'Registra una venta (nota de venta, folio consecutivo) igual que el módulo Ventas: cada partida con el precio al que se vendió (ya con IVA), proveedor y costo total ' +
+        '(pieza + guía + paquetería + logística). Desglosa el IVA y calcula la utilidad (lo que pagó el cliente − costo total) y su %, que se usa para las comisiones. ' +
+        'Confirma con el usuario antes de usarla. Si después algo quedó mal, se arregla con corregir_venta.',
       inputSchema: {
         cliente: z.string().min(1),
         fecha: FECHA.optional().describe('Por omisión hoy'),
@@ -398,10 +406,41 @@ function crearServidor(usuario) {
         incluye_datos_fiscales: z.boolean().default(false),
         contacto: z.string().optional().describe('Persona de contacto del cliente (quien pidió la pieza), si la dicen'),
         impuesto_nota: z.string().optional().describe('Cómo se maneja el impuesto, p. ej. "16% Masiva"'),
-        partidas: z.array(PARTIDA).min(1)
+        precio_con_iva: PRECIO_CON_IVA,
+        partidas: z.array(PARTIDA_VENTA).min(1)
       },
       annotations: ESCRITURA
     }, ejecutar(a => escritura.crearVenta(usuario, a)));
+
+    servidor.registerTool('corregir_venta', {
+      title: 'Corregir venta',
+      description: 'Corrige una venta ya guardada cuando alguien se equivocó: precio, costo, proveedor, pieza, siniestro, ajuste, cliente, fecha, contacto, impuesto o forma de pago; ' +
+        'también quita o agrega piezas, o deshace la última corrección. Recalcula IVA, total y utilidad y guarda quién cambió qué. Busca la venta por id o folio; ' +
+        'las partidas se numeran 1, 2, 3… en el orden de buscar_ventas. Cada vendedor corrige solo sus ventas y si ya están facturadas lo hace Facturación. ' +
+        'Muestra el antes y el después y confirma antes de usarla.',
+      inputSchema: {
+        id: opcional, folio: opcional,
+        cambiar_partidas: z.array(z.object({
+          numero: z.number().int().min(1).describe('Número de la partida (1 = la primera)'),
+          descripcion: z.string().optional(), siniestro: z.string().optional(),
+          precio: z.number().min(0).optional().describe('Precio correcto como se vendió (con IVA si precio_con_iva)'),
+          iva_porcentaje: z.number().min(0).max(100).optional(), ajuste: z.number().min(0).optional(),
+          proveedor: z.string().optional(), costo: z.number().min(0).optional().describe('Costo total correcto: pieza + guía + paquetería + logística'),
+          costo_desglose: z.string().optional()
+        })).optional(),
+        quitar_partidas: z.array(z.number().int().min(1)).optional().describe('Números de partida a quitar'),
+        agregar_partidas: z.array(PARTIDA_VENTA).optional(),
+        cliente: z.string().optional(), fecha: FECHA.optional(), contacto: z.string().optional(), impuesto_nota: z.string().optional(),
+        forma_pago: z.enum(['contado', 'credito']).optional(),
+        precio_con_iva: PRECIO_CON_IVA,
+        motivo: z.string().optional().describe('Por qué se corrige, en pocas palabras'),
+        deshacer_ultima: z.boolean().optional().describe('true = regresa la venta a como estaba antes de la última corrección')
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => {
+      if (!a.id && !a.folio) throw new escritura.ErrorUsuario('Indica el id o el folio de la venta');
+      return escritura.corregirVenta(usuario, a);
+    }));
 
     servidor.registerTool('cambiar_estatus_venta', {
       title: 'Cambiar estatus de venta',

@@ -371,8 +371,8 @@ async function productosML(f, limite) {
   return r;
 }
 
-// Utilidad para comisiones: por vendedor, venta sin IVA (menos ajustes), costo total (pieza + guía + paquetería + logística),
-// utilidad = venta − costo y % = utilidad / venta × 100. Las ventas canceladas no cuentan; las que no traen costo se listan aparte.
+// Utilidad para comisiones: por vendedor, venta = lo que pagó el cliente (con IVA, menos ajustes), costo total (pieza + guía +
+// paquetería + logística), utilidad = venta − costo y % = utilidad / venta × 100. Las ventas canceladas no cuentan; las que no traen costo se listan aparte.
 async function utilidad(f) {
   const desde = f.desde ? diaLocal(f.desde, false) : null;
   const hasta = f.hasta ? diaLocal(f.hasta, true) : null;
@@ -388,27 +388,27 @@ async function utilidad(f) {
     const vendedor = x.vendedor || 'Sin vendedor';
     if (quien && !norm(vendedor).includes(quien)) return;
     const items = Array.isArray(v.items) ? v.items : [];
-    const venta = (x.subtotal - x.ajuste) / 100;
+    const venta = x.total / 100;
     const conCosto = items.length > 0 && items.every(i => i.costo != null);
-    if (!conCosto) { sinCosto.push({ folio: x.folio, vendedor, cliente: x.cliente, venta_sin_iva: venta }); return; }
+    if (!conCosto) { sinCosto.push({ folio: x.folio, vendedor, cliente: x.cliente, venta_con_iva: venta }); return; }
     const costo = items.reduce((s, i) => s + (Number(i.costo) || 0), 0);
-    const g = grupos.get(vendedor) || { vendedor, ventas: 0, venta_sin_iva: 0, costo_total: 0 };
-    g.ventas++; g.venta_sin_iva += venta; g.costo_total += costo;
+    const g = grupos.get(vendedor) || { vendedor, ventas: 0, venta_con_iva: 0, costo_total: 0 };
+    g.ventas++; g.venta_con_iva += venta; g.costo_total += costo;
     grupos.set(vendedor, g);
   });
   const r2 = n => Math.round(n * 100) / 100;
   const lista = [...grupos.values()].map(g => {
-    const u = g.venta_sin_iva - g.costo_total;
-    return { vendedor: g.vendedor, ventas: g.ventas, venta_sin_iva: r2(g.venta_sin_iva), costo_total: r2(g.costo_total), utilidad: r2(u), utilidad_porcentaje: g.venta_sin_iva > 0 ? r2(u / g.venta_sin_iva * 100) : null };
+    const u = g.venta_con_iva - g.costo_total;
+    return { vendedor: g.vendedor, ventas: g.ventas, venta_con_iva: r2(g.venta_con_iva), costo_total: r2(g.costo_total), utilidad: r2(u), utilidad_porcentaje: g.venta_con_iva > 0 ? r2(u / g.venta_con_iva * 100) : null };
   }).sort((a, b) => b.utilidad - a.utilidad);
-  const t = lista.reduce((s, g) => ({ venta: s.venta + g.venta_sin_iva, costo: s.costo + g.costo_total }), { venta: 0, costo: 0 });
+  const t = lista.reduce((s, g) => ({ venta: s.venta + g.venta_con_iva, costo: s.costo + g.costo_total }), { venta: 0, costo: 0 });
   return {
     filtros: { desde: f.desde || null, hasta: f.hasta || null, vendedor: f.vendedor || null },
     por_vendedor: lista,
-    total: { venta_sin_iva: r2(t.venta), costo_total: r2(t.costo), utilidad: r2(t.venta - t.costo), utilidad_porcentaje: t.venta > 0 ? r2((t.venta - t.costo) / t.venta * 100) : null },
+    total: { venta_con_iva: r2(t.venta), costo_total: r2(t.costo), utilidad: r2(t.venta - t.costo), utilidad_porcentaje: t.venta > 0 ? r2((t.venta - t.costo) / t.venta * 100) : null },
     ventas_sin_costo: sinCosto.length,
     sin_costo: sinCosto.slice(0, 30),
-    nota: 'Utilidad = precio de venta sin IVA − costo total. Las ventas sin costo capturado no entran en la utilidad: hay que completarlas para pagar su comisión.'
+    nota: 'Utilidad = lo que pagó el cliente (con IVA) − costo total. Las ventas sin costo capturado no entran en la utilidad: hay que completarlas para pagar su comisión.'
   };
 }
 
@@ -445,7 +445,19 @@ async function ventas(f, limite) {
         estatus: v.estatusFactura || null
       },
       creada_desde_nota_entrega: v.notaEntregaId || null,
-      observaciones: v.observaciones || v.notas || null
+      observaciones: v.observaciones || v.notas || null,
+      // Para corregir_venta: partidas numeradas con el precio que pagó el cliente (con IVA), proveedor y costo
+      registro_venta: {
+        partidas: (Array.isArray(v.items) ? v.items : []).map((i, n) => ({
+          numero: n + 1, pieza: i.pedido || '', siniestro: i.numSiniestro || '',
+          precio_con_iva: Math.round(((Number(i.precio) || 0) + (Number(i.iva) || 0)) * 100) / 100, precio_sin_iva: Number(i.precio) || 0,
+          proveedor: i.proveedor || null, costo: i.costo == null ? null : i.costo
+        })),
+        costo_total: v.costoTotal == null ? null : v.costoTotal, utilidad: v.utilidad == null ? null : v.utilidad,
+        utilidad_porcentaje: v.utilidadPct == null ? null : v.utilidadPct,
+        correcciones: Array.isArray(v.correcciones) ? v.correcciones.length : 0,
+        ultima_correccion: Array.isArray(v.correcciones) && v.correcciones.length ? { por: v.correcciones[v.correcciones.length - 1].por, cambios: v.correcciones[v.correcciones.length - 1].cambios } : null
+      }
     }))
   };
 }
