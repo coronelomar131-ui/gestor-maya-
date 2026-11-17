@@ -39,9 +39,24 @@
   // Revisa los 7 datos obligatorios del póster: nombre o razón social, RFC, correo, tipo de persona, régimen fiscal,
   // dirección fiscal completa (calle, número, municipio o ciudad, estado y C.P.) y uso de CFDI.
   // c = { razonSocial, rfc, email, tipoPersona ('fisica'|'moral'), regimenFiscal, usoCfdi, calle, numeroExterior, municipio, ciudad, estado, codigoPostal }
+  // Uso de CFDI S01 (Sin efectos fiscales): no se factura a su nombre, así que solo se pide el nombre; RFC, régimen y
+  // dirección son opcionales (si los escriben, se revisan). Si algún día se le factura, CONTPAQi usa el RFC genérico.
+  const SIN_EFECTOS = 'S01';
   function validarCliente(c) {
     const faltan = [], errores = [];
     const v = k => String((c && c[k]) || '').trim();
+    if (v('usoCfdi').toUpperCase() === SIN_EFECTOS || (c && c.sinEfectosFiscales)) {
+      if (!v('razonSocial')) faltan.push('nombre del cliente');
+      const rfc = limpiaRfc(c && c.rfc);
+      if (rfc && !RFC_GENERICOS.includes(rfc) && !/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc)) errores.push('El RFC ' + rfc + ' no tiene un formato válido (o déjalo vacío: es sin efectos fiscales).');
+      const email = v('email');
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errores.push('El correo ' + email + ' no es válido.');
+      const cp = v('codigoPostal');
+      if (cp && !/^\d{5}$/.test(cp)) errores.push('El código postal debe tener 5 dígitos.');
+      const tipo = v('tipoPersona').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      return { ok: !faltan.length && !errores.length, faltan, errores, sinEfectosFiscales: true,
+        normalizado: { rfc, tipoPersona: ['fisica', 'moral'].includes(tipo) ? tipo : '', regimenFiscal: v('regimenFiscal').replace(/\D/g, ''), usoCfdi: SIN_EFECTOS, codigoPostal: cp } };
+    }
     if (!v('razonSocial')) faltan.push('nombre completo o razón social');
     const rfc = limpiaRfc(c && c.rfc);
     if (!rfc) faltan.push('RFC');
@@ -78,7 +93,7 @@
   }
   const mensaje = r => (r.faltan.length ? 'Faltan: ' + r.faltan.join(', ') + '. ' : '') + r.errores.join(' ');
 
-  const api = { REGIMENES, USOS_CFDI, validarCliente, mensaje, limpiaRfc };
+  const api = { REGIMENES, USOS_CFDI, SIN_EFECTOS, validarCliente, mensaje, limpiaRfc };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.mayaSat = api;
 })(typeof window !== 'undefined' ? window : globalThis);

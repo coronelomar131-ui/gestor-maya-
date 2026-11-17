@@ -84,7 +84,7 @@ function instrucciones(usuario) {
     usuario.rol === 'admin' && !usuario.rolReal
       ? 'En notas, ventas y cotizaciones no pongas vendedor a menos que la persona diga quién vendió; no uses al usuario conectado como vendedor.'
       : 'Cada integrante registra SUS propias ventas: en notas y ventas el vendedor es siempre quien te habla (se pone solo). Nadie puede registrar una venta que no hizo; si te piden ponerla a nombre de otro, explica que esa persona la registre con su usuario.',
-    'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente y estos datos obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
+    'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente. Si el cliente es "sin efectos fiscales" (no quiere factura a su nombre), usa sin_efectos_fiscales: true y solo pide su nombre (y teléfono o correo si los dan); no le pidas RFC. Si no, estos datos son obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
       '2) Al registrarlo, pregunta si quiere generar una nota de venta. 3) Para la nota pide productos, precio y forma de pago (contado o crédito; crédito solo si el cliente lo tiene autorizado). 4) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
     'Registro de venta (obligatorio en todas las ventas, se usa para las comisiones). Pide, todo junto en un solo mensaje, lo que falte de: cliente, contacto, siniestro, pieza con su descripción completa, precio al que se vendió (lo que paga el cliente, ya con IVA), proveedor, impuesto (p. ej. "16% Masiva") y costo total. ' +
       'El precio que te dan ya trae IVA: no le sumes IVA; el sistema lo desglosa. Solo si la persona dice que su precio es "más IVA" usa precio_con_iva: false. ' +
@@ -474,6 +474,7 @@ function crearServidor(usuario) {
         regimen_fiscal: z.string().optional().describe('Clave del SAT, p. ej. 601 General de Ley PM, 612 Actividades Empresariales, 621 RIF, 626 RESICO, 616 Sin obligaciones'),
         uso_cfdi: z.string().optional().describe('Clave del SAT, p. ej. G01 Adquisición de mercancías, G03 Gastos en general, S01 Sin efectos fiscales'),
         venta_publica_redes: z.boolean().optional().describe('Cliente de venta pública (redes sociales)'),
+        sin_efectos_fiscales: z.boolean().optional().describe('Cliente sin efectos fiscales (uso de CFDI S01): no se le factura a su nombre; solo se necesita su nombre, el RFC y los datos fiscales son opcionales'),
         es_otro_cliente: z.boolean().optional().describe('Solo si la persona confirmó que es distinto a un cliente con nombre casi igual')
       },
       annotations: ESCRITURA

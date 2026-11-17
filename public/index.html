@@ -2194,12 +2194,16 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         <div class="form-group"><label>Régimen fiscal *</label><select id="c-regimen"><option value="">Elige primero el tipo de persona</option></select></div>
         <div class="form-group"><label>Uso de CFDI *</label><select id="c-uso-cfdi"></select></div>
       </div>
-      <p class="m-op-nota" style="margin:-4px 2px 10px">* Obligatorios para registrar al cliente (CFDI 4.0): nombre o razón social, RFC, correo, tipo de persona, régimen fiscal, dirección fiscal completa y uso de CFDI. Los clientes de venta pública no los necesitan.</p>
+      <p class="m-op-nota" style="margin:-4px 2px 10px">* Obligatorios para registrar al cliente (CFDI 4.0): nombre o razón social, RFC, correo, tipo de persona, régimen fiscal, dirección fiscal completa y uso de CFDI. Los clientes de venta pública y los <b>sin efectos fiscales</b> (uso S01) solo necesitan el nombre.</p>
       <div id="c-duplicado" class="m-aviso-duplicado" role="alert" hidden></div>
 
       <div class="form-group" style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="c-redes-sociales">
         <label for="c-redes-sociales" style="cursor:pointer;user-select:none">📱 Cliente de venta pública (Facebook / WhatsApp / Instagram / TikTok)</label>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="c-sin-fiscal" onchange="marcarSinEfectosFiscales(this.checked)">
+        <label for="c-sin-fiscal" style="cursor:pointer;user-select:none">🧾 Sin efectos fiscales (no lleva RFC; uso de CFDI S01): solo se pide el nombre</label>
       </div>
       <div class="form-group" style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="c-sin-precio">
@@ -3716,6 +3720,15 @@ function llenarUsosCfdi() {
 }
 setTimeout(() => { llenarUsosCfdi(); window.llenarRegimenes && window.llenarRegimenes(); }, 1200);
 
+// Sin efectos fiscales = uso de CFDI S01: solo pide el nombre (diseno/sat.js); la casilla y el selector van juntos
+window.marcarSinEfectosFiscales = function(si) {
+  const sel = document.getElementById('c-uso-cfdi');
+  if (sel) sel.value = si ? 'S01' : (sel.value === 'S01' ? 'G01' : sel.value);
+};
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'c-uso-cfdi') { const c = document.getElementById('c-sin-fiscal'); if (c) c.checked = e.target.value === 'S01'; }
+});
+
 window.saveCliente = async function() {
   const razonSocial = document.getElementById('c-razonSocial').value.trim();
   if (!razonSocial) return toast('Razón Social es requerida', 'error');
@@ -3779,6 +3792,7 @@ window.saveCliente = async function() {
       tipoPersona: validado ? validado.normalizado.tipoPersona : document.getElementById('c-tipo-persona').value,
       regimenFiscal: validado ? validado.normalizado.regimenFiscal : document.getElementById('c-regimen').value,
       usoCfdi: validado ? validado.normalizado.usoCfdi : document.getElementById('c-uso-cfdi').value,
+      sinEfectosFiscales: !!(validado && validado.sinEfectosFiscales) || document.getElementById('c-uso-cfdi').value === 'S01',
       createdAt: serverTimestamp()
     };
 
@@ -3795,6 +3809,8 @@ window.saveCliente = async function() {
       });
     document.getElementById('c-redes-sociales').checked = false;
     document.getElementById('c-sin-precio').checked = false;
+    document.getElementById('c-sin-fiscal').checked = false;
+    if (document.getElementById('c-uso-cfdi')) document.getElementById('c-uso-cfdi').value = 'G01';
     document.getElementById('c-tipo-persona').value = ''; document.getElementById('c-regimen').value = '';
     document.getElementById('c-estado').value = '';
     document.getElementById('c-pais').value = 'México';

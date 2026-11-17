@@ -1823,3 +1823,22 @@ test('Candados antes del SÍ: venta repetida, cero de más, siniestro y pago rep
   const ok2 = await negocio.registrarPago(geraldine, { id: 'fz1', monto: 1000, confirmar_alertas: true });
   assert.equal(ok2.saldo_nuevo, 3000);
 });
+
+test('Cliente sin efectos fiscales (S01): solo el nombre, sin RFC, y ya se le puede vender', async () => {
+  const escritura = require('./escritura');
+  const vend = { uid: 'v-21', nombre: 'Lalo Ventas', rol: 'vendedor' };
+  await assert.rejects(escritura.guardarCliente(vend, { nombre: 'Juan Mostrador' }), /Faltan: .*RFC/);
+  const r = await escritura.guardarCliente(vend, { nombre: 'Juan Mostrador', telefono: '5512340000', sin_efectos_fiscales: true });
+  assert.ok(r.creado);
+  const c = db.cols.clientes.get(r.creado);
+  assert.equal(c.usoCfdi, 'S01');
+  assert.equal(c.sinEfectosFiscales, true);
+  assert.equal(c.rfc, '');
+  assert.match(r.datos_fiscales.uso_cfdi, /S01 Sin efectos fiscales/);
+  // También con uso de CFDI S01 escrito
+  assert.ok((await escritura.guardarCliente(vend, { nombre: 'Taller Contado Sin Factura', uso_cfdi: 's01' })).creado);
+  // Un RFC mal escrito sí se avisa
+  await assert.rejects(escritura.guardarCliente(vend, { nombre: 'Otro Mostrador', rfc: 'ABC', sin_efectos_fiscales: true }), /no tiene un formato válido/);
+  const v = await escritura.crearVenta(vend, { cliente: 'Juan Mostrador', forma_pago: 'contado', partidas: [{ descripcion: 'Foco H4', precio: 116, proveedor: 'Depo', costo: 60 }] });
+  assert.ok(v.creada.folio);
+});
