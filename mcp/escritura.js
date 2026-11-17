@@ -88,6 +88,19 @@ function sumar(items) {
 
 function partidas(lista, conIva) { return sumar(lista.map(p => itemDe(p, conIva))); }
 
+// IVA de una venta, la regla de siempre: "más IVA" le suma el 16 %; "sin IVA" (o si no dicen nada) deja el precio tal cual;
+// "con IVA incluido" lo desglosa dentro del precio. precio_con_iva se acepta por compatibilidad (true = incluido, false = más IVA).
+const MODOS_IVA = ['sin_iva', 'mas_iva', 'incluido'];
+function modoIva(a, previo) {
+  if (a.iva && MODOS_IVA.includes(a.iva)) return a.iva;
+  if (a.precio_con_iva === true) return 'incluido';
+  if (a.precio_con_iva === false) return 'mas_iva';
+  return previo || 'sin_iva';
+}
+function partidasModo(lista, modo) {
+  return partidas(lista.map(p => (modo === 'sin_iva' ? Object.assign({}, p, { iva_porcentaje: 0 }) : p)), modo === 'incluido');
+}
+
 // Utilidad = lo que pagó el cliente (con IVA, menos ajustes) − costo total; % = utilidad / ese precio × 100. Base de las comisiones.
 // También se guarda la utilidad sin IVA (el IVA se le paga al SAT) como referencia.
 function utilidadDe(t) {
@@ -123,15 +136,34 @@ function registroVenta(id, venta) {
 }
 
 // Igual que saveNotaEntrega(), incluida la venta automática de la casilla "Registrar también como venta"
-async function crearNotaEntrega(u, a) {
+async function crearNotaEntrega(u, a, opciones = {}) {
   const cliente = await resolverCliente(a.cliente);
   exigirClienteRegistrado(u, cliente, a.cliente);
   const vendedor = vendedorDe(u, a);
   const fecha = a.fecha || hoy();
-  const items = a.articulos.map(it => ({
+  const formaPago = a.forma_pago || (a.dias_credito ? 'credito' : 'contado');
+  const credito = await creditoDe(cliente, formaPago, a.dias_credito);
+  const items = a.articulos.map(it => sinNulos({
     descripcion: texto(it.descripcion), siniestro: texto(it.siniestro), anio: texto(it.anio),
-    cantidad: Number(it.cantidad) || 1, precioUnit: Number(it.precio_unitario) || 0
+    cantidad: Number(it.cantidad) || 1, precioUnit: Number(it.precio_unitario) || 0,
+    proveedor: texto(it.proveedor) || undefined, costo: it.costo != null ? redondear2(it.costo) : undefined, costoDesglose: texto(it.costo_desglose) || undefined
   }));
+  // Lo mismo que será su venta, para el ensayo (candados) y la utilidad
+  const itemsVenta = items.map(it => {
+    const linea = it.cantidad * it.precioUnit;
+    return sinNulos({
+      pedido: it.descripcion + (it.anio ? ' (' + it.anio + ')' : '') + (it.cantidad > 1 ? ' x' + it.cantidad : ''),
+      numSiniestro: it.siniestro, precio: linea, iva: a.con_iva ? parseFloat((linea * 0.16).toFixed(2)) : 0, ajuste: 0,
+      proveedor: it.proveedor, costo: it.costo, costoDesglose: it.costoDesglose
+    });
+  });
+  const tv = sumar(itemsVenta);
+  const u_ = utilidadDe(tv);
+  if (opciones.soloRevisar) {
+    const alertas = await alertasDe({ clienteId: cliente.id, clienteNombre: cliente.nombre, items: itemsVenta, total: tv.total, utilidad: u_.utilidad }, await fb().leerColeccion('ventas'));
+    return { revision: true, alertas, cliente: cliente.nombre, dinero: resumenDinero(tv, u_), forma_pago: formaPago, dias_credito: credito.dias || undefined };
+  }
+  if (credito.asignar) await asignarCredito(u, cliente, credito.dias);
   const subtotal = items.reduce((s, it) => s + it.cantidad * it.precioUnit, 0);
   const ivaTotal = a.con_iva ? subtotal * 0.16 : 0;
   const notaId = 'NE-' + String(maxNumero(await fb().leerColeccion('notasEntrega'), n => n.notaId) + 1).padStart(3, '0');
@@ -139,7 +171,7 @@ async function crearNotaEntrega(u, a) {
     notaId, fecha, cliente: cliente.nombre,
     siniestro: items.map(it => it.siniestro).filter(Boolean).join(' | '),
     siniestros: items.filter(it => it.siniestro).map(it => ({ num: it.siniestro, anio: it.anio })),
-    vendedor, items, subtotal, ivaTotal, total: subtotal + ivaTotal,
+    vendedor, items, subtotal, ivaTotal, total: subtotal + ivaTotal, formaPago, diasCredito: credito.dias,
     createdAt: new Date().toISOString()
   }, autor(u));
   const id = await fb().agregar('notasEntrega', nota);
@@ -153,15 +185,11 @@ async function crearNotaEntrega(u, a) {
       clienteId: cliente.id,
       clienteNombre: cliente.nombre,
       vendedor: nota.vendedor,
-      items: items.map(it => {
-        const linea = it.cantidad * it.precioUnit;
-        return {
-          pedido: it.descripcion + (it.anio ? ' (' + it.anio + ')' : '') + (it.cantidad > 1 ? ' x' + it.cantidad : ''),
-          numSiniestro: it.siniestro, precio: linea, iva: a.con_iva ? parseFloat((linea * 0.16).toFixed(2)) : 0, ajuste: 0
-        };
-      }),
+      items: itemsVenta,
       siniestros: nota.siniestro,
       subtotal: redondear2(subtotal), ivaTotal: redondear2(ivaTotal), ajusteTotal: 0, total: redondear2(nota.total),
+      formaPago, diasCredito: credito.dias, ivaModo: a.con_iva ? 'mas_iva' : 'sin_iva',
+      costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, utilidadSinIva: u_.utilidadSinIva, costoCompleto: u_.completo,
       incluyeDatosFiscales: false, estado: 'pendiente', estatus: 'Entregado', facturaURL: '', tieneFactura: false,
       fuente: 'nota_entrega', notaEntregaId: notaId, notas: 'Generada automáticamente desde Nota de Entrega ' + notaId,
       createdAt: fb().marcaTiempo()
@@ -174,6 +202,9 @@ async function crearNotaEntrega(u, a) {
     creada: datos.notaJSON(datos.desdeEntrega(Object.assign({ id }, nota)), true),
     cliente_registrado: cliente.registrado,
     venta_registrada: venta,
+    forma_pago: formaPago, dias_credito: credito.dias || undefined, credito_asignado_al_cliente: credito.asignar || undefined,
+    iva_modo: a.con_iva ? 'más IVA (16 %)' : 'sin IVA',
+    utilidad: u_.costoTotal == null ? 'pendiente de costo (proveedor y costo se pueden mandar después)' : resumenDinero(tv, u_),
     pdf: 'Se descarga desde la app: Notas de Entrega → ' + notaId + ' → PDF'
   };
 }
@@ -214,12 +245,10 @@ async function crearVenta(u, a, opciones = {}) {
   const credito = await creditoDe(cliente, formaPago, a.dias_credito);
   const diasCredito = credito.dias;
   const fecha = a.fecha || hoy();
-  // Registro obligatorio de toda venta: cada pieza con su proveedor y su costo total (Dirección puede capturar sin ellos)
-  if (!esDireccion(u)) {
-    faltaRegistro(a.partidas, 'No registré la venta.');
-  }
-  const conIva = a.precio_con_iva !== false;
-  const p = partidas(a.partidas, conIva);
+  // Proveedor y costo son opcionales: si no vienen, la venta queda pendiente de costo para las comisiones
+  const modo = modoIva(a);
+  const conIva = modo === 'incluido';
+  const p = partidasModo(a.partidas, modo);
   const u_ = utilidadDe(p);
   const todas = await fb().leerColeccion('ventas');
   const alertas = await alertasDe({ clienteId: cliente.id, clienteNombre: cliente.nombre, items: p.items, total: p.total, utilidad: u_.utilidad }, todas);
@@ -233,7 +262,7 @@ async function crearVenta(u, a, opciones = {}) {
     subtotal: p.subtotal, ivaTotal: p.ivaTotal, ajusteTotal: p.ajusteTotal, total: p.total,
     formaPago, diasCredito,
     contacto: texto(a.contacto), impuestoNota: texto(a.impuesto_nota),
-    precioConIva: conIva,
+    precioConIva: conIva, ivaModo: modo,
     costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, utilidadSinIva: u_.utilidadSinIva, costoCompleto: u_.completo,
     incluyeDatosFiscales: !!a.incluye_datos_fiscales, estado: 'pendiente', estatus: a.estatus,
     facturaURL: '', tieneFactura: false, createdAt: fb().marcaTiempo()
@@ -245,7 +274,10 @@ async function crearVenta(u, a, opciones = {}) {
       estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito, credito_asignado_al_cliente: credito.asignar || undefined,
       contacto: venta.contacto || null, impuesto: venta.impuestoNota || null,
       proveedores: [...new Set(p.items.map(i => i.proveedor).filter(Boolean))]
-    }, resumenDinero(p, u_), { se_puede_corregir: 'Si algo quedó mal, se corrige con corregir_venta (o en el gestor: Ver → Corregir).' }),
+    }, resumenDinero(p, u_), {
+      iva_modo: modo === 'mas_iva' ? 'más IVA (16 %)' : modo === 'incluido' ? 'IVA incluido en el precio' : 'sin IVA',
+      pendiente_de_costo: u_.costoTotal == null ? 'Sin proveedor ni costo: queda pendiente para comisiones; se completa después con corregir_venta.' : undefined,
+      se_puede_corregir: 'Si algo quedó mal, se corrige con corregir_venta (o en el gestor: Ver → Corregir).' }),
     cliente_registrado: cliente.registrado
   };
 }
@@ -300,7 +332,8 @@ async function corregirVenta(u, a, opciones = {}) {
     return { venta: folio, id: v.id, deshecho: true, cambios, total_antes: v.total, total_ahora: ult.antes.total, utilidad_ahora: ult.antes.utilidad == null ? null : ult.antes.utilidad };
   }
 
-  const conIva = a.precio_con_iva !== false;
+  const modo = modoIva(a, v.ivaModo || (v.precioConIva ? 'incluido' : (v.ivaTotal ? 'mas_iva' : 'sin_iva')));
+  const conIva = modo === 'incluido';
   const items = (v.items || []).map(i => Object.assign({}, i));
   const cambios = [];
   const nombreDe = n => '#' + n + ' (' + (items[n - 1] ? items[n - 1].pedido : '?') + ')';
@@ -311,7 +344,7 @@ async function corregirVenta(u, a, opciones = {}) {
     const it = items[c.numero - 1];
     const etiqueta = nombreDe(c.numero);
     if (c.precio != null || c.iva_porcentaje != null) {
-      const pct = c.iva_porcentaje != null ? Number(c.iva_porcentaje) : (it.ivaPorcentaje != null ? it.ivaPorcentaje : (it.precio ? Math.round((it.iva / it.precio) * 100) : 16));
+      const pct = c.iva_porcentaje != null ? Number(c.iva_porcentaje) : modo === 'sin_iva' ? 0 : (it.ivaPorcentaje != null ? it.ivaPorcentaje : (it.precio ? Math.round((it.iva / it.precio) * 100) : 16));
       const capturado = c.precio != null ? Number(c.precio) : (conIva ? it.precio + it.iva : it.precio);
       const nuevo = itemDe({ precio: capturado, iva_porcentaje: pct }, conIva);
       cambios.push(etiqueta + ': precio ' + pesos2(conIva ? it.precio + it.iva : it.precio) + ' → ' + pesos2(capturado) + (conIva ? ' (con IVA)' : ' (sin IVA)'));
@@ -327,7 +360,7 @@ async function corregirVenta(u, a, opciones = {}) {
   const quitar = [...new Set(a.quitar_partidas || [])].sort((x, y) => y - x);
   quitar.forEach(n => { revisar(n); cambios.push('Quitó la partida ' + nombreDe(n)); });
   quitar.forEach(n => items.splice(n - 1, 1));
-  (a.agregar_partidas || []).forEach(p => { const it = itemDe(p, conIva); items.push(it); cambios.push('Agregó "' + it.pedido + '" en ' + pesos2(conIva ? it.precio + it.iva : it.precio)); });
+  (a.agregar_partidas || []).forEach(p => { const it = itemDe(modo === 'sin_iva' ? Object.assign({}, p, { iva_porcentaje: 0 }) : p, conIva); items.push(it); cambios.push('Agregó "' + it.pedido + '" en ' + pesos2(conIva ? it.precio + it.iva : it.precio)); });
   if (!items.length) throw new ErrorUsuario(folio + ' se quedaría sin piezas. Si la venta no va, cancélala con su motivo.');
 
   const nuevo = {};
@@ -350,7 +383,6 @@ async function corregirVenta(u, a, opciones = {}) {
     cambios.push('Forma de pago: ' + (v.formaPago || 'contado') + ' → ' + a.forma_pago + (a.forma_pago === 'credito' ? ' ' + cr.dias + ' días' : ''));
   }
   if (!cambios.length) throw new ErrorUsuario('No dijiste qué corregir de ' + folio + '.');
-  if (!esDireccion(u)) faltaRegistro(items, 'No guardé la corrección de ' + folio + '.');
 
   const t = sumar(items);
   const u_ = utilidadDe(t);
@@ -362,7 +394,7 @@ async function corregirVenta(u, a, opciones = {}) {
   if (u_.utilidad !== (v.utilidad == null ? null : v.utilidad)) cambios.push('Utilidad: ' + pesos2(v.utilidad) + ' → ' + pesos2(u_.utilidad) + (u_.utilidadPct != null ? ' (' + u_.utilidadPct + ' %)' : ''));
   Object.assign(nuevo, {
     items: t.items, siniestros: t.siniestros, subtotal: t.subtotal, ivaTotal: t.ivaTotal, ajusteTotal: t.ajusteTotal, total: t.total,
-    precioConIva: conIva, costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, utilidadSinIva: u_.utilidadSinIva, costoCompleto: u_.completo,
+    precioConIva: conIva, ivaModo: modo, costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, utilidadSinIva: u_.utilidadSinIva, costoCompleto: u_.completo,
     correcciones: registro(cambios, fotoDe(v)), actualizado: Date.now()
   });
   await fb().actualizar('ventas', v.id, nuevo);

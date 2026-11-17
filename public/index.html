@@ -2073,8 +2073,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #1E4F7A">
         <h4 style="margin:0 0 8px 0;color:#1E4F7A">📦 Piezas</h4>
         <label style="display:flex;align-items:center;gap:8px;margin:0 0 12px 0;color:#1E4F7A;font-size:0.9em;cursor:pointer">
-          <input type="checkbox" id="v-precio-con-iva" checked onchange="recalcularTotales()">
-          El precio ya incluye IVA (es lo que paga el cliente). Quítala si el precio es "más IVA".
+          <input type="checkbox" id="v-precio-con-iva" onchange="recalcularTotales()">
+          El precio ya incluye IVA (desglosarlo). Si no, se usa el % de IVA de cada pieza: 16 = más IVA, 0 = sin IVA.
         </label>
         <div style="overflow-x:auto;margin-bottom:10px">
           <table style="width:100%;border-collapse:collapse;font-size:0.9em">
@@ -3259,7 +3259,7 @@ window.inicializarFormularioVenta = function() {
   const tit = document.getElementById('v-titulo'), btn = document.getElementById('v-guardar'), conIva = document.getElementById('v-precio-con-iva');
   if (tit) tit.textContent = '💰 Nueva Venta (Maya Autopart)';
   if (btn) btn.textContent = 'Guardar Venta';
-  if (conIva) conIva.checked = true;
+  if (conIva) conIva.checked = false;
   // Establecer fecha a hoy
   const hoy = new Date().toISOString().split('T')[0];
   document.getElementById('v-fecha').value = hoy;
@@ -3466,7 +3466,7 @@ window.corregirVentaGestor = async function(id) {
     const est = document.getElementById('v-estatus-inicial');
     if (v.estatus && [...est.options].some(o => o.value === v.estatus)) est.value = v.estatus;
     document.getElementById('v-incluyeDatosFiscales').checked = !!v.incluyeDatosFiscales;
-    document.getElementById('v-precio-con-iva').checked = true; // se muestra lo que pagó el cliente
+    document.getElementById('v-precio-con-iva').checked = v.precioConIva === true; // como se capturó
     document.getElementById('v-items-body').innerHTML = '';
     (v.items || []).forEach(it => {
       window.agregarFilaPieza();
@@ -3474,7 +3474,7 @@ window.corregirVentaGestor = async function(id) {
       const pct = it.ivaPorcentaje != null ? it.ivaPorcentaje : (it.precio ? Math.round((it.iva / it.precio) * 100) : 16);
       row.querySelector('.v-item-pedido').value = it.pedido || '';
       row.querySelector('.v-item-siniestro').value = it.numSiniestro || '';
-      row.querySelector('.v-item-precio').value = parseFloat(((Number(it.precio) || 0) + (Number(it.iva) || 0)).toFixed(2));
+      row.querySelector('.v-item-precio').value = parseFloat(((Number(it.precio) || 0) + (v.precioConIva === true ? (Number(it.iva) || 0) : 0)).toFixed(2));
       row.querySelector('.v-item-iva-porcentaje').value = pct;
       row.querySelector('.v-item-ajuste').value = Number(it.ajuste) || 0;
       row.querySelector('.v-item-proveedor').value = it.proveedor || '';
@@ -3552,11 +3552,7 @@ window.saveVentaMultiLinea = async function() {
     toast('Agrega al menos una pieza', 'error');
     return;
   }
-  // Registro obligatorio: cada pieza con proveedor y costo total (Dirección puede guardar sin ellos)
-  if ((window.currentRole || 'vendedor') !== 'admin') {
-    const faltan = items.filter(it => !it.proveedor || it.costo == null).map(it => it.pedido);
-    if (faltan.length) { toast('Falta proveedor o costo total en: ' + faltan.join(', ') + '. Se necesitan para la utilidad y las comisiones.', 'error'); return; }
-  }
+  // Proveedor y costo son opcionales: sin ellos la venta queda pendiente de costo para comisiones
 
   // Totales y utilidad (sobre lo que paga el cliente, con IVA)
   const r2 = n => parseFloat(Number(n).toFixed(2));

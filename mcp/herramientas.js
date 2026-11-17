@@ -34,12 +34,12 @@ const PARTIDA = z.object({
 });
 // Partida de una venta: el precio es lo que pagó el cliente (IVA incluido, salvo precio_con_iva: false), con proveedor y costo
 const PARTIDA_VENTA = PARTIDA.extend({
-  precio: z.number().min(0).describe('Precio al que se vendió la partida completa: lo que paga el cliente, YA CON IVA (salvo que precio_con_iva sea false)'),
+  precio: z.number().min(0).describe('Precio de la partida completa tal como lo dicen (el IVA se maneja con el campo iva)'),
   proveedor: z.string().optional().describe('A quién se le compró la pieza'),
   costo: z.number().min(0).optional().describe('Costo total de la partida: pieza + guía + paquetería + logística'),
   costo_desglose: z.string().optional().describe('Cómo se forma el costo, p. ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100"')
 });
-const PRECIO_CON_IVA = z.boolean().default(true).describe('true (normal): los precios son lo que pagó el cliente, IVA incluido, y el IVA se desglosa de ahí. false: los precios van sin IVA y el IVA se suma');
+const PRECIO_CON_IVA = z.boolean().optional().describe('Compatibilidad: true = el precio ya trae IVA; false = más IVA. Mejor usa iva');
 const opcional = z.string().optional();
 
 const responder = obj => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
@@ -86,13 +86,11 @@ function instrucciones(usuario) {
       : 'Cada integrante registra SUS propias ventas: en notas y ventas el vendedor es siempre quien te habla (se pone solo). Nadie puede registrar una venta que no hizo; si te piden ponerla a nombre de otro, explica que esa persona la registre con su usuario.',
     'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente. Si el cliente es "sin efectos fiscales" (no quiere factura a su nombre), usa sin_efectos_fiscales: true y solo pide su nombre (y teléfono o correo si los dan); no le pidas RFC. Si no, estos datos son obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
       '2) Si en el pedido también viene la venta, después del cliente sigue con la venta con los datos que ya dieron (no preguntes si quiere nota: ya la pidió). Si solo pidieron el cliente, no ofrezcas la nota. 3) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
-    'Registro de venta. Obligatorio: cliente, pieza, precio al que se vendió (lo que paga el cliente, ya con IVA), proveedor y costo total. Si falta alguno de esos, pídelo en una sola pregunta corta. ' +
-      'Opcional (úsalo solo si te lo dan, NUNCA lo pidas): siniestro, contacto, impuesto (p. ej. "16% Masiva"), desglose del costo. Forma de pago: contado, salvo que digan crédito. ' +
-      'Crédito: solo hay de 7 o 14 días. Si dicen "a crédito" con los días (o "tiene crédito a 14 días"), usa forma_pago credito y dias_credito; se le asigna al cliente al guardar, sin trabas ni permisos. Si dicen crédito sin días y el cliente no tiene, pregunta solo "¿7 o 14 días?". ' +
-      'El precio que te dan ya trae IVA: no le sumes IVA; el sistema lo desglosa. Solo si la persona dice que su precio es "más IVA" usa precio_con_iva: false. ' +
-      'El costo total incluye pieza + guía + paquetería + logística. Si te dan un solo número, ese es el costo total. Si te dan las partes, súmalas tú y pon el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No pidas el desglose. ' +
-      'El resumen antes del SÍ va compacto: cliente, una línea por pieza (pieza · precio · proveedor · costo) y una línea "Venta $X · Costo $Y · Utilidad $Z (N%)". Si te corrigen algo, vuelve a proponer con el dato bueno. Al guardar, una línea con el folio y la utilidad. ' +
-      'Si la utilidad sale negativa o muy baja (menos de 10%), avísalo antes de guardar. Para comisiones o "cuánto dejó" usa utilidad_comisiones.',
+    'Notas y ventas, dinámica sencilla: si piden "una nota", usa crear_nota_entrega (también registra la venta); si piden "nota de venta", crear_venta. Con lo que venga en el mensaje arma la propuesta de una vez. ' +
+      'IVA, la regla de siempre: "más IVA" → se suma el 16 % (con_iva true en la nota, iva "mas_iva" en la venta); "sin IVA" o si no dicen nada → el precio queda tal cual, sin sumar nada; solo si dicen que el precio ya trae IVA → iva "incluido". ' +
+      'En el mismo mensaje del resumen, en UNA línea, pregunta lo que no dijeron de esto: ¿contado o crédito (7 o 14 días)?, ¿proveedor y costo? (opcional, es para la utilidad y las comisiones). No es obligatorio: si contestan, vuelve a proponer con eso; si dicen SÍ, se guarda de contado y sin costo. ' +
+      'Crédito: solo de 7 o 14 días; si el cliente no tenía, se le asigna al guardar, sin trabas. Costo total = pieza + guía + paquetería + logística: si dan las partes, súmalas y pon el desglose. ' +
+      'Resumen compacto: cliente, una línea por pieza (pieza · siniestro · precio) y una línea con el total y el IVA. Si te corrigen, vuelve a proponer con el dato bueno. Para comisiones o "cuánto dejó" usa utilidad_comisiones; si una venta quedó sin costo, se completa con corregir_venta.',
     'Pagos de clientes: si te mandan la foto o el PDF de una transferencia, lee monto, fecha, referencia y quién pagó; busca su factura con cobranza y propón registrar_pago. Si el monto cubre varias facturas, propón una por una y dilo. Nunca inventes ni redondees el monto.',
     'Cuando un cliente acepta una cotización ("ya se vendió la COT-45"), no captures de nuevo: usa convertir_cotizacion pidiendo solo el proveedor y el costo de cada pieza que falten (contado por omisión).',
     'Para cotizar o saber "en cuánto nos salió" una pieza usa historial_costos. Para comisiones usa comisiones (la utilidad es la base); el porcentaje lo define Dirección.',
@@ -385,14 +383,19 @@ function crearServidor(usuario) {
         cliente: z.string().min(1).describe('Si coincide con un cliente registrado se usa su nombre exacto'),
         fecha: FECHA.optional().describe('Por omisión hoy'),
         vendedor: z.string().optional().describe('Solo si la persona dice quién vendió; si no, va vacío'),
-        con_iva: z.boolean().default(false).describe('Suma 16% de IVA al subtotal (casilla "Incluye IVA 16%")'),
+        con_iva: z.boolean().default(false).describe('true solo si dicen "más IVA": suma 16 % al subtotal. "Sin IVA" o si no dicen nada: false (el precio queda tal cual)'),
         registrar_venta: z.boolean().default(true).describe('false si esa venta ya se capturó en Ventas'),
+        forma_pago: z.enum(['contado', 'credito']).default('contado').describe('Contado por omisión; crédito si lo dicen'),
+        dias_credito: z.union([z.literal(7), z.literal(14)]).optional().describe('Días de crédito: 7 o 14. Si el cliente no tiene crédito y te dicen los días, se le asignan al guardar (sin pedir permiso a nadie)'),
         articulos: z.array(z.object({
           descripcion: z.string().min(1),
           cantidad: z.number().positive().default(1),
           precio_unitario: z.number().min(0).describe('Precio por pieza, sin IVA'),
           siniestro: opcional,
-          anio: z.string().optional().describe('Año del auto')
+          anio: z.string().optional().describe('Año del auto'),
+          proveedor: z.string().optional().describe('Opcional: a quién se le compró'),
+          costo: z.number().min(0).optional().describe('Opcional: costo total de la partida (pieza + guía + paquetería + logística)'),
+          costo_desglose: z.string().optional()
         })).min(1)
       },
       annotations: ESCRITURA
@@ -416,7 +419,8 @@ function crearServidor(usuario) {
         contacto: z.string().optional().describe('Persona de contacto del cliente (quien pidió la pieza), si la dicen'),
         impuesto_nota: z.string().optional().describe('Cómo se maneja el impuesto, p. ej. "16% Masiva"'),
         confirmar_alertas: z.boolean().optional().describe('Solo después de enseñarle a la persona las alertas que regresó la herramienta y que diga que sí está bien'),
-        precio_con_iva: PRECIO_CON_IVA,
+        iva: z.enum(['sin_iva', 'mas_iva', 'incluido']).optional().describe('"mas_iva" si dicen más IVA (suma 16 %); "sin_iva" si dicen sin IVA o no dicen nada (el precio queda tal cual); "incluido" solo si dicen que el precio ya trae IVA'),
+        precio_con_iva: z.boolean().optional().describe('Compatibilidad: usa iva'),
         partidas: z.array(PARTIDA_VENTA).min(1)
       },
       annotations: ESCRITURA
