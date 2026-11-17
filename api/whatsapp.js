@@ -164,7 +164,7 @@ module.exports = async (req, res) => {
         const { datos } = await wa.bajarMedia(msg.document.id);
         if (datos.length > 2 * 1024 * 1024) throw new Error('El XML pesa más de 2 MB');
         const cfdi = facturacion.leerCFDI(datos.toString('utf8'), msg.document.filename || 'factura.xml');
-        const p = await facturacion.proponer(cfdi);
+        const p = await facturacion.proponer(cfdi, { ia: true });
         await anotar('factura XML recibida', cfdi.serieFolio + ' ' + cfdi.total);
         if (p.repetida) texto = facturacion.textoPropuesta(p);
         else propuestaDirecta = { herramienta: 'ligar_factura', titulo: 'Factura ' + cfdi.serieFolio, args: facturacion.argsDe(p), mensaje: '(factura XML) ' + cfdi.serieFolio + (msg.document.caption ? ' · ' + msg.document.caption : ''), texto: facturacion.textoPropuesta(p) };

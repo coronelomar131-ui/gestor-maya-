@@ -287,6 +287,7 @@ test('resumen_compras calcula utilidad por artículo, filtra y conserva compras 
 
 test('solo administración y almacén pueden consultar compras con Pepito', async () => {
   const pepito = require('./pepito');
+  await db.guardar('config', 'pepito', { fueraDeRol: false }); // aquí se revisa el rol estricto
   const admin = await pepito.herramientasDe(ADMIN, 'gestor');
   assert.ok(admin.tools.some(tool => tool.name === 'resumen_compras'));
   assert.ok(admin.tools.some(tool => tool.name === 'crear_compra' && admin.escribe('crear_compra')));
@@ -305,7 +306,13 @@ test('solo administración y almacén pueden consultar compras con Pepito', asyn
   assert.equal(JSON.parse(resultado.texto).compras_encontradas, 1);
   await almacen.cerrar();
 
-  for (const usuario of [VENDEDOR, { uid: 'f-1', nombre: 'Facturación', rol: 'facturacion' }]) {
+  // Facturación ve todo como Dirección (consulta compras) pero no borra
+  const fac = await pepito.herramientasDe({ uid: 'f-1', nombre: 'Facturación', rol: 'facturacion' }, 'gestor');
+  assert.ok(fac.tools.some(tool => tool.name === 'resumen_compras'));
+  assert.ok(!fac.tools.some(tool => tool.name === 'eliminar_compra' || tool.name === 'eliminar_registro'));
+  await fac.cerrar();
+
+  for (const usuario of [VENDEDOR]) {
     const h = await pepito.herramientasDe(usuario, 'gestor');
     assert.ok(!h.tools.some(tool => tool.name === 'resumen_compras'));
     assert.ok(!h.tools.some(tool => tool.name === 'crear_compra' || tool.name === 'eliminar_compra'));
@@ -453,7 +460,7 @@ test('buzón de Pepito: revisar trae pendientes con permisos del rol; responder 
   await v.cerrar();
 });
 
-test('facturación y cobranza: pendientes sin factura y saldos con días vencidos; solo admin y facturación', async () => {
+test('facturación y cobranza: pendientes sin factura y saldos con días vencidos; todo el equipo los consulta, solo facturación liga facturas', async () => {
   // v71 ya tiene factura por cobrar (vencida); v219 tiene una cancelada, así que sigue pendiente
   db.cols.ventas.get('v71').facturaId = 'f1';
   db.cols.ventas.get('v219').facturaId = 'f0';
@@ -478,7 +485,7 @@ test('facturación y cobranza: pendientes sin factura y saldos con días vencido
   await c.cerrar();
   const v = await conectar(VENDEDOR);
   const { tools } = await v.cliente.listTools();
-  assert.ok(!tools.some(t => t.name === 'cobranza' || t.name === 'pendientes_facturar'));
+  assert.ok(tools.some(t => t.name === 'cobranza') && tools.some(t => t.name === 'pendientes_facturar'), 'el vendedor consulta facturación y cobranza');
   await v.cerrar();
   const f = await conectar({ uid: 'g1', email: 'fac@maya', nombre: 'Facturación', rol: 'facturacion' });
   const nombres = (await f.cliente.listTools()).tools.map(t => t.name);
@@ -567,10 +574,13 @@ test('Pepito API: un vendedor no recibe herramientas de su rol prohibido y hay l
   process.env.ANTHROPIC_API_KEY = 'prueba';
   const pepito = require('./pepito');
   const falso = claudeFalso([texto('Hola')]);
+  await db.guardar('config', 'pepito', { fueraDeRol: false });
   pepito._usarCliente(falso);
   await pepito.conversar(VENDEDOR, 'hola', 'whatsapp');
   const nombres = falso.llamadas[0].tools.map(t => t.name);
-  assert.ok(!nombres.includes('eliminar_registro') && !nombres.includes('cobranza') && !nombres.includes('guardar_producto'));
+  assert.ok(!nombres.includes('eliminar_registro') && !nombres.includes('guardar_producto'));
+  assert.ok(nombres.includes('cobranza'), 'el vendedor ve cobranza (solo consulta)');
+  assert.ok(!nombres.includes('ligar_factura'), 'pero no liga facturas');
   assert.match(falso.llamadas[0].system[0].text, /WhatsApp/);
   const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   db.cols.pepito_uso.set('v-1_' + hoy, { uid: 'v-1', mensajes: 999, entrada: 0, salida: 0, cache: 0 });
@@ -691,7 +701,7 @@ test('reporte diario: ventas de ayer, por facturar y cobranza, según el rol', a
   assert.match(admin, /Ventas:/);
   assert.match(admin, /A-7 de Zeta Autopartes, 5 días/);
   const fac = reporte.texto(rep, { nombre: 'Geraldine', rol: 'facturacion' });
-  assert.doesNotMatch(fac, /Ventas:/, 'facturación no ve ventas');
+  assert.match(fac, /Ventas:\* 1 nota por \$1,160\.00\n   • Zeta Autopartes: \$1,160\.00/, 'facturación ve ventas como Dirección, y el top por cliente va en pesos')
   assert.doesNotMatch(reporte.corto(rep, { rol: 'admin' }), /\n/, 'la plantilla no lleva saltos de línea');
 });
 
@@ -1158,6 +1168,7 @@ test('Geraldine Bot: una orden directa (sin nota, p. ej. FLEC) se registra como 
   // Pepito con el rol facturación tiene las herramientas; un vendedor no
   process.env.ANTHROPIC_API_KEY = 'prueba';
   const pepito = require('./pepito');
+  await db.guardar('config', 'pepito', { fueraDeRol: false });
   const falso = claudeFalso([texto_('Hola'), texto_('Hola')]);
   pepito._usarCliente(falso);
   await pepito.conversar({ uid: 'f-2', nombre: 'Geraldine', rol: 'facturacion' }, 'hola', 'whatsapp');
@@ -1409,23 +1420,103 @@ test('Envíos: la guía vive en la nota, mueve la etapa, avisa, y el tablero ale
   } finally { wa.cerrar(); }
 });
 
-test('roles: una sola definición para pantalla y Pepito; entregas ve logística sin precios, vendedor consulta existencias', async () => {
+test('roles: una sola definición para pantalla y Pepito; todos ven ventas y su seguimiento, solo facturación factura', async () => {
   const roles = require('../public/diseno/roles.js');
   assert.deepEqual(roles.LISTA, ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion']);
   assert.ok(roles.puedeModulo('admin', 'configuracion'));
   assert.ok(roles.puedeModulo('entregas', 'envios') && roles.puedeModulo('entregas', 'entregas') && roles.puedeModulo('entregas', 'seguimiento'));
-  assert.ok(!roles.puedeModulo('entregas', 'ventas') && !roles.puedeModulo('entregas', 'facturacion') && !roles.puedeModulo('entregas', 'dashboard'));
+  ['vendedor', 'almacen', 'entregas', 'facturacion'].forEach(r => ['ventas', 'seguimiento', 'facturacion', 'cobranza', 'notas-entrega'].forEach(m => assert.ok(roles.puedeModulo(r, m), r + ' ve ' + m)));
+  assert.ok(!roles.puedeModulo('entregas', 'dashboard'));
+  assert.ok(roles.puedeAccion('facturacion', 'facturar') && roles.puedeAccion('admin', 'facturar') && !roles.puedeAccion('vendedor', 'facturar') && !roles.puedeAccion('entregas', 'facturar'));
   assert.ok(roles.puedeModulo('almacen', 'mercadolibre'));
-  assert.ok(roles.puedeModulo('facturacion', 'reportes') && !roles.puedeModulo('facturacion', 'inventario'));
-  ['vendedor', 'almacen', 'entregas', 'facturacion'].forEach(r => assert.ok(!roles.puedeModulo(r, 'finanzas') && !roles.puedeModulo(r, 'usuarios'), r + ' sin finanzas ni usuarios'));
+  assert.ok(roles.puedeModulo('facturacion', 'reportes') && roles.puedeModulo('facturacion', 'inventario') && roles.puedeModulo('facturacion', 'finanzas'));
+  assert.ok(!roles.puedeModulo('facturacion', 'usuarios') && !roles.puedeModulo('facturacion', 'configuracion'), 'dar accesos es solo de Dirección');
+  ['vendedor', 'almacen', 'entregas'].forEach(r => assert.ok(!roles.puedeModulo(r, 'finanzas') && !roles.puedeModulo(r, 'usuarios'), r + ' sin finanzas ni usuarios'));
   Object.values(roles.ROLES).forEach(r => assert.ok(r.nombre && r.descripcion.length > 40));
   const lista = async u => { const c = await conectar(u); const { tools } = await c.cliente.listTools(); await c.cerrar(); return tools.map(t => t.name); };
   const chofer = await lista({ uid: 'e-1', nombre: 'Israel', rol: 'entregas' });
   assert.ok(chofer.includes('envios_seguimiento') && chofer.includes('guardar_guia') && chofer.includes('guardar_entrega'));
-  assert.ok(!chofer.some(n => ['historial_notas', 'resumen_ventas', 'buscar_ventas', 'cobranza', 'buscar_productos', 'crear_nota_entrega'].includes(n)), 'el chofer no ve ventas, precios ni cobranza');
+  assert.ok(chofer.includes('historial_notas') && chofer.includes('buscar_ventas') && chofer.includes('cobranza'), 'el chofer ve las ventas y su seguimiento');
+  assert.ok(!chofer.includes('ligar_factura') && !chofer.includes('eliminar_registro'));
   const vend = await lista(VENDEDOR);
   assert.ok(vend.includes('buscar_productos'), 'el vendedor consulta existencias');
-  assert.ok(!vend.includes('guardar_producto') && !vend.includes('buscar_productos_ml') && !vend.includes('cobranza'));
+  assert.ok(!vend.includes('guardar_producto') && !vend.includes('buscar_productos_ml'));
   const regsVend = await (async () => { const c = await conectar(VENDEDOR); const { tools } = await c.cliente.listTools(); await c.cerrar(); return tools.find(t => t.name === 'buscar_registros'); })();
   assert.ok(!JSON.stringify(regsVend.inputSchema).includes('pagos'), 'finanzas solo dirección');
+});
+
+test('Geraldine Bot + IA: la revisión corrige la elección solo si su suma cuadra, y todo queda a la vista', async () => {
+  const facturacion = require('./facturacion');
+  const revision = require('./revision');
+  await db.guardar('config', 'geraldine', { desde: '2026-01-01' });
+  const cfdi = facturacion.leerCFDI(XML_CFDI(), 'A-219.xml');
+  const respuesta = j => ({ stop_reason: 'end_turn', model: 'claude-sonnet-5-5', usage: usoFalso, content: [{ type: 'text', text: JSON.stringify(j) }] });
+  // 1) El emparejador elige NE-039 y NV #71 (la misma venta capturada dos veces: sobra). La IA dice que solo es la NE-039 → cuadra → se usa
+  const falso = claudeFalso([respuesta({ veredicto: 'ajustar', notas: ['notasEntrega:ne039'], explicacion: 'La NE-039 trae el siniestro S-0002 y el faro; la NV #71 es la misma venta capturada otra vez.', alertas: ['NV #71 parece duplicada de la NE-039'] })]);
+  revision._usarCliente(falso);
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const p = await facturacion.proponer(cfdi, { ia: true });
+  assert.deepEqual(p.elegidas.map(e => e.folio), ['NE-039']);
+  assert.ok(p.cuadra);
+  assert.equal(p.ia.ajusto, true);
+  assert.deepEqual(p.ia.antes.sort(), ['NE-039', 'NV #71']);
+  const params = falso.llamadas[0];
+  assert.equal(params.output_config.format.type, 'json_schema');
+  assert.equal(params.output_config.effort, 'high');
+  assert.match(params.messages[0].content, /S-0002/);
+  const texto = facturacion.textoPropuesta(p);
+  assert.match(texto, /Revisión de IA: cambié las notas \(antes: /);
+  assert.match(texto, /NV #71 parece duplicada/);
+  // 2) La IA sugiere algo que no cuadra o inventa una nota → se queda la propuesta del emparejador y se avisa
+  revision._usarCliente(claudeFalso([respuesta({ veredicto: 'ajustar', notas: ['notasEntrega:ne226', 'notasEntrega:no-existe'], explicacion: 'x', alertas: [] })]));
+  const p2 = await facturacion.proponer(cfdi, { ia: true });
+  assert.deepEqual(p2.elegidas.map(e => e.folio).sort(), ['NE-039', 'NV #71'], 'no se cambió');
+  assert.equal(p2.ia.ajusto, false);
+  assert.ok(p2.ia.alertas.some(a => /no están pendientes/.test(a)));
+  assert.ok(p2.ia.alertas.some(a => /no cuadra/.test(a)));
+  // 3) Sin respuesta legible de la IA: se avisa y se usa el emparejador
+  revision._usarCliente(claudeFalso([{ stop_reason: 'end_turn', usage: usoFalso, content: [{ type: 'text', text: 'no es json' }] }]));
+  const p3 = await facturacion.proponer(cfdi, { ia: true });
+  assert.match(p3.ia.error, /no se pudo leer/);
+  assert.match(facturacion.textoPropuesta(p3), /ℹ️ La revisión con IA no se pudo leer/);
+  revision._usarCliente(null);
+});
+
+test('Pepito fuera de rol: hace lo que el rol no tiene (menos finanzas, accesos y borrar), lo marca, lo registra y avisa a Dirección', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const wa = whatsappFalso();
+  try {
+    db.cols.usuarios.set('adm', OMAR);
+    const h = await pepito.herramientasDe(VENDEDOR, 'whatsapp');
+    const nombres = h.tools.map(t => t.name);
+    assert.ok(nombres.includes('guardar_producto') && nombres.includes('ligar_factura') && nombres.includes('resumen_compras'), 'lo de otros roles está disponible');
+    assert.ok(!nombres.includes('eliminar_registro') && !nombres.includes('eliminar_compra'), 'borrar nunca');
+    const regs = h.tools.find(t => t.name === 'buscar_registros');
+    assert.ok(!JSON.stringify(regs.input_schema).includes('pagos') && !JSON.stringify(regs.input_schema).includes('usuarios'), 'finanzas y accesos nunca');
+    assert.match(h.tools.find(t => t.name === 'guardar_producto').description, /^\[Fuera del rol de esta persona/);
+    assert.doesNotMatch(h.tools.find(t => t.name === 'historial_notas').description, /Fuera del rol/, 'lo propio no se marca');
+    assert.ok(h.fueraDeRol('resumen_compras') && !h.fueraDeRol('historial_notas'));
+    // Una consulta fuera de rol se registra; una acción además avisa a Dirección
+    const r1 = await h.llamar('resumen_compras', {});
+    assert.equal(r1.error, false);
+    await h.llamar('guardar_producto', { descripcion: 'Faro prueba', precio: 100, stock: 1 });
+    const log = db.cols.config.get('pepito_fuera_rol').eventos;
+    assert.deepEqual(log.map(e => [e.herramienta, e.accion]), [['guardar_producto', 'hizo'], ['resumen_compras', 'consultó']]);
+    assert.equal(log[0].rol, 'vendedor');
+    assert.match(db.cols.avisos_usuario.get('o-1').lista[0].texto, /Pepito hizo "guardar_producto" por Vendedor Dos \(rol vendedor/);
+    // Las instrucciones siguen diciendo su rol real y las reglas de calidad van en el sistema
+    assert.match(h.instrucciones, /rol: vendedor/);
+    await h.cerrar();
+    // El admin no pasa por fuera de rol; con el interruptor apagado, el vendedor solo tiene lo suyo
+    await db.guardar('config', 'pepito', { fueraDeRol: false });
+    const h2 = await pepito.herramientasDe(VENDEDOR, 'gestor');
+    assert.ok(!h2.tools.some(t => t.name === 'guardar_producto'));
+    await h2.cerrar();
+    const falso = claudeFalso([texto('Hola')]);
+    pepito._usarCliente(falso);
+    await pepito.conversar(VENDEDOR, 'hola', 'gestor');
+    assert.match(falso.llamadas[0].system[0].text, /Reglas de calidad/);
+    assert.match(falso.llamadas[0].system[0].text, /Nunca digas que algo quedó guardado/);
+  } finally { wa.cerrar(); }
 });

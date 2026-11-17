@@ -1757,3 +1757,16 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 /* ── Usuarios: qué puede hacer cada rol ── */
 .m-rol-desc { margin: 8px 0 0; padding: 10px 12px; border-radius: var(--m-r, 12px); background: rgba(59, 188, 212, 0.08); border: 1px solid rgba(59, 188, 212, 0.25); color: var(--m-texto-2); font-size: 13px; line-height: 1.45; }
 .m-rol-desc:empty { display: none; }
+
+.m-op-consulta { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--m-relleno); color: var(--m-texto-2); font-size: 12.5px; font-weight: 600; }
+
+/* ── Revisión con IA de la factura (Geraldine Bot) ── */
+.m-cf-ia { margin: 12px 0 4px; padding: 10px 12px; border-radius: var(--m-r, 12px); border: 1px solid var(--m-linea); background: var(--m-relleno); color: var(--m-texto-2); font-size: 13px; line-height: 1.45; display: grid; gap: 6px; }
+.m-cf-ia > div { display: flex; align-items: center; gap: 6px; }
+.m-cf-ia strong { color: var(--m-niebla); }
+.m-cf-ia p { margin: 0; }
+.m-cf-ia p.alerta { color: var(--m-ambar); display: flex; gap: 6px; align-items: flex-start; }
+.m-cf-ia.ok { border-color: rgba(61, 214, 140, 0.4); background: rgba(61, 214, 140, 0.08); }
+.m-cf-ia.ajuste { border-color: rgba(59, 188, 212, 0.45); background: rgba(59, 188, 212, 0.08); }
+.m-cf-ia.duda { border-color: rgba(245, 185, 66, 0.45); background: rgba(245, 185, 66, 0.08); }
+.m-cf-ia .btn { justify-self: start; width: auto; }

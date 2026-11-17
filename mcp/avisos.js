@@ -183,8 +183,9 @@ async function contextoDiario(ahora = Date.now()) {
   const nuevas = arr => arr.sort((a, b) => fechaMs(b) - fechaMs(a));
   const fact = await require('./facturacion').tablero(ahora).catch(e => { console.error('avisos: tablero', e.message); return null; });
   const env = await require('./envios').tablero(ahora).catch(e => { console.error('avisos: envios', e.message); return null; });
+  const fueraRol = ((await fb().obtener('config', 'pepito_fuera_rol').catch(() => null)) || {}).eventos || [];
   return {
-    rep, ops: ops.lista, facturas: ops.facturas, bajo: bajo.productos || [], fact, env,
+    rep, ops: ops.lista, facturas: ops.facturas, bajo: bajo.productos || [], fact, env, fueraRol: fueraRol.filter(e => diaCDMX(e.ts) === diaCDMX(ahora - DIA)),
     porPreparar: nuevas(ops.lista.filter(r => ['registrada', 'preparacion'].includes(r.etapa) && fechaMs(r) >= desde(7))),
     enPreparacion: nuevas(ops.lista.filter(r => r.etapa === 'preparacion' && fechaMs(r) >= desde(14))),
     enTransito: nuevas(ops.lista.filter(r => r.etapa === 'transito' && fechaMs(r) >= desde(30))),
@@ -233,8 +234,13 @@ function resumenDe(persona, ctx) {
     partes = [reporte.texto(ctx.rep, persona)];
     const g = textoGeraldine(ctx.fact, '🧾 *Geraldine Bot, por facturar:*');
     if (g.length) partes.push('', ...g);
-    if (rol === 'admin' && ctx.enTransito.length) partes.push('', '🚚 *En tránsito:* ' + ctx.enTransito.length);
-    if (rol === 'admin') { const e = textoEnvios(ctx.env); if (e.length) partes.push('', ...e); }
+    if (ctx.enTransito.length) partes.push('', '🚚 *En tránsito:* ' + ctx.enTransito.length);
+    { const e = textoEnvios(ctx.env); if (e.length) partes.push('', ...e); }
+    if (rol === 'admin' && ctx.fueraRol && ctx.fueraRol.length) {
+      const hizo = ctx.fueraRol.filter(e => e.accion === 'hizo');
+      partes.push('', '🔓 *Pepito fuera de rol ayer:* ' + ctx.fueraRol.length + (ctx.fueraRol.length === 1 ? ' uso' : ' usos') + (hizo.length ? ', ' + hizo.length + ' con guardado' : ''),
+        ...ctx.fueraRol.slice(0, 4).map(e => '• ' + (e.nombre || 'alguien') + ' (' + e.rol + ') ' + e.accion + ' ' + e.herramienta));
+    }
   } else {
     const l = ['Buenos días, ' + primerNombre(persona) + '. Esto es lo tuyo para hoy:'];
     if (rol === 'almacen') {

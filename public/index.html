@@ -2669,16 +2669,13 @@ async function loadUserProfile(uid) {
       document.getElementById('user-role-display').textContent = 'Admin';
       document.getElementById('user-avatar').textContent = currentUser.email[0].toUpperCase();
     }
-    if (currentRole === 'admin') {
-      document.getElementById('nav-admin-section').style.display = 'block';
-      document.getElementById('nav-usuarios').style.display = 'flex';
-      document.getElementById('nav-finanzas').style.display = 'flex';
-      document.getElementById('nav-configuracion').style.display = 'flex';
-    } else {
-      // No-admin users cannot see Finanzas
-      document.getElementById('nav-finanzas').style.display = 'none';
-    }
-    document.getElementById('nav-compras').style.display = ['admin', 'almacen'].includes(currentRole) ? 'flex' : 'none';
+    // Menú de administración según los roles (/diseno/roles.js): Finanzas también para facturación; Usuarios y Configuración solo Dirección
+    const puedeVer = m => (window.mayaRoles ? window.mayaRoles.puedeModulo(currentRole, m) : currentRole === 'admin');
+    document.getElementById('nav-usuarios').style.display = puedeVer('usuarios') ? 'flex' : 'none';
+    document.getElementById('nav-finanzas').style.display = puedeVer('finanzas') ? 'flex' : 'none';
+    document.getElementById('nav-configuracion').style.display = puedeVer('configuracion') ? 'flex' : 'none';
+    document.getElementById('nav-admin-section').style.display = ['usuarios', 'finanzas', 'configuracion'].some(puedeVer) ? 'block' : 'none';
+    document.getElementById('nav-compras').style.display = puedeVer('compras') ? 'flex' : 'none';
     // El rol de entregas no ve el Resumen (trae ventas del mes): entra directo a su primer módulo
     window.currentRole = currentRole;
     if (window.mayaRoles && !window.mayaRoles.puedeModulo(currentRole, 'dashboard')) {
@@ -6337,11 +6334,11 @@ if (document.readyState === 'loading') {
 // Auto-load when showing mercadolibre module
 const originalShowModule = window.showModule;
 window.showModule = function(name) {
-  // Protección: Solo admin puede acceder a Finanzas
+  // Protección de Finanzas: Dirección y facturación (roles.js)
   if (name === 'finanzas') {
     const rol = window.currentRole || 'vendedor';
-    if (rol !== 'admin') {
-      window.toast('❌ Solo administradores pueden acceder a Finanzas', 'error');
+    if (!(window.mayaRoles ? window.mayaRoles.puedeModulo(rol, 'finanzas') : rol === 'admin')) {
+      window.toast('❌ Finanzas es solo de Dirección y Facturación', 'error');
       console.warn('⚠️ Intento de acceso no autorizado a Finanzas por:', rol);
       return;
     }
@@ -8029,7 +8026,7 @@ window.savePago = async function() {
 // Listeners para Finanzas (solo admin)
 function startFinanzasListeners() {
   try {
-    if (currentRole !== 'admin') return;
+    if (!(window.mayaRoles ? window.mayaRoles.puedeModulo(currentRole, 'finanzas') : currentRole === 'admin')) return;
 
     // Préstamos
     const qPrestamos = query(collection(db, 'finanzas_prestamos'), orderBy('createdAt', 'desc'));

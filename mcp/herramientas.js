@@ -60,7 +60,7 @@ const ejecutar = fn => async a => {
 function instrucciones(usuario) {
   const hoy = datos.fechaISO(new Date());
   return [
-    'Datos de Maya Autopartes (refaccionaria en la Ciudad de México). Conectado como ' + usuario.nombre + ' (rol: ' + usuario.rol + '). Hoy es ' + hoy + '.',
+    'Datos de Maya Autopartes (refaccionaria en la Ciudad de México). Conectado como ' + usuario.nombre + ' (rol: ' + (usuario.rolReal || usuario.rol) + '). Hoy es ' + hoy + '.',
     'Montos en pesos mexicanos (MXN). Fechas AAAA-MM-DD en hora de la Ciudad de México.',
     'Hay dos tipos de nota: nota de entrega (folio NE-123) y nota de venta (folio NV #123). Salvo que se pida un tipo, el historial y el resumen incluyen ambas; no incluyen notas de venta canceladas ni las que se crean solas al guardar una nota de entrega (esa venta ya aparece como su NE).',
     'En cada nota: total = subtotal + iva - ajuste. Los totales del resumen son la suma exacta de las notas. Usa solo montos que vengan de las herramientas; no estimes ni inventes cifras.',
@@ -305,7 +305,7 @@ function crearServidor(usuario) {
       annotations: ESCRITURA
     }, ejecutar(a => escritura.venderDeCompra(usuario, a)));
 
-    servidor.registerTool('eliminar_compra', {
+    if (puede('compras_borrar')) servidor.registerTool('eliminar_compra', {
       title: 'Eliminar compra',
       description: 'Elimina una compra después de que la persona confirme explícitamente. Primero busca la compra con resumen_compras o buscar_registros (módulo compras), presenta su proveedor, fecha e artículos, y pide confirmación. Al borrarla se guarda una copia recuperable en papelera. No elimina ventas, notas ni inventario.',
       inputSchema: {
