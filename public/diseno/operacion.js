@@ -16,6 +16,8 @@ const hoy0 = () => inicioDia(Date.now());
 const fechaCorta = t => (t ? new Date(t).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' }) : '—');
 const fechaISO = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const rol = () => window.currentRole || 'vendedor';
+// Subir facturas, registrar pagos, cancelar y cambiar plazos: solo quien factura (roles.js); los demás consultan
+const factura = () => (window.mayaRoles ? window.mayaRoles.puedeAccion(rol(), 'facturar') : ['admin', 'facturacion'].includes(rol()));
 const yo = () => (($('#user-name-display') && $('#user-name-display').textContent.trim()) || (window.auth && window.auth.currentUser && window.auth.currentUser.email) || 'Usuario');
 const aviso = (m, t) => window.toast && window.toast(m, t || 'success');
 const D = () => window.data || {};
@@ -259,7 +261,7 @@ function pintarFacturacion() {
       <div class="m-op">
         <section class="m-op-cabeza m-vidrio">
           <div><h2>Facturación</h2><p>Timbra en CONTPAQi como siempre y sube aquí el XML: el gestor lo liga a sus notas y lo pasa a Cobranza.</p></div>
-          <label class="btn btn-primary m-op-subir">${icono('file-down', 16)}<span>Subir XML de CONTPAQi</span><input type="file" id="fac-xml" accept=".xml,text/xml,application/xml" multiple hidden></label>
+          ${factura() ? `<label class="btn btn-primary m-op-subir">${icono('file-down', 16)}<span>Subir XML de CONTPAQi</span><input type="file" id="fac-xml" accept=".xml,text/xml,application/xml" multiple hidden></label>` : `<span class="m-op-consulta">${icono('eye', 14)} Solo consulta</span>`}
         </section>
         <div class="m-op-tabs" id="fac-tabs">
           <button type="button" data-tab="pendientes">Pendientes de facturar</button>
@@ -268,7 +270,7 @@ function pintarFacturacion() {
         <div id="fac-cuerpo"></div>
       </div>`;
     $('#fac-tabs', mod).addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { pestanaFac = b.dataset.tab; pintarFacturacion(); } });
-    $('#fac-xml', mod).addEventListener('change', e => { subirXML([...e.target.files]); e.target.value = ''; });
+    if ($('#fac-xml', mod)) $('#fac-xml', mod).addEventListener('change', e => { subirXML([...e.target.files]); e.target.value = ''; });
     $('#fac-cuerpo', mod).addEventListener('change', e => {
       const c = e.target.closest('[data-sel]');
       if (c) { c.checked ? seleccion.add(c.dataset.sel) : seleccion.delete(c.dataset.sel); pintarFacturacion(); }
@@ -295,7 +297,7 @@ function pintarFacturacion() {
     const P = plazos();
     const conteo = P ? P.ORDEN.map(k => [k, pend.filter(r => (estados.get(r.col + ':' + r.id) || {}).clave === k).length]).filter(([, n]) => n) : [];
     const pesoEstado = cli => { const l = porCliente[cli]; return Math.max(...l.map(r => { const e = estados.get(r.col + ':' + r.id); return e ? P.ORDEN.length - P.ORDEN.indexOf(e.clave) : 0; })); };
-    const puedeDias = ['admin', 'facturacion'].includes(rol());
+    const puedeDias = factura();
     cuerpo.innerHTML = `<div class="m-fac-dos"><div class="m-fac-izq">` +
       (P ? `<div class="m-fac-estados">${conteo.map(([k, n]) => `<span class="m-op-etapa e-${k}">${escapar(P.NOMBRES[k])} <b>${n}</b></span>`).join('')}<small>Geraldine Bot vigila las notas desde el ${escapar(desdeFac())}, según los días para facturar de cada cliente (${P.DIAS_FACTURAR} si no tiene).${pend.filter(r => P.esHistorica(r.raw, desdeFac())).length ? ' Las ' + pend.filter(r => P.esHistorica(r.raw, desdeFac())).length + ' de antes se facturaron en CONTPAQi sin subir su XML: no se alarman.' : ''}</small></div>` : '') +
       (Object.keys(porCliente).length ? Object.entries(porCliente).sort((a, b) => (P ? pesoEstado(b[0]) - pesoEstado(a[0]) : 0) || b[1].length - a[1].length).map(([cli, lista]) => {
@@ -322,7 +324,7 @@ function pintarFacturacion() {
         <span class="m-op-info"><strong>${escapar(f.clienteNombre || f.receptorNombre)}</strong><small>${fechaCorta(ms(f.fecha))} · ${(f.notas || []).map(n => escapar(n.folio)).join(', ') || 'sin notas ligadas'} · UUID ${escapar(String(f.uuid).slice(0, 8))}…</small></span>
         <span class="m-op-monto">${pesos(f.total)}</span>
         <span class="m-op-etapa e-${f.estatus === 'pagada' ? 'pagada' : f.estatus === 'cancelada' ? 'cancelada' : 'facturada'}">${f.estatus === 'pagada' ? 'Pagada' : f.estatus === 'cancelada' ? 'Cancelada' : 'Por cobrar'}</span>
-        ${rol() === 'admin' && f.estatus !== 'cancelada' ? `<button type="button" class="m-op-x" data-cancelar="${escapar(f.id)}" title="Marcar como cancelada">${icono('x', 14)}</button>` : ''}
+        ${factura() && f.estatus !== 'cancelada' ? `<button type="button" class="m-op-x" data-cancelar="${escapar(f.id)}" title="Marcar como cancelada">${icono('x', 14)}</button>` : ''}
       </div>`).join('')}</div>` : `<div class="m-op-vacio">${icono('receipt', 28)}<p>Todavía no se ha subido ninguna factura. Usa “Subir XML de CONTPAQi”.</p></div>`;
   }
 }
@@ -505,6 +507,7 @@ function confirmarFactura(cfdi) {
         <div><small>Total</small><strong>${pesos(cfdi.total)}</strong><small>Subtotal ${pesos(cfdi.subtotal)} + IVA ${pesos(cfdi.iva)}</small></div>
       </div>
       <details class="m-op-conceptos"><summary>${cfdi.conceptos.length} ${cfdi.conceptos.length === 1 ? 'concepto' : 'conceptos'} en la factura</summary>${cfdi.conceptos.map(c => `<div>${escapar(c.descripcion)} <b>${pesos(c.importe)}</b></div>`).join('')}</details>
+      <div class="m-cf-ia" id="cf-ia">${icono('sparkles', 14)} <span>Revisando con IA que las notas sean las correctas…</span></div>
       <h4 class="m-cf-titulo">${res.elegidas.length ? 'Notas que cubre esta factura' : 'Notas de esta factura'}</h4>
       <div class="m-op-ligar m-cf-lista" id="cf-encontradas"></div>
       <details class="m-cf-otras" id="cf-otras"><summary>Otras posibles (<span id="cf-otras-n">0</span>)</summary><div class="m-op-ligar m-cf-lista" id="cf-otras-lista"></div></details>
@@ -576,6 +579,25 @@ function confirmarFactura(cfdi) {
       pintarListas();
     });
     pintarListas();
+    // Paso delicado: la IA revisa lo que eligió el emparejador; su sugerencia solo se ofrece si cuadra con el total (servidor)
+    if (window.mayaApi) {
+      window.mayaApi('factura_revisar', { cfdi }).then(r => {
+        const box = $('#cf-ia');
+        if (!box) return;
+        const ia = r.ia;
+        if (!ia || ia.error) { box.className = 'm-cf-ia neutra'; box.innerHTML = `${icono('info', 14)} <span>${escapar((ia && ia.error) || 'La revisión con IA no está disponible; revisa las notas a mano.')}</span>`; return; }
+        const titulo = { correcta: 'La IA revisó: las notas son las correctas.', ajustar: ia.ajusto ? 'La IA sugiere otras notas que sí cuadran con el total.' : 'La IA sugiere otras notas, pero no cuadran: revisa.', dudosa: 'La IA tiene dudas: revisa antes de guardar.', sin_nota: 'La IA no encontró nota para esta factura (orden directa).' }[ia.veredicto] || 'Revisión de IA';
+        box.className = 'm-cf-ia ' + (ia.veredicto === 'correcta' ? 'ok' : ia.ajusto ? 'ajuste' : 'duda');
+        box.innerHTML = `<div>${icono('sparkles', 14)} <strong>${escapar(titulo)}</strong></div>${ia.explicacion ? `<p>${escapar(ia.explicacion)}</p>` : ''}${(ia.alertas || []).map(a => `<p class="alerta">${icono('triangle-alert', 12)} ${escapar(a)}</p>`).join('')}${ia.ajusto ? `<button type="button" class="btn btn-primary btn-sm" data-usar-ia>Usar las notas que sugiere la IA</button>` : ''}`;
+        const usar = box.querySelector('[data-usar-ia]');
+        if (usar) usar.addEventListener('click', () => {
+          marcadas.clear();
+          r.notas.forEach(k => { marcadas.add(k); if (!elegidas.has(k) && porClave.get(k)) extras.set(k, porClave.get(k)); });
+          pintarListas();
+          usar.disabled = true; usar.textContent = 'Listo: se marcaron las de la IA';
+        });
+      }).catch(e => { const box = $('#cf-ia'); if (box) { box.className = 'm-cf-ia neutra'; box.innerHTML = `${icono('info', 14)} <span>No se pudo revisar con IA (${escapar(e.message)}). Revisa las notas a mano.</span>`; } });
+    }
   });
 }
 
@@ -628,7 +650,7 @@ function pintarCobranza() {
       const c = clientePorNombreORfc(cli, fs[0].receptorRfc);
       return `<section class="m-op-grupo m-vidrio">
         <header><strong>${escapar(cli)}</strong><span>${pesos(fs.reduce((s, f) => s + Number(f.saldo), 0))}</span>
-          ${c && rol() === 'admin' ? `<button type="button" class="m-op-link" data-dias="${escapar(c.id)}">${c.diasCredito != null ? escapar(c.diasCredito) + ' días de crédito' : 'Poner días de crédito'}</button>` : ''}</header>
+          ${c && factura() ? `<button type="button" class="m-op-link" data-dias="${escapar(c.id)}">${c.diasCredito != null ? escapar(c.diasCredito) + ' días de crédito' : 'Poner días de crédito'}</button>` : ''}</header>
         ${fs.sort((a, b) => a.vencimiento - b.vencimiento).map(f => {
           const dias = Math.round((inicioDia(f.vencimiento) - h) / DIA);
           const estado = dias < 0 ? `<span class="m-op-etapa e-vencida">Vencida hace ${-dias} d</span>` : dias === 0 ? '<span class="m-op-etapa e-hoy">Vence hoy</span>' : `<span class="m-op-etapa e-facturada">Vence en ${dias} d</span>`;
@@ -636,7 +658,7 @@ function pintarCobranza() {
             <span class="m-op-folio">${escapar(f.serieFolio)}</span>
             <span class="m-op-info"><strong>Saldo ${pesos(f.saldo)} de ${pesos(f.total)}</strong><small>${fechaCorta(ms(f.fecha))} · vence ${fechaCorta(f.vencimiento)}${(f.pagos || []).length ? ' · ' + f.pagos.length + ' pago(s)' : ''}</small></span>
             ${estado}
-            <button type="button" class="btn btn-secondary btn-sm" data-pagar="${escapar(f.id)}">${icono('wallet', 14)}<span>Registrar pago</span></button>
+            ${factura() ? `<button type="button" class="btn btn-secondary btn-sm" data-pagar="${escapar(f.id)}">${icono('wallet', 14)}<span>Registrar pago</span></button>` : ''}
           </div>`;
         }).join('')}
       </section>`;

@@ -13,7 +13,7 @@ async function armar(ahora = Date.now()) {
   const deAyer = datos.filtrar(registros, { tipo: 'todas', desde: ayer, hasta: ayer });
   const r = datos.resumen(deAyer);
   const porCliente = {};
-  deAyer.forEach(x => { porCliente[x.cliente || 'Sin cliente'] = (porCliente[x.cliente || 'Sin cliente'] || 0) + x.total; });
+  deAyer.forEach(x => { porCliente[x.cliente || 'Sin cliente'] = (porCliente[x.cliente || 'Sin cliente'] || 0) + x.total / 100; }); // los registros van en centavos
   const top = Object.entries(porCliente).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const vencidas = cobro.detalle.filter(f => f.dias_vencida > 0);
   const hoy = diaCDMX(ahora);
@@ -27,7 +27,7 @@ async function armar(ahora = Date.now()) {
 }
 
 function texto(rep, persona) {
-  const verVentas = persona.rol === 'admin';
+  const verVentas = ['admin', 'facturacion'].includes(persona.rol); // facturación ve todo como Dirección
   const lineas = ['Buenos días, ' + String(persona.nombre || '').split(' ')[0] + '. Así cerró el ' + rep.fecha + ':'];
   if (verVentas) {
     lineas.push('', '🧾 *Ventas:* ' + (rep.ventas.notas ? rep.ventas.notas + (rep.ventas.notas === 1 ? ' nota' : ' notas') + ' por ' + pesos(rep.ventas.total) : 'no hubo notas'));

@@ -49,6 +49,15 @@ module.exports = async (req, res) => {
   if (req.method === 'POST' && d.evento) {
     const usuario = await acceso.porToken(req);
     if (!usuario) return res.status(401).json({ ok: false, error: 'Inicia sesión de nuevo' });
+    // Facturación en el gestor: revisión con IA de las notas que eligió el emparejador (no guarda nada)
+    if (d.evento === 'factura_revisar') {
+      const facturacion = require('../mcp/facturacion');
+      if (!facturacion.puedeFacturar(usuario)) return res.status(403).json({ ok: false, error: 'Solo facturación y dirección' });
+      try {
+        const p = await facturacion.proponer(Object.assign({}, d.cfdi || {}, { textoCompleto: String((d.cfdi && d.cfdi.textoCompleto) || '').slice(0, 60000) }), { ia: true });
+        return res.status(200).json({ ok: true, ia: p.ia, notas: p.elegidas.map(e => e.clave), suma: p.suma, cuadra: p.cuadra });
+      } catch (e) { return res.status(400).json({ ok: false, error: e.message }); }
+    }
     // Mercado Libre: importar ahora las ventas pagadas (botón del módulo Mercado Libre)
     if (d.evento === 'ml_importar') {
       if (!['admin', 'almacen'].includes(usuario.rol)) return res.status(403).json({ ok: false, error: 'Solo dirección o almacén importan ventas de ML' });

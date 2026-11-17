@@ -41,6 +41,9 @@ async function llamarApi(evento, datos) {
   return j;
 }
 
+// Para otras pantallas que necesitan /api/avisos con la sesión (p. ej. la revisión con IA de una factura)
+window.mayaApi = llamarApi;
+
 // ── Avisos al momento ──
 window.mayaAvisar = async function (evento, datos) {
   try { await llamarApi(evento, datos); } catch (e) { console.warn('avisos:', e.message); }

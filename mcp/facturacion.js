@@ -14,7 +14,7 @@ const permisos = () => require('./herramientas').PERMISOS;
 const DIA = 86400000;
 const pesos = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const norm = datos.norm;
-const puedeFacturar = u => !!u && (permisos().facturas || []).includes(u.rol);
+const puedeFacturar = u => !!u && require('../public/diseno/roles.js').puedeAccion(u.rol, 'facturar');
 const nombreDe = u => (u && (u.nombre || u.email)) || 'Pepito';
 // Medianoche de la Ciudad de México (UTC−6 todo el año) del día de esa fecha
 const inicioDiaCDMX = ms => { const d = new Date(ms - 6 * 3600000); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + 6 * 3600000; };
@@ -208,7 +208,7 @@ function clientePor(clientes, nombre, rfc) {
 }
 
 // Qué notas cubre la factura (lo que el gestor muestra antes de guardar)
-async function proponer(cfdiCrudo) {
+async function proponer(cfdiCrudo, opciones = {}) {
   const cfdi = normalizarCfdi(cfdiCrudo);
   const { emparejar } = await emparejador();
   const { lista, facturas, clientes } = await pendientes();
@@ -220,12 +220,30 @@ async function proponer(cfdiCrudo) {
   const res = emparejar(cfdi, lista.map(r => ({ clave: r.clave, folio: r.folio, cliente: r.cliente, fecha: r.fecha, total: r.total, siniestro: r.siniestro, piezas: r.piezas, items: r.items })), esDelCliente);
   const vista = e => { const r = porClave.get(e.clave); return { clave: e.clave, folio: r.folio, cliente: r.cliente, piezas: r.piezas, siniestro: r.siniestro, total: r.total, razones: (e.razones || []).map(x => x.texto) }; };
   const { textoCompleto, ...limpio } = cfdi;
-  return {
+  const p = {
     cfdi: limpio, cliente: cliente ? { id: cliente.id, nombre: nombreCli, diasCredito: Number(cliente.diasCredito) >= 0 ? Number(cliente.diasCredito) : 0 } : null,
     repetida: repetida ? { id: repetida.id, serieFolio: repetida.serieFolio } : null,
     elegidas: res.elegidas.map(vista), otras: res.otras.map(vista), suma: res.suma, cuadra: res.cuadra,
-    pue: cfdi.metodoPago === 'PUE'
+    pue: cfdi.metodoPago === 'PUE', ia: null
   };
+  // Paso delicado: Claude revisa lo que eligió el emparejador. Lo que sugiere solo se usa si su suma cuadra (revision.js).
+  if (opciones.ia && !repetida) {
+    const candidatas = res.elegidas.concat(res.otras).map(e => e.clave)
+      .concat(lista.filter(r => esDelCliente({ clave: r.clave })).map(r => r.clave))
+      .filter((k, i, a) => a.indexOf(k) === i).slice(0, 40)
+      .map(k => { const r = porClave.get(k); return { clave: k, folio: r.folio, cliente: r.cliente, siniestro: r.siniestro, piezas: r.piezas, total: r.total, fecha: r.fecha }; });
+    const rev = await require('./revision').revisarFactura(cfdi, p, candidatas, opciones);
+    if (rev.disponible) {
+      p.ia = { veredicto: rev.veredicto || null, explicacion: rev.explicacion || '', alertas: rev.alertas || [], error: rev.error || null, ajusto: rev.usar === 'ia' };
+      if (rev.usar === 'ia') {
+        const anteriores = p.elegidas.map(e => e.folio);
+        p.elegidas = rev.notas.map(k => vista({ clave: k, razones: [{ texto: 'Elegida por la revisión de IA' }] }));
+        p.suma = rev.suma; p.cuadra = rev.cuadra;
+        p.ia.antes = anteriores;
+      }
+    }
+  }
+  return p;
 }
 
 // Texto de la propuesta para WhatsApp (sin markdown pesado)
@@ -241,6 +259,11 @@ function textoPropuesta(p) {
   } else {
     l.push('', 'No encontré notas con ese siniestro, pieza o importe.', 'Si dices SÍ, la registro como *venta directa* (sin nota previa, como las órdenes de FLEC) ya facturada.');
   }
+  if (p.ia && !p.ia.error) {
+    const v = { correcta: '✅ Revisión de IA: la propuesta es correcta.', ajustar: '🤖 Revisión de IA: ' + (p.ia.ajusto ? 'cambié las notas (antes: ' + (p.ia.antes || []).join(', ') + ').' : 'sugiere otras notas, pero no cuadran; revisa.'), dudosa: '⚠️ Revisión de IA: hay dudas, revisa antes de decir SÍ.', sin_nota: '🤖 Revisión de IA: no corresponde a ninguna nota (orden directa).' }[p.ia.veredicto] || '';
+    l.push('', v + (p.ia.explicacion ? ' ' + p.ia.explicacion : ''));
+    p.ia.alertas.slice(0, 3).forEach(a => l.push('⚠️ ' + a));
+  } else if (p.ia && p.ia.error) l.push('', 'ℹ️ ' + p.ia.error);
   if (p.otras.length) l.push('Otras posibles: ' + p.otras.slice(0, 3).map(o => o.folio).join(', ') + '. Si va con otra nota, dímelo: "liga la factura a la NE-245".');
   l.push('', 'Crédito: ' + (p.cliente ? p.cliente.diasCredito : 0) + ' días' + (p.pue ? ' · se marca pagada (PUE)' : ''));
   return l.join('\n');
@@ -374,8 +397,8 @@ async function llamar(usuario, nombre, a) {
   try {
     if (!puedeFacturar(usuario)) return { error: true, texto: 'Tu rol no puede facturar.' };
     if (nombre === 'emparejar_factura') {
-      const p = await proponer(a.cfdi || {});
-      return { error: false, texto: JSON.stringify({ factura: p.cfdi.serieFolio, cliente: p.cliente, ya_subida: p.repetida, notas_que_cubre: p.elegidas, otras_posibles: p.otras, suma: p.suma, cuadra: p.cuadra, pue: p.pue,
+      const p = await proponer(a.cfdi || {}, { ia: true });
+      return { error: false, texto: JSON.stringify({ factura: p.cfdi.serieFolio, cliente: p.cliente, ya_subida: p.repetida, notas_que_cubre: p.elegidas, otras_posibles: p.otras, suma: p.suma, cuadra: p.cuadra, pue: p.pue, revision_ia: p.ia,
         siguiente: p.repetida ? 'No la vuelvas a guardar.' : 'Si la persona está de acuerdo, llama ligar_factura con estas claves en notas' + (p.elegidas.length ? '.' : ' o con venta_directa: true si es orden directa.') }) };
     }
     return { error: false, texto: JSON.stringify(await ligar(usuario, a || {})) };

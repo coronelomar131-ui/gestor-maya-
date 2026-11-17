@@ -29,13 +29,17 @@ Todo lo de abajo ya está programado y publicado en gestor-maya.vercel.app. Solo
 ## Roles del equipo (al dar accesos)
 Se dan en **Usuarios → Nuevo usuario**; al elegir el rol aparece qué puede hacer. La definición vive en `public/diseno/roles.js` y la usan la pantalla, el menú y Pepito.
 
-| Rol | Para quién | Abre | No ve |
+**Todos** ven Ventas, Notas, Seguimiento, Buscar ventas, Documentos, Facturación y Cobranza (el seguimiento completo de cada venta hasta el pago). Subir facturas, registrar pagos y cancelarlas es solo de Facturación y Dirección; los demás las ven en "Solo consulta".
+
+| Rol | Para quién | Además de lo de todos | No ve |
 | --- | --- | --- | --- |
-| Dirección (admin) | Omar / jefe | Todo, incluidos Finanzas, Usuarios y Configuración; único que borra | — |
-| Vendedor | Ventas | Resumen, Pepito, Oficina, Seguimiento, Notas, Ventas, Cotizaciones, Clientes, Buscar ventas, Documentos, Entregas, Envíos, Visitas; existencias por Pepito | Facturación, Cobranza, Inventario (edición), Compras, Finanzas, Reportes |
-| Almacén | Almacén | Resumen, Pepito, Oficina, Seguimiento, Notas, Buscar ventas, Inventario, Compras, Proveedores, Mercado Libre, Entregas, Envíos, Visitas | Ventas, Clientes, Facturación, Cobranza, Finanzas, Reportes |
-| Entregas | Chofer / mensajería (Israel) | Seguimiento (entra aquí), Entregas, Envíos, Oficina, Pepito | Resumen, ventas, precios, facturación |
-| Facturación y cobranza | Geraldine | Resumen, Pepito, Oficina, Seguimiento, Facturación, Cobranza, Notas, Ventas, Clientes, Buscar ventas, Documentos, Reportes | Inventario, Compras, Finanzas, Configuración |
+| Dirección (admin) | Omar / jefe | Todo, incluidos Usuarios y Configuración; único que borra | — |
+| Facturación y cobranza | Geraldine | Todo igual que Dirección: inventario, compras, ML, envíos, reportes, finanzas; factura y cobra | Usuarios, Configuración, borrar |
+| Vendedor | Ventas | Resumen, Cotizaciones, Clientes, Entregas, Envíos, Visitas; existencias por Pepito | Inventario (edición), Compras, Finanzas |
+| Almacén | Almacén | Resumen, Inventario, Compras, Proveedores, Mercado Libre, Entregas, Envíos, Visitas | Clientes, Finanzas |
+| Entregas | Chofer / mensajería (Israel) | Entra a Seguimiento; Entregas, Envíos | Resumen, Finanzas |
+
+**Pepito fuera de rol**: si alguien le pide a Pepito algo que su rol no tiene, Pepito lo hace (consultas y guardados con su SÍ), menos finanzas, accesos y borrar. Cada uso queda en `config/pepito_fuera_rol`, a Dirección le llega aviso de cada guardado y el resumen de la mañana dice cuántos hubo. Se apaga poniendo `fueraDeRol: false` en `config/pepito`.
 
 **Importante de seguridad**: los roles controlan lo que cada quien ve en el gestor y lo que Pepito le contesta, pero la base de datos (Firestore) todavía acepta lecturas de cualquier cuenta con sesión. Antes de dar accesos:
 - Firebase → Authentication → Settings → **desactivar el registro de cuentas nuevas** (que solo el admin cree usuarios desde el gestor).
