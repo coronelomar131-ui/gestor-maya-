@@ -85,14 +85,15 @@ function instrucciones(usuario) {
       ? 'En notas, ventas y cotizaciones no pongas vendedor a menos que la persona diga quién vendió; no uses al usuario conectado como vendedor.'
       : 'Cada integrante registra SUS propias ventas: en notas y ventas el vendedor es siempre quien te habla (se pone solo). Nadie puede registrar una venta que no hizo; si te piden ponerla a nombre de otro, explica que esa persona la registre con su usuario.',
     'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente. Si el cliente es "sin efectos fiscales" (no quiere factura a su nombre), usa sin_efectos_fiscales: true y solo pide su nombre (y teléfono o correo si los dan); no le pidas RFC. Si no, estos datos son obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
-      '2) Al registrarlo, pregunta si quiere generar una nota de venta. 3) Para la nota pide productos, precio y forma de pago (contado o crédito; crédito solo si el cliente lo tiene autorizado). 4) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
-    'Registro de venta (obligatorio en todas las ventas, se usa para las comisiones). Pide, todo junto en un solo mensaje, lo que falte de: cliente, contacto, siniestro, pieza con su descripción completa, precio al que se vendió (lo que paga el cliente, ya con IVA), proveedor, impuesto (p. ej. "16% Masiva") y costo total. ' +
+      '2) Si en el pedido también viene la venta, después del cliente sigue con la venta con los datos que ya dieron (no preguntes si quiere nota: ya la pidió). Si solo pidieron el cliente, no ofrezcas la nota. 3) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
+    'Registro de venta. Obligatorio: cliente, pieza, precio al que se vendió (lo que paga el cliente, ya con IVA), proveedor y costo total. Si falta alguno de esos, pídelo en una sola pregunta corta. ' +
+      'Opcional (úsalo solo si te lo dan, NUNCA lo pidas): siniestro, contacto, impuesto (p. ej. "16% Masiva"), desglose del costo. Forma de pago: contado, salvo que digan crédito. ' +
       'El precio que te dan ya trae IVA: no le sumes IVA; el sistema lo desglosa. Solo si la persona dice que su precio es "más IVA" usa precio_con_iva: false. ' +
-      'El costo total es la suma de pieza + guía + paquetería + logística: pide cada parte, súmalas tú, ponlo en costo y el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No inventes costos: si no saben uno, pregúntalo. ' +
-      'Antes de guardar muestra el resumen con venta con IVA (y su IVA desglosado), costo total, utilidad (venta con IVA − costo total) y % de utilidad (utilidad / venta × 100), y espera el SÍ. Si en el resumen te corrigen algo, arma la propuesta otra vez con el dato bueno. Al guardar da el folio, la venta, el costo, la utilidad y su %. ' +
+      'El costo total incluye pieza + guía + paquetería + logística. Si te dan un solo número, ese es el costo total. Si te dan las partes, súmalas tú y pon el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No pidas el desglose. ' +
+      'El resumen antes del SÍ va compacto: cliente, una línea por pieza (pieza · precio · proveedor · costo) y una línea "Venta $X · Costo $Y · Utilidad $Z (N%)". Si te corrigen algo, vuelve a proponer con el dato bueno. Al guardar, una línea con el folio y la utilidad. ' +
       'Si la utilidad sale negativa o muy baja (menos de 10%), avísalo antes de guardar. Para comisiones o "cuánto dejó" usa utilidad_comisiones.',
     'Pagos de clientes: si te mandan la foto o el PDF de una transferencia, lee monto, fecha, referencia y quién pagó; busca su factura con cobranza y propón registrar_pago. Si el monto cubre varias facturas, propón una por una y dilo. Nunca inventes ni redondees el monto.',
-    'Cuando un cliente acepta una cotización ("ya se vendió la COT-45"), no captures de nuevo: usa convertir_cotizacion pidiendo proveedor y costo de cada pieza y la forma de pago.',
+    'Cuando un cliente acepta una cotización ("ya se vendió la COT-45"), no captures de nuevo: usa convertir_cotizacion pidiendo solo el proveedor y el costo de cada pieza que falten (contado por omisión).',
     'Para cotizar o saber "en cuánto nos salió" una pieza usa historial_costos. Para comisiones usa comisiones (la utilidad es la base); el porcentaje lo define Dirección.',
     'Si piden el estado de cuenta de un cliente usa estado_cuenta; trae un texto listo para mandarle. Por WhatsApp puedes mandarlo en PDF con mandar_pdf tipo estado_cuenta.',
     'Si alguien se equivocó en una venta ya guardada ("me equivoqué", "era 4,000", "el costo era otro", "quita la facia"), no hagas otra venta: busca la venta con buscar_ventas, di cómo está, y usa corregir_venta solo con lo que cambia; muestra antes → después (total y utilidad) y espera el SÍ. ' +
@@ -407,7 +408,7 @@ function crearServidor(usuario) {
         cliente: z.string().min(1),
         fecha: FECHA.optional().describe('Por omisión hoy'),
         vendedor: z.string().optional().describe('Quien vendió. Si no eres Dirección, siempre es quien te habla (se pone solo)'),
-        forma_pago: z.enum(['contado', 'credito']).describe('Contado, o crédito solo si el cliente tiene crédito autorizado; pregúntalo si no lo dicen'),
+        forma_pago: z.enum(['contado', 'credito']).default('contado').describe('Contado por omisión; crédito solo si lo dicen y el cliente tiene crédito autorizado. No lo preguntes.'),
         estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
         incluye_datos_fiscales: z.boolean().default(false),
         contacto: z.string().optional().describe('Persona de contacto del cliente (quien pidió la pieza), si la dicen'),
@@ -601,10 +602,10 @@ function crearServidor(usuario) {
     servidor.registerTool('convertir_cotizacion', {
       title: 'Convertir cotización en venta',
       description: 'Cuando el cliente acepta una cotización, crea la nota de venta con las mismas piezas, siniestros y precios (no hay que capturar de nuevo) y marca la cotización como vendida. ' +
-        'Pide el proveedor y el costo total (pieza + guía + paquetería + logística) de cada pieza y la forma de pago. Muestra el resumen con utilidad y confirma antes de usarla.',
+        'Pide solo lo que falte de proveedor y costo total de cada pieza (contado por omisión). Muestra el resumen compacto con utilidad y confirma antes de usarla.',
       inputSchema: {
         folio: z.string().optional().describe('Folio de la cotización, ej. COT-45 o 45'), id: opcional,
-        forma_pago: z.enum(['contado', 'credito']),
+        forma_pago: z.enum(['contado', 'credito']).default('contado'),
         costos: z.array(z.object({
           numero: z.number().int().min(1).describe('Número de pieza en la cotización (1 = la primera)'),
           proveedor: z.string().optional(), costo: z.number().min(0).optional().describe('Costo total de esa pieza'),
