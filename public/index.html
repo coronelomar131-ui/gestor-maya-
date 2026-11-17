@@ -2028,7 +2028,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <!-- Modal Venta -->
 <div class="modal-overlay" id="modal-venta">
   <div class="modal" style="max-width:900px;max-height:90vh;overflow-y:auto">
-    <div class="modal-head"><h3>💰 Nueva Venta (Maya Autopart)</h3><button class="modal-close" onclick="closeModal('modal-venta')">×</button></div>
+    <div class="modal-head"><h3 id="v-titulo">💰 Nueva Venta (Maya Autopart)</h3><button class="modal-close" onclick="closeModal('modal-venta')">×</button></div>
     <div class="modal-body">
       <!-- HEADER -->
       <div class="grid-2" style="gap:15px;margin-bottom:20px">
@@ -2070,14 +2070,18 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
       <!-- TABLA MULTI-LÍNEA -->
       <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #1E4F7A">
-        <h4 style="margin:0 0 15px 0;color:#1E4F7A">📦 Piezas</h4>
+        <h4 style="margin:0 0 8px 0;color:#1E4F7A">📦 Piezas</h4>
+        <label style="display:flex;align-items:center;gap:8px;margin:0 0 12px 0;color:#1E4F7A;font-size:0.9em;cursor:pointer">
+          <input type="checkbox" id="v-precio-con-iva" checked onchange="recalcularTotales()">
+          El precio ya incluye IVA (es lo que paga el cliente). Quítala si el precio es "más IVA".
+        </label>
         <div style="overflow-x:auto;margin-bottom:10px">
           <table style="width:100%;border-collapse:collapse;font-size:0.9em">
             <thead>
               <tr style="background:#1E4F7A;color:white">
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4">Pedido (Descripción)</th>
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4"># Siniestro</th>
-                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Precio ($)</th>
+                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Precio venta ($)</th>
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:80px">% IVA</th>
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Ajuste ($)</th>
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4;width:130px">Proveedor</th>
@@ -2128,7 +2132,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-venta')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveVentaMultiLinea()">Guardar Venta</button>
+      <button class="btn btn-primary" id="v-guardar" onclick="saveVentaMultiLinea()">Guardar Venta</button>
     </div>
   </div>
 </div>
@@ -2501,6 +2505,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-detalles-venta')">Cerrar</button>
+      <button class="btn btn-secondary" onclick="corregirVentaGestor(document.getElementById('detalles-venta-id').value)" title="Por si alguien se equivocó: precio, costo, piezas, cliente…">✏️ Corregir</button>
       <button class="btn btn-primary" onclick="descargarNotaPorId(document.getElementById('detalles-venta-id').value)">⬇️ Descargar Nota PDF</button>
     </div>
   </div>
@@ -3244,6 +3249,11 @@ window.toggleFactura = function() {
 // ═══════════════════════════════════════════════════════════
 
 window.inicializarFormularioVenta = function() {
+  window.ventaEnEdicion = null;
+  const tit = document.getElementById('v-titulo'), btn = document.getElementById('v-guardar'), conIva = document.getElementById('v-precio-con-iva');
+  if (tit) tit.textContent = '💰 Nueva Venta (Maya Autopart)';
+  if (btn) btn.textContent = 'Guardar Venta';
+  if (conIva) conIva.checked = true;
   // Establecer fecha a hoy
   const hoy = new Date().toISOString().split('T')[0];
   document.getElementById('v-fecha').value = hoy;
@@ -3357,40 +3367,42 @@ window.mayaSumaCosto = function(t) {
   return { total: parseFloat(partes.reduce((a, b) => a + b, 0).toFixed(2)), desglose: partes.length > 1 ? txt : '' };
 };
 
+// Una fila de pieza. Con "el precio ya incluye IVA" (lo normal) el precio es lo que paga el cliente y el IVA se saca de ahí:
+// 3,900 con 16 % = 3,362.07 + 537.93. Sin la casilla, el IVA se suma al precio.
+window.mayaPartidaDeFila = function(row, conIva) {
+  const r2 = n => parseFloat(Number(n).toFixed(2));
+  const capturado = parseFloat(row.querySelector('.v-item-precio')?.value || 0) || 0;
+  const pctLeido = parseFloat(row.querySelector('.v-item-iva-porcentaje')?.value);
+  const pct = isNaN(pctLeido) ? 16 : pctLeido;
+  const precio = conIva ? r2(capturado / (1 + pct / 100)) : capturado;
+  const iva = conIva ? r2(capturado - precio) : r2((capturado * pct) / 100);
+  return { precio, iva, pct, ajuste: parseFloat(row.querySelector('.v-item-ajuste')?.value || 0) || 0 };
+};
+window.mayaPrecioConIva = () => document.getElementById('v-precio-con-iva')?.checked !== false;
+
 window.recalcularTotales = function() {
+  const conIva = window.mayaPrecioConIva();
   let subtotal = 0, ivaTotal = 0, ajusteTotal = 0, costoTotal = 0, conCosto = 0;
-  const rows = document.querySelectorAll('#v-items-body tr');
-  rows.forEach(row => {
+  document.querySelectorAll('#v-items-body tr').forEach(row => {
+    const p = window.mayaPartidaDeFila(row, conIva);
+    subtotal += p.precio; ivaTotal += p.iva; ajusteTotal += p.ajuste;
     const c = window.mayaSumaCosto(row.querySelector('.v-item-costo')?.value);
     if (c) { costoTotal += c.total; conCosto++; }
   });
-
-  rows.forEach(row => {
-    const precio = parseFloat(row.querySelector('.v-item-precio')?.value || 0);
-    // Lee el IVA calculado del hidden field, o del campo legacy si existe
-    const iva = parseFloat(row.querySelector('.v-item-iva-valor')?.value || row.querySelector('.v-item-iva')?.value || 0);
-    const ajuste = parseFloat(row.querySelector('.v-item-ajuste')?.value || 0);
-
-    subtotal += precio;
-    ivaTotal += iva;
-    ajusteTotal += ajuste;
-  });
-
+  const $ = n => '$' + n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const total = subtotal + ivaTotal - ajusteTotal;
-
-  document.getElementById('v-subtotal').textContent = '$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
-  document.getElementById('v-iva-total').textContent = '$' + ivaTotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
-  document.getElementById('v-ajuste-total').textContent = '-$' + ajusteTotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
-  document.getElementById('v-total-final').textContent = '$' + total.toLocaleString('es-MX', {minimumFractionDigits: 2});
-  // Utilidad = precio de venta (sin IVA, menos ajustes) − costo total; % = utilidad / precio de venta × 100
-  const ventaNeta = subtotal - ajusteTotal;
+  document.getElementById('v-subtotal').textContent = $(subtotal);
+  document.getElementById('v-iva-total').textContent = $(ivaTotal);
+  document.getElementById('v-ajuste-total').textContent = '-' + $(ajusteTotal);
+  document.getElementById('v-total-final').textContent = $(total);
+  // Utilidad = lo que paga el cliente (con IVA, menos ajustes) − costo total; % = utilidad / ese precio × 100
   const elC = document.getElementById('v-costo-total'), elU = document.getElementById('v-utilidad');
-  if (elC) elC.textContent = conCosto ? '$' + costoTotal.toLocaleString('es-MX', {minimumFractionDigits: 2}) : '—';
+  if (elC) elC.textContent = conCosto ? $(costoTotal) : '—';
   if (elU) {
     if (!conCosto) { elU.textContent = '—'; elU.style.color = '#666'; }
     else {
-      const u = ventaNeta - costoTotal, pct = ventaNeta > 0 ? (u / ventaNeta) * 100 : 0;
-      elU.textContent = '$' + u.toLocaleString('es-MX', {minimumFractionDigits: 2}) + ' (' + pct.toFixed(2) + '%)';
+      const u = total - costoTotal, pct = total > 0 ? (u / total) * 100 : 0;
+      elU.textContent = $(u) + ' (' + pct.toFixed(2) + '%)';
       elU.style.color = pct < 10 ? '#d32f2f' : '#1b8a3c';
     }
   }
@@ -3401,53 +3413,134 @@ window.abrirModalNuevoCliente = function() {
   openModal('modal-cliente');
 };
 
+// ── Corregir una venta (por si alguien se equivocó): el mismo formulario, ya lleno ──
+const CAMPOS_ANTES_VENTA = ['items', 'siniestros', 'subtotal', 'ivaTotal', 'ajusteTotal', 'total', 'clienteId', 'clienteNombre', 'fecha', 'vendedor', 'estatus',
+  'incluyeDatosFiscales', 'contacto', 'impuestoNota', 'formaPago', 'diasCredito', 'precioConIva', 'costoTotal', 'utilidad', 'utilidadPct', 'utilidadSinIva', 'costoCompleto'];
+const fotoVenta = v => CAMPOS_ANTES_VENTA.reduce((o, k) => { if (v[k] !== undefined) o[k] = v[k]; return o; }, {});
+const miNombre = () => (document.getElementById('user-name-display')?.textContent || auth.currentUser?.displayName || auth.currentUser?.email || 'Usuario').trim();
+const folioVenta = v => 'NV #' + (v.notaId || v.notaNumero || '');
+// Día de la venta (AAAA-MM-DD): las del gestor se guardan a medianoche UTC (ese día); las de Pepito, a mediodía local
+const diaVenta = ms => {
+  const d = new Date(ms);
+  if (isNaN(d)) return '';
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) return d.toISOString().slice(0, 10);
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+};
+window.mayaDiaVenta = diaVenta;
+// Dirección y Facturación corrigen cualquiera; los demás, sus ventas sin factura. Devuelve el motivo si no se puede.
+window.mayaNoCorregible = function(v) {
+  if (/^cancel/i.test(v.estatus || '') || v.estado === 'cancelada') return folioVenta(v) + ' está cancelada; no se corrige.';
+  const rol = window.currentRole || 'vendedor';
+  if (rol === 'admin' || rol === 'facturacion') return '';
+  const primera = s => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\s+/)[0];
+  const mia = (v.createdBy && v.createdBy === auth.currentUser?.uid) || (v.vendedor && primera(v.vendedor) === primera(miNombre()));
+  if (!mia) return 'Solo puedes corregir tus propias ventas. ' + folioVenta(v) + ' es de ' + (v.vendedor || 'otra persona') + '; pídeselo a Dirección o a Facturación.';
+  if (v.tieneFactura || v.facturaId) return folioVenta(v) + ' ya está facturada: pídele la corrección a Facturación.';
+  return '';
+};
+
+window.corregirVentaGestor = async function(id) {
+  try {
+    const snap = await window.getDoc(window.doc(window.db, 'ventas', id));
+    if (!snap.exists()) return window.toast('❌ Venta no encontrada', 'error');
+    const v = snap.data();
+    const no = window.mayaNoCorregible(v);
+    if (no) return window.toast(no, 'error');
+    window.closeModal('modal-detalles-venta');
+    window.openModal('modal-venta');
+    window.inicializarFormularioVenta();
+    window.ventaEnEdicion = { id, antes: v };
+    document.getElementById('v-titulo').textContent = '✏️ Corregir venta ' + folioVenta(v);
+    document.getElementById('v-guardar').textContent = 'Guardar corrección';
+    if (v.fecha) document.getElementById('v-fecha').value = diaVenta(v.fecha);
+    document.getElementById('v-cliente').value = (v.clienteNombre || '') + (v.clienteId ? '|' + v.clienteId : '');
+    const sel = document.getElementById('v-vendedor');
+    if (v.vendedor && ![...sel.options].some(o => o.value === v.vendedor)) sel.add(new Option(v.vendedor, v.vendedor));
+    sel.value = v.vendedor || '';
+    const est = document.getElementById('v-estatus-inicial');
+    if (v.estatus && [...est.options].some(o => o.value === v.estatus)) est.value = v.estatus;
+    document.getElementById('v-incluyeDatosFiscales').checked = !!v.incluyeDatosFiscales;
+    document.getElementById('v-precio-con-iva').checked = true; // se muestra lo que pagó el cliente
+    document.getElementById('v-items-body').innerHTML = '';
+    (v.items || []).forEach(it => {
+      window.agregarFilaPieza();
+      const row = document.querySelector('#v-items-body tr:last-child');
+      const pct = it.ivaPorcentaje != null ? it.ivaPorcentaje : (it.precio ? Math.round((it.iva / it.precio) * 100) : 16);
+      row.querySelector('.v-item-pedido').value = it.pedido || '';
+      row.querySelector('.v-item-siniestro').value = it.numSiniestro || '';
+      row.querySelector('.v-item-precio').value = parseFloat(((Number(it.precio) || 0) + (Number(it.iva) || 0)).toFixed(2));
+      row.querySelector('.v-item-iva-porcentaje').value = pct;
+      row.querySelector('.v-item-ajuste').value = Number(it.ajuste) || 0;
+      row.querySelector('.v-item-proveedor').value = it.proveedor || '';
+      row.querySelector('.v-item-costo').value = it.costoDesglose || (it.costo != null ? it.costo : '');
+    });
+    if (!(v.items || []).length) window.agregarFilaPieza();
+    window.recalcularTotales();
+  } catch (e) {
+    console.error('corregir venta:', e);
+    window.toast('❌ Error: ' + e.message, 'error');
+  }
+};
+
+// Deshacer la última corrección: la venta regresa a como estaba (y eso también queda registrado)
+window.deshacerCorreccionVenta = async function(id) {
+  try {
+    const snap = await window.getDoc(window.doc(window.db, 'ventas', id));
+    if (!snap.exists()) return;
+    const v = snap.data();
+    const no = window.mayaNoCorregible(v);
+    if (no) return window.toast(no, 'error');
+    const historial = Array.isArray(v.correcciones) ? v.correcciones.slice() : [];
+    const ult = historial.pop();
+    if (!ult || !ult.antes) return window.toast('Esta venta no tiene correcciones que deshacer', 'info');
+    if (!confirm('¿Regresar ' + folioVenta(v) + ' a como estaba antes de la corrección de ' + ult.por + '?\n\n' + (ult.cambios || []).join('\n'))) return;
+    const restaurar = Object.assign({}, ult.antes);
+    CAMPOS_ANTES_VENTA.forEach(k => { if (!(k in restaurar)) restaurar[k] = null; });
+    restaurar.correcciones = historial.concat([{ por: miNombre(), uid: auth.currentUser?.uid || '', cuando: Date.now(), motivo: '', cambios: ['Deshizo la corrección de ' + ult.por + ': ' + (ult.cambios || []).join('; ')], antes: fotoVenta(v) }]).slice(-20);
+    restaurar.actualizado = Date.now();
+    await window.updateDoc(window.doc(window.db, 'ventas', id), restaurar);
+    window.toast('↩️ ' + folioVenta(v) + ' quedó como estaba', 'success');
+    window.abrirDetallesVenta(id);
+  } catch (e) {
+    console.error('deshacer corrección:', e);
+    window.toast('❌ Error: ' + e.message, 'error');
+  }
+};
+
 window.saveVentaMultiLinea = async function() {
-  console.log('💾 saveVentaMultiLinea() iniciado');
+  const edicion = window.ventaEnEdicion || null;
   const fecha = document.getElementById('v-fecha').value;
   const clienteInput = document.getElementById('v-cliente').value;
   const vendedor = document.getElementById('v-vendedor').value;
   const estatusInicial = document.getElementById('v-estatus-inicial').value;
   const incluyeDatosFiscales = document.getElementById('v-incluyeDatosFiscales').checked;
+  const conIva = window.mayaPrecioConIva();
 
   // Parsear cliente (formato: "nombre|id")
   const clienteParts = clienteInput.split('|');
   const clienteId = clienteParts[1] || clienteInput; // Usar ID si existe, sino usar el valor
   const clienteNombre = clienteParts[0] || clienteInput;
 
-  console.log('📅 Fecha:', fecha, '👤 Cliente:', clienteId, '🧑 Vendedor:', vendedor);
-
   if (!fecha || !clienteInput || !vendedor) {
     toast('Completa fecha, cliente y vendedor', 'error');
-    console.warn('⚠️ Campos requeridos incompletos');
     return;
   }
 
   // Recolectar items
   const items = [];
-  const rows = document.querySelectorAll('#v-items-body tr');
-  console.log('📊 Filas encontradas:', rows.length);
-
-  rows.forEach((row, idx) => {
+  document.querySelectorAll('#v-items-body tr').forEach(row => {
     const pedido = row.querySelector('.v-item-pedido').value.trim();
+    if (!pedido) return;
     const numSiniestro = row.querySelector('.v-item-siniestro').value.trim();
-    const precio = parseFloat(row.querySelector('.v-item-precio').value || 0);
-    // Lee el IVA calculado del hidden field, o del campo legacy si existe
-    const iva = parseFloat(row.querySelector('.v-item-iva-valor')?.value || row.querySelector('.v-item-iva')?.value || 0);
-    const ajuste = parseFloat(row.querySelector('.v-item-ajuste').value || 0);
-
-    console.log(`🏷️ Fila ${idx}: ${pedido} | ${numSiniestro} | $${precio} | IVA $${iva} | Ajuste $${ajuste}`);
-
-    if (pedido) {
-      const item = { pedido, numSiniestro, precio, iva, ajuste };
-      const proveedor = (row.querySelector('.v-item-proveedor')?.value || '').trim();
-      const costo = window.mayaSumaCosto(row.querySelector('.v-item-costo')?.value);
-      if (proveedor) item.proveedor = proveedor;
-      if (costo) { item.costo = costo.total; if (costo.desglose) item.costoDesglose = costo.desglose; }
-      items.push(item);
-    }
+    const p = window.mayaPartidaDeFila(row, conIva);
+    const item = { pedido, numSiniestro, precio: p.precio, iva: p.iva, ajuste: p.ajuste };
+    if (conIva) item.ivaPorcentaje = p.pct;
+    const proveedor = (row.querySelector('.v-item-proveedor')?.value || '').trim();
+    const costo = window.mayaSumaCosto(row.querySelector('.v-item-costo')?.value);
+    if (proveedor) item.proveedor = proveedor;
+    if (costo) { item.costo = costo.total; if (costo.desglose) item.costoDesglose = costo.desglose; }
+    items.push(item);
   });
-
-  console.log('✅ Items recolectados:', items);
 
   if (items.length === 0) {
     toast('Agrega al menos una pieza', 'error');
@@ -3459,19 +3552,52 @@ window.saveVentaMultiLinea = async function() {
     if (faltan.length) { toast('Falta proveedor o costo total en: ' + faltan.join(', ') + '. Se necesitan para la utilidad y las comisiones.', 'error'); return; }
   }
 
-  // Calcular totales
+  // Totales y utilidad (sobre lo que paga el cliente, con IVA)
+  const r2 = n => parseFloat(Number(n).toFixed(2));
   let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
-  items.forEach(item => {
-    subtotal += item.precio;
-    ivaTotal += item.iva;
-    ajusteTotal += item.ajuste;
-  });
-  const total = subtotal + ivaTotal - ajusteTotal;
+  items.forEach(item => { subtotal += item.precio; ivaTotal += item.iva; ajusteTotal += item.ajuste; });
+  subtotal = r2(subtotal); ivaTotal = r2(ivaTotal); ajusteTotal = r2(ajusteTotal);
+  const total = r2(subtotal + ivaTotal - ajusteTotal);
   const conCosto = items.filter(it => it.costo != null);
-  const costoTotal = conCosto.length ? parseFloat(conCosto.reduce((a, it) => a + it.costo, 0).toFixed(2)) : null;
-  const ventaNeta = subtotal - ajusteTotal;
-  const utilidad = costoTotal == null ? null : parseFloat((ventaNeta - costoTotal).toFixed(2));
-  const utilidadPct = utilidad == null || ventaNeta <= 0 ? null : parseFloat(((utilidad / ventaNeta) * 100).toFixed(2));
+  const costoTotal = conCosto.length ? r2(conCosto.reduce((a, it) => a + it.costo, 0)) : null;
+  const utilidad = costoTotal == null ? null : r2(total - costoTotal);
+  const utilidadPct = utilidad == null || total <= 0 ? null : r2((utilidad / total) * 100);
+  const utilidadSinIva = costoTotal == null ? null : r2(subtotal - ajusteTotal - costoTotal);
+  const siniestros = items.map(i => i.numSiniestro).filter(s => s).join(' | ');
+  const dinero = { items, siniestros, subtotal, ivaTotal, ajusteTotal, total, precioConIva: conIva, costoTotal, utilidad, utilidadPct, utilidadSinIva, costoCompleto: conCosto.length === items.length };
+  const $ = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (edicion) {
+    const antes = edicion.antes;
+    const no = window.mayaNoCorregible(antes);
+    if (no) { toast(no, 'error'); return; }
+    const cambios = [];
+    if (r2(antes.total || 0) !== total) cambios.push('Total: ' + $(antes.total) + ' → ' + $(total));
+    if ((antes.utilidad == null ? null : antes.utilidad) !== utilidad) cambios.push('Utilidad: ' + $(antes.utilidad) + ' → ' + $(utilidad) + (utilidadPct != null ? ' (' + utilidadPct + ' %)' : ''));
+    if ((antes.clienteNombre || '') !== clienteNombre) cambios.push('Cliente: ' + (antes.clienteNombre || '—') + ' → ' + clienteNombre);
+    if ((antes.vendedor || '') !== vendedor) cambios.push('Vendedor: ' + (antes.vendedor || '—') + ' → ' + vendedor);
+    const piezas = l => (l || []).map(i => [i.pedido, i.numSiniestro, i.proveedor, i.costo].join('·')).join('|');
+    if (piezas(antes.items) !== piezas(items) && !cambios.length) cambios.push('Piezas, siniestros o proveedores');
+    else if (piezas(antes.items) !== piezas(items)) cambios.push('Piezas, siniestros, proveedores o costos');
+    const mismaFecha = antes.fecha && diaVenta(antes.fecha) === fecha;
+    const fechaMs = mismaFecha ? antes.fecha : new Date(fecha).getTime();
+    if (!mismaFecha) cambios.push('Fecha → ' + fecha);
+    if ((antes.estatus || '') !== estatusInicial) cambios.push('Estatus: ' + (antes.estatus || '—') + ' → ' + estatusInicial);
+    if (!cambios.length) { toast('No cambiaste nada', 'info'); return; }
+    const correcciones = (Array.isArray(antes.correcciones) ? antes.correcciones : []).concat([{ por: miNombre(), uid: auth.currentUser?.uid || '', cuando: Date.now(), motivo: '', cambios, antes: fotoVenta(antes) }]).slice(-20);
+    try {
+      await window.updateDoc(window.doc(window.db, 'ventas', edicion.id), Object.assign({}, dinero, {
+        fecha: fechaMs, clienteId, clienteNombre, vendedor, estatus: estatusInicial, incluyeDatosFiscales, correcciones, actualizado: Date.now()
+      }));
+      window.ventaEnEdicion = null;
+      closeModal('modal-venta');
+      toast('✏️ ' + folioVenta(antes) + ' corregida: ' + cambios.join(' · ') + (antes.tieneFactura ? '. Ya tenía factura: revisa que coincida.' : ''), 'success');
+    } catch (e) {
+      console.error('❌ Error al corregir venta:', e);
+      toast('Error al guardar: ' + e.message, 'error');
+    }
+    return;
+  }
 
   // Generar número de nota (números simples: 1, 2, 3...)
   const notasSnap = await getDocs(collection(db, 'ventas'));
@@ -3480,44 +3606,26 @@ window.saveVentaMultiLinea = async function() {
     const data = d.data();
     // Busca en notaId (nuevo formato) o notaNumero (antiguo)
     const notaStr = data.notaId || data.notaNumero || '';
-    const num = parseInt(notaStr.replace('NV-', '').replace(/\D/g, '') || '0');
-    if (num > lastNote) {
-      lastNote = num;
-    }
+    const num = parseInt(String(notaStr).replace('NV-', '').replace(/\D/g, '') || '0');
+    if (num > lastNote) lastNote = num;
   });
   const notaId = String(lastNote + 1);
-  console.log(`📝 Generando nota: ${notaId} (última fue: ${lastNote})`);
 
-  // Preparar documento (clienteNombre ya fue parseado del input arriba)
-
-  // Obtener nombre del usuario autenticado (del dropdown de usuarios o displayName)
+  // Nombre del usuario autenticado (del dropdown de usuarios o displayName)
   let createdByName = auth.currentUser?.displayName || '';
   if (!createdByName && data.usuarios) {
     const usuarioEncontrado = data.usuarios.find(u => u.email === auth.currentUser?.email);
-    if (usuarioEncontrado) {
-      createdByName = usuarioEncontrado.nombre || auth.currentUser?.email;
-    }
+    if (usuarioEncontrado) createdByName = usuarioEncontrado.nombre || auth.currentUser?.email;
   }
-  if (!createdByName) {
-    createdByName = auth.currentUser?.email || 'Usuario';
-  }
+  if (!createdByName) createdByName = auth.currentUser?.email || 'Usuario';
 
-  // Extraer todos los siniestros de los items para búsqueda fácil
-  const siniestros = items.map(i => i.numSiniestro).filter(s => s).join(' | ');
-
-  const venta = {
+  const venta = Object.assign({
     notaId,
     fecha: new Date(fecha).getTime(),
     clienteId,
     clienteNombre,
-    vendedor,
-    items,
-    siniestros, // Campo para búsqueda
-    subtotal: parseFloat(subtotal.toFixed(2)),
-    ivaTotal: parseFloat(ivaTotal.toFixed(2)),
-    ajusteTotal: parseFloat(ajusteTotal.toFixed(2)),
-    total: parseFloat(total.toFixed(2)),
-    costoTotal, utilidad, utilidadPct, costoCompleto: conCosto.length === items.length,
+    vendedor
+  }, dinero, {
     incluyeDatosFiscales,
     estado: 'pendiente',
     estatus: estatusInicial,
@@ -3526,21 +3634,13 @@ window.saveVentaMultiLinea = async function() {
     createdAt: serverTimestamp(),
     createdBy: auth.currentUser?.uid || '',
     createdByName: createdByName
-  };
+  });
 
   try {
-    console.log('💾 Guardando venta en Firebase:', venta);
     const docRef = await addDoc(collection(db, 'ventas'), venta);
     if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: docRef.id });
-    console.log('✅ Venta guardada con ID:', docRef.id);
-
     // Generar PDF de la nota
-    console.log('⏱️ Iniciando PDF generation en 500ms...');
-    setTimeout(async () => {
-      console.log('🎬 Ejecutando generarNotaPDF()...');
-      await window.generarNotaPDF(venta);
-    }, 500);
-
+    setTimeout(async () => { await window.generarNotaPDF(venta); }, 500);
     closeModal('modal-venta');
     if (typeof enviarNotificacion === "function") enviarNotificacion("Nueva venta registrada", (venta.clienteNombre || venta.clienteId || "Cliente") + " - Nota #" + notaId, "💰");
     toast(`✅ Venta ${notaId} registrada + Nota PDF generada`, 'success');
@@ -5717,7 +5817,8 @@ window.abrirDetallesVenta = async function(ventaId) {
     }
 
     const v = ventaSnap.data();
-    const fecha = v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '—';
+    // Mismo día con el que se capturó (las del gestor se guardan a medianoche UTC; en CDMX eso es el día anterior)
+    const fecha = v.fecha && window.mayaDiaVenta ? window.mayaDiaVenta(v.fecha).split('-').reverse().join('/') : (v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '—');
 
     // Generar HTML de detalles
     let html = `
@@ -5809,9 +5910,14 @@ window.abrirDetallesVenta = async function(ventaId) {
         const its = (v.items || []).filter(it => it.costo != null || it.proveedor);
         const extra = (v.contacto ? '<div><span style="color:#999">Contacto:</span> ' + esc(v.contacto) + '</div>' : '') +
           (v.impuestoNota ? '<div><span style="color:#999">Impuesto:</span> ' + esc(v.impuestoNota) + '</div>' : '');
+        // Correcciones: quién cambió qué, con opción de deshacer la última
+        const corr = Array.isArray(v.correcciones) ? v.correcciones : [];
+        const historial = corr.length ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(59,188,212,0.3)"><div style="color:#999;margin-bottom:6px">✏️ Correcciones</div>' +
+          corr.slice(-5).reverse().map(c => '<div style="padding:3px 0"><span style="color:#999">' + esc(new Date(c.cuando).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'short', timeStyle: 'short' })) + ' · ' + esc(c.por) + ':</span> ' + esc((c.cambios || []).join(' · ')) + '</div>').join('') +
+          (window.mayaNoCorregible && !window.mayaNoCorregible(v) ? '<button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="deshacerCorreccionVenta(\'' + ventaId + '\')">↩️ Deshacer la última corrección</button>' : '') + '</div>' : '';
         if (v.utilidad == null && !its.length) {
           return '<div style="background:var(--surface2);padding:12px 15px;border-radius:8px;margin-bottom:20px;font-size:12px;color:#F59E0B">' + extra +
-            '⚠️ Esta venta no tiene costo capturado: no se puede calcular su utilidad para comisiones.</div>';
+            '⚠️ Esta venta no tiene costo capturado: no se puede calcular su utilidad para comisiones. Usa ✏️ Corregir para agregarlo.' + historial + '</div>';
         }
         const filas = its.map(it => '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid rgba(59,188,212,0.1)"><span>' +
           esc(it.pedido || '—') + (it.proveedor ? ' <span style="color:#999">· ' + esc(it.proveedor) + '</span>' : '') +
@@ -5820,12 +5926,13 @@ window.abrirDetallesVenta = async function(ventaId) {
         return '<div style="background:var(--surface2);padding:15px;border-radius:8px;margin-bottom:20px;font-size:12px">' +
           '<div style="color:#999;margin-bottom:8px">💹 Costo y utilidad (comisiones)</div>' + extra + filas +
           '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:10px">' +
-          '<div><div style="color:#999">Venta sin IVA</div><div style="font-weight:600">' + $((v.subtotal || 0) - (v.ajusteTotal || 0)) + '</div></div>' +
+          '<div><div style="color:#999">Venta (con IVA)</div><div style="font-weight:600">' + $(v.total || 0) + '</div></div>' +
           '<div><div style="color:#999">Costo total</div><div style="font-weight:600">' + (v.costoTotal != null ? $(v.costoTotal) : '—') + '</div></div>' +
           '<div><div style="color:#999">Utilidad</div><div style="font-weight:700;color:' + (baja ? '#FF6B6B' : '#22C55E') + '">' + (v.utilidad != null ? $(v.utilidad) : '—') +
           (v.utilidadPct != null ? ' (' + v.utilidadPct.toFixed(2) + '%)' : '') + '</div></div></div>' +
+          (v.utilidadSinIva != null ? '<div style="color:#999;margin-top:6px">Sin IVA (el IVA se le paga al SAT): utilidad ' + $(v.utilidadSinIva) + '</div>' : '') +
           (v.costoCompleto === false ? '<div style="color:#F59E0B;margin-top:8px">⚠️ Falta el costo de alguna pieza; la utilidad está incompleta.</div>' : '') +
-          '</div>';
+          historial + '</div>';
       })()}
 
       <div style="background:white;color:black;padding:20px;border-radius:8px;margin-top:20px">

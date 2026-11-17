@@ -1549,7 +1549,7 @@ test('Proceso por Pepito: cliente con sus 7 datos fiscales, nota de venta propia
   assert.ok((await escritura.guardarCliente(vend, { nombre: 'Cliente Facebook Prueba', venta_publica_redes: true })).creado);
 
   // La nota: el vendedor es quien habla; no se puede a nombre de otro; cliente sin registrar no
-  const partidas = [{ descripcion: 'Faro delantero izq.', precio: 3750, iva_porcentaje: 16, proveedor: 'Refaccionaria Norte', costo: 2500 }];
+  const partidas = [{ descripcion: 'Faro delantero izq.', precio: 4350, iva_porcentaje: 16, proveedor: 'Refaccionaria Norte', costo: 2500 }]; // 4,350 ya con IVA
   const v = await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', estatus: 'Pendiente' });
   const venta = db.cols.ventas.get(v.creada.id);
   assert.equal(venta.vendedor, 'Estefanía Ventas');
@@ -1583,7 +1583,10 @@ test('Registro de venta: proveedor, costo total con desglose, utilidad y % para 
     cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', contacto: 'Sr. Ramírez', impuesto_nota: '16% Masiva',
     partidas: [Object.assign({}, pieza, { proveedor: 'Autopartes del Centro', costo: 2700, costo_desglose: 'pieza 2000 + guía 500 + paquetería 100 + logística 100' })]
   });
-  assert.equal(r.creada.venta_sin_iva, 3900);
+  // El precio que dicen es lo que pagó el cliente, ya con IVA: 3,900 = 3,362.07 + 537.93
+  assert.equal(r.creada.venta_con_iva, 3900);
+  assert.equal(r.creada.venta_sin_iva, 3362.07);
+  assert.equal(r.creada.iva, 537.93);
   assert.equal(r.creada.costo_total, 2700);
   assert.equal(r.creada.utilidad, 1200);
   assert.equal(r.creada.utilidad_porcentaje, 30.77);
@@ -1593,18 +1596,84 @@ test('Registro de venta: proveedor, costo total con desglose, utilidad y % para 
   assert.equal(g.utilidad, 1200);
   assert.equal(g.items[0].costoDesglose, 'pieza 2000 + guía 500 + paquetería 100 + logística 100');
   assert.equal(g.contacto, 'Sr. Ramírez');
-  assert.equal(g.total, 4524);
+  assert.equal(g.total, 3900);
+  assert.equal(g.subtotal + g.ivaTotal, 3900);
+  assert.equal(g.utilidadSinIva, 662.07);
+  // Si dicen "más IVA", se suma
+  const masIva = await escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', precio_con_iva: false,
+    partidas: [Object.assign({}, pieza, { precio: 1000, proveedor: 'X', costo: 800 })] });
+  assert.equal(masIva.creada.venta_con_iva, 1160);
+  assert.equal(masIva.creada.utilidad, 360);
   // Comisiones: la vendedora solo ve lo suyo; Dirección ve a todos y las ventas sin costo aparte
   const cv = await conectar(rocio);
   const suya = await cv.llamar('utilidad_comisiones', { vendedor: 'Daniel' });
   assert.equal(suya.por_vendedor.length, 1);
   assert.equal(suya.por_vendedor[0].vendedor, 'Rocío Comisiones');
-  assert.equal(suya.por_vendedor[0].utilidad, 1200);
-  assert.equal(suya.por_vendedor[0].utilidad_porcentaje, 30.77);
+  assert.equal(suya.por_vendedor[0].utilidad, 1560, '1,200 + 360 de sus dos ventas');
+  assert.equal(suya.por_vendedor[0].utilidad_porcentaje, 30.83);
   await cv.cerrar();
   const ca = await conectar(ADMIN);
   const todo = await ca.llamar('utilidad_comisiones', {});
   assert.ok(todo.por_vendedor.some(x => x.vendedor === 'Rocío Comisiones'));
   assert.ok(todo.ventas_sin_costo > 0, 'las ventas viejas sin costo se listan para completarlas');
   await ca.cerrar();
+});
+
+test('Corregir venta: precio, costo y piezas por si alguien se equivoca; historial, deshacer y permisos', async () => {
+  const escritura = require('./escritura');
+  const rocio = { uid: 'v-9', nombre: 'Rocío Comisiones', rol: 'vendedor' };
+  const otro = { uid: 'v-10', nombre: 'Daniel Otro', rol: 'vendedor' };
+  const geraldine = { uid: 'f-1', nombre: 'Geraldine', rol: 'facturacion' };
+  await escritura.guardarCliente(rocio, { nombre: 'Taller Utilidad Prueba', rfc: 'TAUP880101AB1', email: 'taller@utilidad.mx', tipo_persona: 'fisica', regimen_fiscal: '612', calle: 'Calle 1', numero_exterior: '5', municipio: 'Coyoacán', estado: 'CDMX', codigo_postal: '04000', uso_cfdi: 'G01' });
+  const r = await escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [
+    { descripcion: 'Faro izquierdo', precio: 2320, proveedor: 'Prov A', costo: 1500 },
+    { descripcion: 'Calavera', precio: 1160, proveedor: 'Prov B', costo: 700 }
+  ] });
+  const id = r.creada.id;
+  assert.equal(r.creada.venta_con_iva, 3480);
+  // Se equivocó en el precio del faro (era 2,900) y en el costo de la calavera (era 600)
+  const c = await escritura.corregirVenta(rocio, { id, motivo: 'precio mal dictado', cambiar_partidas: [{ numero: 1, precio: 2900 }, { numero: 2, costo: 600 }] });
+  assert.equal(c.venta_con_iva, 4060);
+  assert.equal(c.costo_total, 2100);
+  assert.equal(c.utilidad, 1960);
+  assert.ok(c.cambios.some(t => /precio \$2,320\.00 → \$2,900\.00/.test(t)));
+  assert.ok(c.cambios.some(t => /Utilidad: \$1,280\.00 → \$1,960\.00/.test(t)));
+  let v = db.cols.ventas.get(id);
+  assert.equal(v.total, 4060);
+  assert.equal(v.items[0].precio + v.items[0].iva, 2900);
+  assert.equal(v.correcciones.length, 1);
+  assert.equal(v.correcciones[0].por, 'Rocío Comisiones');
+  assert.equal(v.correcciones[0].antes.total, 3480);
+  // Quitar y agregar piezas
+  const c2 = await escritura.corregirVenta(rocio, { id, quitar_partidas: [2], agregar_partidas: [{ descripcion: 'Moldura', precio: 580, proveedor: 'Prov C', costo: 300 }] });
+  assert.equal(c2.venta_con_iva, 3480);
+  assert.deepEqual(db.cols.ventas.get(id).items.map(i => i.pedido), ['Faro izquierdo', 'Moldura']);
+  // Deshacer la última: regresa como estaba
+  const d = await escritura.corregirVenta(rocio, { id, deshacer_ultima: true });
+  assert.ok(d.deshecho);
+  v = db.cols.ventas.get(id);
+  assert.deepEqual(v.items.map(i => i.pedido), ['Faro izquierdo', 'Calavera']);
+  assert.equal(v.total, 4060);
+  assert.equal(v.correcciones.length, 2, 'el deshacer también queda registrado');
+  // Errores claros
+  await assert.rejects(escritura.corregirVenta(rocio, { id }), /No dijiste qué corregir/);
+  await assert.rejects(escritura.corregirVenta(rocio, { id, cambiar_partidas: [{ numero: 5, precio: 1 }] }), /no existe la 5/);
+  await assert.rejects(escritura.corregirVenta(rocio, { id, quitar_partidas: [1, 2] }), /se quedaría sin piezas/);
+  await assert.rejects(escritura.corregirVenta(rocio, { id, cambiar_partidas: [{ numero: 1, proveedor: '' }] }), /No guardé la corrección.*proveedor/);
+  // Solo sus ventas; facturada solo Facturación
+  await assert.rejects(escritura.corregirVenta(otro, { id, cambiar_partidas: [{ numero: 1, costo: 1 }] }), /Solo puedes corregir tus propias ventas/);
+  v.tieneFactura = true;
+  await assert.rejects(escritura.corregirVenta(rocio, { id, cambiar_partidas: [{ numero: 1, costo: 1400 }] }), /ya está facturada/);
+  const cf = await escritura.corregirVenta(geraldine, { id, cambiar_partidas: [{ numero: 1, costo: 1400 }] });
+  assert.match(cf.aviso, /ya tenía factura/);
+  // Por Pepito: la herramienta existe para el vendedor y buscar_ventas trae las partidas numeradas
+  const cv = await conectar(rocio);
+  const b = await cv.llamar('buscar_ventas', { texto: 'Faro izquierdo' });
+  const reg = b.ventas.find(x => x.registro_venta.partidas.some(p => p.pieza === 'Faro izquierdo')).registro_venta;
+  assert.equal(reg.partidas[0].numero, 1);
+  assert.equal(reg.partidas[0].precio_con_iva, 2900);
+  assert.ok(reg.correcciones >= 3);
+  const t = await cv.llamar('corregir_venta', { id, cambiar_partidas: [{ numero: 2, siniestro: 'SIN-1' }] });
+  assert.ok(t.error, 'facturada: el vendedor no puede ni por Pepito');
+  await cv.cerrar();
 });

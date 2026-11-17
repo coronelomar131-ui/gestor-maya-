@@ -45,17 +45,23 @@ async function resolverCliente(nombre) {
 }
 
 // Partidas con precio por línea, IVA por porcentaje (toFixed(2) como calcularIVA) y ajuste, como Ventas y Cotizaciones
-function partidas(lista) {
-  const items = lista.map(p => {
-    const precio = Number(p.precio) || 0;
-    const porcentaje = p.iva_porcentaje == null ? 16 : Number(p.iva_porcentaje);
-    const item = { pedido: texto(p.descripcion), numSiniestro: texto(p.siniestro), precio, iva: parseFloat(((precio * porcentaje) / 100).toFixed(2)), ajuste: Number(p.ajuste) || 0 };
-    // Proveedor y costo total (pieza + guía + paquetería + logística) para la utilidad y las comisiones
-    if (p.proveedor) item.proveedor = texto(p.proveedor);
-    if (p.costo != null) item.costo = redondear2(Number(p.costo) || 0);
-    if (p.costo_desglose) item.costoDesglose = texto(p.costo_desglose);
-    return item;
-  });
+// Una partida. Con conIva (ventas, por omisión) el precio es lo que pagó el cliente y el IVA se saca de ahí:
+// 3,900 con 16 % = 3,362.07 + 537.93 de IVA. Sin conIva (cotizaciones, notas) el IVA se suma al precio, como en la app.
+function itemDe(p, conIva) {
+  const capturado = Number(p.precio) || 0;
+  const porcentaje = p.iva_porcentaje == null ? 16 : Number(p.iva_porcentaje);
+  const precio = conIva ? redondear2(capturado / (1 + porcentaje / 100)) : capturado;
+  const iva = conIva ? redondear2(capturado - precio) : redondear2((capturado * porcentaje) / 100);
+  const item = { pedido: texto(p.descripcion), numSiniestro: texto(p.siniestro), precio, iva, ajuste: Number(p.ajuste) || 0 };
+  if (conIva) item.ivaPorcentaje = porcentaje;
+  // Proveedor y costo total (pieza + guía + paquetería + logística) para la utilidad y las comisiones
+  if (texto(p.proveedor)) item.proveedor = texto(p.proveedor);
+  if (p.costo != null) item.costo = redondear2(Number(p.costo) || 0);
+  if (texto(p.costo_desglose)) item.costoDesglose = texto(p.costo_desglose);
+  return item;
+}
+
+function sumar(items) {
   let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
   items.forEach(i => { subtotal += i.precio; ivaTotal += i.iva; ajusteTotal += i.ajuste; });
   return {
@@ -66,15 +72,37 @@ function partidas(lista) {
   };
 }
 
-// Utilidad = precio de venta (sin IVA, menos ajustes) − costo total; % = utilidad / precio de venta × 100. Es la base de las comisiones.
-function utilidadDe(items, subtotal) {
-  const conCosto = items.filter(i => i.costo != null);
+function partidas(lista, conIva) { return sumar(lista.map(p => itemDe(p, conIva))); }
+
+// Utilidad = lo que pagó el cliente (con IVA, menos ajustes) − costo total; % = utilidad / ese precio × 100. Base de las comisiones.
+// También se guarda la utilidad sin IVA (el IVA se le paga al SAT) como referencia.
+function utilidadDe(t) {
+  const conCosto = t.items.filter(i => i.costo != null);
+  if (!conCosto.length) return { costoTotal: null, utilidad: null, utilidadPct: null, utilidadSinIva: null, completo: false };
   const costoTotal = redondear2(conCosto.reduce((s, i) => s + i.costo, 0));
-  const venta = redondear2((subtotal || 0) - items.reduce((s, i) => s + (i.ajuste || 0), 0));
-  if (!conCosto.length) return { costoTotal: null, utilidad: null, utilidadPct: null, completo: false };
-  const utilidad = redondear2(venta - costoTotal);
-  return { costoTotal, utilidad, utilidadPct: venta > 0 ? redondear2((utilidad / venta) * 100) : null, completo: conCosto.length === items.length };
+  const utilidad = redondear2(t.total - costoTotal);
+  return {
+    costoTotal, utilidad, utilidadPct: t.total > 0 ? redondear2((utilidad / t.total) * 100) : null,
+    utilidadSinIva: redondear2(t.subtotal - t.ajusteTotal - costoTotal), completo: conCosto.length === t.items.length
+  };
 }
+
+const faltaRegistro = (lista, etiqueta) => {
+  const faltan = [];
+  lista.forEach((x, i) => {
+    const n = lista.length > 1 ? ' de la partida ' + (i + 1) + ' (' + texto(x.descripcion || x.pedido) + ')' : '';
+    if (!texto(x.proveedor)) faltan.push('proveedor' + n);
+    if (x.costo == null) faltan.push('costo total' + n + ' (pieza + guía + paquetería + logística)');
+  });
+  if (faltan.length) throw new ErrorUsuario(etiqueta + ' Faltan: ' + faltan.join('; ') + '. Sin costo no se puede calcular la utilidad para las comisiones.');
+};
+
+// Lo que se le dice a la persona del dinero de una venta
+const resumenDinero = (t, u_) => ({
+  venta_con_iva: t.total, venta_sin_iva: redondear2(t.subtotal - t.ajusteTotal), iva: t.ivaTotal,
+  costo_total: u_.costoTotal, utilidad: u_.utilidad, utilidad_porcentaje: u_.utilidadPct, utilidad_sin_iva: u_.utilidadSinIva,
+  costo_completo: u_.completo
+});
 
 function registroVenta(id, venta) {
   return datos.notaJSON(datos.desdeVenta(Object.assign({ id }, venta, { createdAt: new Date() })), true);
@@ -137,31 +165,29 @@ async function crearNotaEntrega(u, a) {
 }
 
 // Igual que saveVentaMultiLinea(); la fecha se guarda a mediodía local para que todas las vistas muestren el mismo día
+async function diasCreditoDe(cliente, formaPago) {
+  if (formaPago !== 'credito') return 0;
+  const doc = cliente.id ? await fb().obtener('clientes', cliente.id) : null;
+  const dias = doc ? Number(doc.diasCredito) || 0 : 0;
+  if (!dias) throw new ErrorUsuario(cliente.nombre + ' no tiene crédito autorizado (0 días de crédito). Véndele de contado o pide a Dirección o Facturación que le autoricen días de crédito.');
+  return dias;
+}
+
 async function crearVenta(u, a) {
   const cliente = await resolverCliente(a.cliente);
   exigirClienteRegistrado(u, cliente, a.cliente);
   const vendedor = vendedorDe(u, a);
   // Forma de pago: contado, o crédito solo si el cliente tiene crédito autorizado (días de crédito en Clientes / Cobranza)
   const formaPago = a.forma_pago || 'contado';
-  let diasCredito = 0;
-  if (formaPago === 'credito') {
-    const doc = cliente.id ? await fb().obtener('clientes', cliente.id) : null;
-    diasCredito = doc ? Number(doc.diasCredito) || 0 : 0;
-    if (!diasCredito) throw new ErrorUsuario(cliente.nombre + ' no tiene crédito autorizado (0 días de crédito). Véndele de contado o pide a Dirección o Facturación que le autoricen días de crédito.');
-  }
+  const diasCredito = await diasCreditoDe(cliente, formaPago);
   const fecha = a.fecha || hoy();
   // Registro obligatorio de toda venta: cada pieza con su proveedor y su costo total (Dirección puede capturar sin ellos)
   if (!esDireccion(u)) {
-    const faltan = [];
-    a.partidas.forEach((x, i) => {
-      const n = a.partidas.length > 1 ? ' de la partida ' + (i + 1) + ' (' + texto(x.descripcion) + ')' : '';
-      if (!texto(x.proveedor)) faltan.push('proveedor' + n);
-      if (x.costo == null) faltan.push('costo total' + n + ' (pieza + guía + paquetería + logística)');
-    });
-    if (faltan.length) throw new ErrorUsuario('No registré la venta. Faltan: ' + faltan.join('; ') + '. Sin costo no se puede calcular la utilidad para las comisiones.');
+    faltaRegistro(a.partidas, 'No registré la venta.');
   }
-  const p = partidas(a.partidas);
-  const u_ = utilidadDe(p.items, p.subtotal);
+  const conIva = a.precio_con_iva !== false;
+  const p = partidas(a.partidas, conIva);
+  const u_ = utilidadDe(p);
   const notaId = String(maxNumero(await fb().leerColeccion('ventas'), v => v.notaId || v.notaNumero) + 1);
   const venta = Object.assign({
     notaId, fecha: mediodiaMs(fecha), clienteId: cliente.id, clienteNombre: cliente.nombre,
@@ -169,7 +195,8 @@ async function crearVenta(u, a) {
     subtotal: p.subtotal, ivaTotal: p.ivaTotal, ajusteTotal: p.ajusteTotal, total: p.total,
     formaPago, diasCredito,
     contacto: texto(a.contacto), impuestoNota: texto(a.impuesto_nota),
-    costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, costoCompleto: u_.completo,
+    precioConIva: conIva,
+    costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, utilidadSinIva: u_.utilidadSinIva, costoCompleto: u_.completo,
     incluyeDatosFiscales: !!a.incluye_datos_fiscales, estado: 'pendiente', estatus: a.estatus,
     facturaURL: '', tieneFactura: false, createdAt: fb().marcaTiempo()
   }, autor(u));
@@ -179,10 +206,8 @@ async function crearVenta(u, a) {
     creada: Object.assign(registroVenta(id, venta), {
       estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito,
       contacto: venta.contacto || null, impuesto: venta.impuestoNota || null,
-      proveedores: [...new Set(p.items.map(i => i.proveedor).filter(Boolean))],
-      venta_sin_iva: p.subtotal, costo_total: u_.costoTotal, utilidad: u_.utilidad, utilidad_porcentaje: u_.utilidadPct,
-      costo_completo: u_.completo
-    }),
+      proveedores: [...new Set(p.items.map(i => i.proveedor).filter(Boolean))]
+    }, resumenDinero(p, u_), { se_puede_corregir: 'Si algo quedó mal, se corrige con corregir_venta (o en el gestor: Ver → Corregir).' }),
     cliente_registrado: cliente.registrado
   };
 }
@@ -200,6 +225,106 @@ async function encontrarVenta(a) {
   if (!hallazgos.length) throw new ErrorUsuario('No hay ninguna venta con el folio ' + a.folio);
   if (hallazgos.length > 1) throw new ErrorUsuario('Hay varias ventas con el folio ' + a.folio + '; usa su id: ' + hallazgos.map(v => v.id).join(', '));
   return hallazgos[0];
+}
+
+// ── Corregir una venta ya guardada (por si alguien se equivocó) ──
+// Cambia piezas, precios, costos, cliente, fecha, contacto, impuesto o forma de pago; recalcula IVA, total y utilidad;
+// guarda en "correcciones" quién cambió qué y cómo estaba antes, para poder deshacerlo.
+const CAMPOS_ANTES = ['items', 'siniestros', 'subtotal', 'ivaTotal', 'ajusteTotal', 'total', 'clienteId', 'clienteNombre', 'fecha', 'contacto', 'impuestoNota',
+  'formaPago', 'diasCredito', 'precioConIva', 'costoTotal', 'utilidad', 'utilidadPct', 'utilidadSinIva', 'costoCompleto'];
+const fotoDe = v => CAMPOS_ANTES.reduce((o, k) => { if (v[k] !== undefined) o[k] = v[k]; return o; }, {});
+const pesos2 = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const corrigeTodo = u => esDireccion(u) || (u && (u.rolReal || u.rol)) === 'facturacion';
+
+async function corregirVenta(u, a) {
+  const v = await encontrarVenta(a);
+  const folio = registroVenta(v.id, v).folio;
+  if (!corrigeTodo(u)) {
+    const primera = s => datos.norm(s).split(' ')[0];
+    const mia = (v.createdBy && v.createdBy === u.uid) || (texto(v.vendedor) && primera(v.vendedor) === primera(u.nombre || u.email));
+    if (!mia) throw new ErrorUsuario('Solo puedes corregir tus propias ventas. ' + folio + ' es de ' + (v.vendedor || 'otra persona') + '; pídeselo a Dirección o a Facturación.');
+    if (v.tieneFactura || v.facturaId) throw new ErrorUsuario(folio + ' ya está facturada: pídele la corrección a Facturación, porque también hay que corregir la factura.');
+  }
+  if (/^cancel/.test(datos.norm(v.estatus)) || v.estado === 'cancelada') throw new ErrorUsuario(folio + ' está cancelada; no se corrige.');
+  const historial = Array.isArray(v.correcciones) ? v.correcciones.slice() : [];
+  const quien = texto(u.nombre || u.email);
+  const registro = (cambios, antes) => historial.concat([{ por: quien, uid: u.uid || '', cuando: Date.now(), motivo: texto(a.motivo), cambios, antes }]).slice(-20);
+
+  if (a.deshacer_ultima) {
+    const ult = historial.pop();
+    if (!ult || !ult.antes) throw new ErrorUsuario(folio + ' no tiene correcciones que deshacer.');
+    const cuando = new Date(ult.cuando).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'short', timeStyle: 'short' });
+    const cambios = ['Deshizo la corrección de ' + ult.por + ' (' + cuando + '): ' + (ult.cambios || []).join('; ')];
+    const restaurar = Object.assign({}, ult.antes);
+    CAMPOS_ANTES.forEach(k => { if (!(k in restaurar)) restaurar[k] = null; }); // lo que no existía antes se vacía
+    await fb().actualizar('ventas', v.id, Object.assign(restaurar, { correcciones: registro(cambios, fotoDe(v)), actualizado: Date.now() }));
+    datos.olvidarCache();
+    return { venta: folio, id: v.id, deshecho: true, cambios, total_antes: v.total, total_ahora: ult.antes.total, utilidad_ahora: ult.antes.utilidad == null ? null : ult.antes.utilidad };
+  }
+
+  const conIva = a.precio_con_iva !== false;
+  const items = (v.items || []).map(i => Object.assign({}, i));
+  const cambios = [];
+  const nombreDe = n => '#' + n + ' (' + (items[n - 1] ? items[n - 1].pedido : '?') + ')';
+  const revisar = n => { if (!items[n - 1]) throw new ErrorUsuario(folio + ' tiene ' + items.length + (items.length === 1 ? ' partida' : ' partidas') + '; no existe la ' + n + '.'); };
+
+  (a.cambiar_partidas || []).forEach(c => {
+    revisar(c.numero);
+    const it = items[c.numero - 1];
+    const etiqueta = nombreDe(c.numero);
+    if (c.precio != null || c.iva_porcentaje != null) {
+      const pct = c.iva_porcentaje != null ? Number(c.iva_porcentaje) : (it.ivaPorcentaje != null ? it.ivaPorcentaje : (it.precio ? Math.round((it.iva / it.precio) * 100) : 16));
+      const capturado = c.precio != null ? Number(c.precio) : (conIva ? it.precio + it.iva : it.precio);
+      const nuevo = itemDe({ precio: capturado, iva_porcentaje: pct }, conIva);
+      cambios.push(etiqueta + ': precio ' + pesos2(conIva ? it.precio + it.iva : it.precio) + ' → ' + pesos2(capturado) + (conIva ? ' (con IVA)' : ' (sin IVA)'));
+      it.precio = nuevo.precio; it.iva = nuevo.iva; if (conIva) it.ivaPorcentaje = pct; else delete it.ivaPorcentaje;
+    }
+    if (c.descripcion != null) { cambios.push(etiqueta + ': pieza "' + it.pedido + '" → "' + texto(c.descripcion) + '"'); it.pedido = texto(c.descripcion); }
+    if (c.siniestro != null) { cambios.push(etiqueta + ': siniestro ' + (it.numSiniestro || '—') + ' → ' + (texto(c.siniestro) || '—')); it.numSiniestro = texto(c.siniestro); }
+    if (c.ajuste != null) { cambios.push(etiqueta + ': ajuste ' + pesos2(it.ajuste) + ' → ' + pesos2(c.ajuste)); it.ajuste = Number(c.ajuste) || 0; }
+    if (c.proveedor != null) { cambios.push(etiqueta + ': proveedor ' + (it.proveedor || '—') + ' → ' + (texto(c.proveedor) || '—')); if (texto(c.proveedor)) it.proveedor = texto(c.proveedor); else delete it.proveedor; }
+    if (c.costo != null) { cambios.push(etiqueta + ': costo ' + pesos2(it.costo) + ' → ' + pesos2(c.costo)); it.costo = redondear2(Number(c.costo) || 0); }
+    if (c.costo_desglose != null) { if (texto(c.costo_desglose)) it.costoDesglose = texto(c.costo_desglose); else delete it.costoDesglose; }
+  });
+  const quitar = [...new Set(a.quitar_partidas || [])].sort((x, y) => y - x);
+  quitar.forEach(n => { revisar(n); cambios.push('Quitó la partida ' + nombreDe(n)); });
+  quitar.forEach(n => items.splice(n - 1, 1));
+  (a.agregar_partidas || []).forEach(p => { const it = itemDe(p, conIva); items.push(it); cambios.push('Agregó "' + it.pedido + '" en ' + pesos2(conIva ? it.precio + it.iva : it.precio)); });
+  if (!items.length) throw new ErrorUsuario(folio + ' se quedaría sin piezas. Si la venta no va, cancélala con su motivo.');
+
+  const nuevo = {};
+  if (a.cliente) {
+    const cliente = await resolverCliente(a.cliente);
+    exigirClienteRegistrado(u, cliente, a.cliente);
+    if (cliente.id !== v.clienteId || cliente.nombre !== v.clienteNombre) { cambios.push('Cliente: ' + (v.clienteNombre || '—') + ' → ' + cliente.nombre); nuevo.clienteId = cliente.id; nuevo.clienteNombre = cliente.nombre; }
+  }
+  if (a.fecha) { cambios.push('Fecha → ' + a.fecha); nuevo.fecha = mediodiaMs(a.fecha); }
+  if (a.contacto != null) { cambios.push('Contacto: ' + (v.contacto || '—') + ' → ' + (texto(a.contacto) || '—')); nuevo.contacto = texto(a.contacto); }
+  if (a.impuesto_nota != null) { cambios.push('Impuesto: ' + (v.impuestoNota || '—') + ' → ' + (texto(a.impuesto_nota) || '—')); nuevo.impuestoNota = texto(a.impuesto_nota); }
+  if (a.forma_pago) {
+    nuevo.diasCredito = await diasCreditoDe({ id: nuevo.clienteId || v.clienteId, nombre: nuevo.clienteNombre || v.clienteNombre }, a.forma_pago);
+    nuevo.formaPago = a.forma_pago;
+    cambios.push('Forma de pago: ' + (v.formaPago || 'contado') + ' → ' + a.forma_pago);
+  }
+  if (!cambios.length) throw new ErrorUsuario('No dijiste qué corregir de ' + folio + '.');
+  if (!esDireccion(u)) faltaRegistro(items, 'No guardé la corrección de ' + folio + '.');
+
+  const t = sumar(items);
+  const u_ = utilidadDe(t);
+  if (t.total !== v.total) cambios.push('Total: ' + pesos2(v.total) + ' → ' + pesos2(t.total));
+  if (u_.utilidad !== (v.utilidad == null ? null : v.utilidad)) cambios.push('Utilidad: ' + pesos2(v.utilidad) + ' → ' + pesos2(u_.utilidad) + (u_.utilidadPct != null ? ' (' + u_.utilidadPct + ' %)' : ''));
+  Object.assign(nuevo, {
+    items: t.items, siniestros: t.siniestros, subtotal: t.subtotal, ivaTotal: t.ivaTotal, ajusteTotal: t.ajusteTotal, total: t.total,
+    precioConIva: conIva, costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, utilidadSinIva: u_.utilidadSinIva, costoCompleto: u_.completo,
+    correcciones: registro(cambios, fotoDe(v)), actualizado: Date.now()
+  });
+  await fb().actualizar('ventas', v.id, nuevo);
+  datos.olvidarCache();
+  return Object.assign({
+    venta: folio, id: v.id, cambios, partidas: t.items.length,
+    aviso: v.tieneFactura ? 'Esta venta ya tenía factura: revisa que la factura coincida con la corrección.' : undefined,
+    se_puede_deshacer: 'Si la corrección quedó mal, se deshace con corregir_venta y deshacer_ultima: true.'
+  }, resumenDinero(t, u_));
 }
 
 // Igual que cambiarEstatusVenta(): solo cambia el estatus
@@ -467,6 +592,6 @@ async function eliminarRegistro(u, a) {
 
 module.exports = {
   ErrorUsuario, BORRABLES,
-  crearNotaEntrega, crearVenta, cambiarEstatusVenta, guardarCliente, guardarProducto, guardarEntrega, crearCotizacion, guardarProveedor,
+  crearNotaEntrega, crearVenta, corregirVenta, cambiarEstatusVenta, guardarCliente, guardarProducto, guardarEntrega, crearCotizacion, guardarProveedor,
   crearCompra, venderDeCompra, eliminarRegistro
 };
