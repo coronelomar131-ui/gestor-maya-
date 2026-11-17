@@ -1601,12 +1601,15 @@ test('Registro de venta: proveedor, costo total con desglose, utilidad y % para 
   const rocio = { uid: 'v-9', nombre: 'Rocío Comisiones', rol: 'vendedor' };
   await escritura.guardarCliente(rocio, { nombre: 'Taller Utilidad Prueba', rfc: 'TAUP880101AB1', email: 'taller@utilidad.mx', tipo_persona: 'fisica', regimen_fiscal: '612', calle: 'Calle 1', numero_exterior: '5', municipio: 'Coyoacán', estado: 'CDMX', codigo_postal: '04000', uso_cfdi: 'G01' });
   const pieza = { descripcion: 'Facia delantera Nissan Versa 2020 con rejilla', siniestro: 'SIN-77881', precio: 3900, iva_porcentaje: 16 };
-  // Sin proveedor ni costo no se registra
-  await assert.rejects(escritura.crearVenta(rocio, { confirmar_alertas: true, cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [pieza] }),
-    /No registré la venta\. Faltan: proveedor; costo total \(pieza \+ guía \+ paquetería \+ logística\)/);
+  // Sin proveedor ni costo sí se registra (no es obligatorio) y queda pendiente de costo para comisiones
+  const sinCosto = await escritura.crearVenta(rocio, { confirmar_alertas: true, cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [Object.assign({}, pieza, { siniestro: 'SIN-77000' })] });
+  assert.match(sinCosto.creada.pendiente_de_costo, /queda pendiente para comisiones/);
+  assert.equal(sinCosto.creada.iva_modo, 'sin IVA', 'si no dicen nada del IVA, el precio queda tal cual');
+  assert.equal(sinCosto.creada.iva, 0);
+  assert.equal(sinCosto.creada.venta_con_iva, 3900);
   // El ejemplo de la imagen: costo 2000 + 500 + 100 + 100 = 2700, utilidad 1200 (30.77 %)
   const r = await escritura.crearVenta(rocio, {
-    cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', contacto: 'Sr. Ramírez', impuesto_nota: '16% Masiva',
+    cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', contacto: 'Sr. Ramírez', impuesto_nota: '16% Masiva', iva: 'incluido', confirmar_alertas: true,
     partidas: [Object.assign({}, pieza, { proveedor: 'Autopartes del Centro', costo: 2700, costo_desglose: 'pieza 2000 + guía 500 + paquetería 100 + logística 100' })]
   });
   // El precio que dicen es lo que pagó el cliente, ya con IVA: 3,900 = 3,362.07 + 537.93
@@ -1685,7 +1688,6 @@ test('Corregir venta: precio, costo y piezas por si alguien se equivoca; histori
   await assert.rejects(escritura.corregirVenta(rocio, { id }), /No dijiste qué corregir/);
   await assert.rejects(escritura.corregirVenta(rocio, { id, cambiar_partidas: [{ numero: 5, precio: 1 }] }), /no existe la 5/);
   await assert.rejects(escritura.corregirVenta(rocio, { id, quitar_partidas: [1, 2] }), /se quedaría sin piezas/);
-  await assert.rejects(escritura.corregirVenta(rocio, { id, cambiar_partidas: [{ numero: 1, proveedor: '' }] }), /No guardé la corrección.*proveedor/);
   // Solo sus ventas; facturada solo Facturación
   await assert.rejects(escritura.corregirVenta(otro, { id, cambiar_partidas: [{ numero: 1, costo: 1 }] }), /Solo puedes corregir tus propias ventas/);
   v.tieneFactura = true;
@@ -1732,7 +1734,8 @@ test('Día a día: registrar pago, cotización → venta, historial de costos, c
 
   // 2) Cotización → venta con las mismas piezas; pide costo; no se convierte dos veces
   const cot = await escritura.crearCotizacion(rocio, { cliente: 'Taller Utilidad Prueba', partidas: [{ descripcion: 'Faro Jetta 2018', precio: 2000, iva_porcentaje: 16, siniestro: 'SIN-90012' }] });
-  await assert.rejects(negocio.convertirCotizacion(rocio, { id: cot.creada, forma_pago: 'contado' }), /Faltan: proveedor; costo total/);
+  const ensayo = await negocio.convertirCotizacion(rocio, { id: cot.creada, forma_pago: 'contado' }, { soloRevisar: true });
+  assert.ok(ensayo.revision, 'sin costo también se puede (queda pendiente)');
   const v = await negocio.convertirCotizacion(rocio, { folio: cot.folio, forma_pago: 'contado', costos: [{ numero: 1, proveedor: 'Depo', costo: 1500 }] });
   assert.equal(v.creada.venta_con_iva, 2320);
   assert.equal(v.creada.utilidad, 820);
@@ -1820,15 +1823,19 @@ test('Candados antes del SÍ: venta repetida, cero de más, siniestro y pago rep
   await pepito.resolverPropuesta(rocio, p.propuesta.id, true, 'gestor');
   assert.equal(db.cols.ventas.size, antes + 1, 'la persona vio la alerta y dijo que sí');
 
-  // Si falta algo, Pepito no propone: lo pide
+  // Sin proveedor ni costo sí propone (son opcionales); si falta algo obligatorio (cliente sin registrar), lo pide
   const falso2 = claudeFalso([
     herramienta('crear_venta', { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [{ descripcion: 'Moldura', precio: 500 }] }),
-    texto('Me falta el proveedor y el costo.')
+    texto('Moldura $500 sin IVA. ¿Contado o crédito? ¿Proveedor y costo? Si no, responde SÍ.'),
+    herramienta('crear_venta', { cliente: 'Taller Que No Existe', forma_pago: 'contado', partidas: [{ descripcion: 'Moldura', precio: 500 }] }),
+    texto('Ese cliente no está registrado.')
   ]);
   pepito._usarCliente(falso2);
   const p2 = await pepito.conversar(rocio, 'vende una moldura en 500', 'gestor');
-  assert.ok(!p2.propuesta, 'sin proveedor ni costo no hay propuesta');
-  assert.match(falso2.llamadas[1].messages.at(-1).content[0].content, /Todavía no se puede proponer: No registré la venta\. Faltan: proveedor; costo total/);
+  assert.ok(p2.propuesta, 'sin proveedor ni costo sí hay propuesta');
+  const p3 = await pepito.conversar(rocio, 'vende una moldura en 500 a Taller Que No Existe', 'gestor');
+  assert.ok(!p3.propuesta);
+  assert.match(falso2.llamadas[3].messages.at(-1).content[0].content, /Todavía no se puede proponer: El cliente "Taller Que No Existe" no está registrado/);
 
   // Pago repetido
   const geraldine = { uid: 'f-1', nombre: 'Geraldine', rol: 'facturacion' };
@@ -1907,7 +1914,7 @@ test('Pepito: un solo mensaje con cliente y venta; tras el SÍ sigue con la vent
   assert.equal(r1.propuesta.herramienta, 'guardar_cliente');
   // Reglas de forma de trabajar en el sistema
   assert.match(falso.llamadas[0].system[0].text, /Memoria: antes de preguntar algo revisa TODA la conversación/);
-  assert.match(falso.llamadas[0].system[0].text, /Nunca pidas datos opcionales/);
+  assert.match(falso.llamadas[0].system[0].text, /lo único opcional que sí se pregunta es, en notas y ventas, la forma de pago y el proveedor y costo/);
   const antesV = db.cols.ventas.size;
   const r2 = await pepito.resolverPropuesta(vend, r1.propuesta.id, true, 'gestor');
   assert.ok(r2.propuesta && r2.propuesta.herramienta === 'crear_venta', 'después del SÍ ya propone la venta');
@@ -1918,4 +1925,39 @@ test('Pepito: un solo mensaje con cliente y venta; tras el SÍ sigue con la vent
   assert.equal(r3.texto, 'NV guardada.');
   const uso = db.cols.pepito_uso.get('v-31_' + require('./datos').fechaISO(new Date()));
   assert.equal(uso.mensajes, 1, 'las confirmaciones no cuentan para el límite diario');
+});
+
+test('Dinámica sencilla de notas: más IVA suma 16 %, sin IVA deja el precio, costo y crédito opcionales', async () => {
+  const escritura = require('./escritura');
+  const daniel = { uid: 'v-41', nombre: 'Daniel Hernández', rol: 'vendedor' };
+  for (const nombre of ['Taller Rocco Prueba', 'Clientes Facebook Prueba', 'Jeic Prueba']) await escritura.guardarCliente(daniel, { nombre, sin_efectos_fiscales: true });
+  // Taller Rocco: 4800 + 4500 más IVA = 10,788
+  const rocco = await escritura.crearNotaEntrega(daniel, { cliente: 'Taller Rocco Prueba', con_iva: true, registrar_venta: true,
+    articulos: [{ descripcion: 'Delantera izquierda Virtus', precio_unitario: 4800 }, { descripcion: 'Trasera izquierda Virtus', precio_unitario: 4500 }] });
+  assert.equal(rocco.creada.total, 10788);
+  assert.equal(rocco.iva_modo, 'más IVA (16 %)');
+  assert.match(rocco.utilidad, /pendiente de costo/, 'sin costo se guarda igual');
+  // Facebook: 4400 sin IVA, queda 4400
+  const fb = await escritura.crearNotaEntrega(daniel, { cliente: 'Clientes Facebook Prueba', registrar_venta: true, articulos: [{ descripcion: 'Tapa cajuela Passat 2016 - Abelito', precio_unitario: 4400 }] });
+  assert.equal(fb.creada.total, 4400);
+  // Jeic: sin precio, varias piezas con su siniestro
+  const jeic = await escritura.crearNotaEntrega(daniel, { cliente: 'Jeic Prueba', registrar_venta: true,
+    articulos: [{ descripcion: 'Faro derecho Volvo S60', siniestro: 'B87274761', precio_unitario: 0 }, { descripcion: 'Fascia delantera Polo 2020', siniestro: 'B87542767', precio_unitario: 0 }] });
+  assert.equal(jeic.creada.total, 0);
+  // Con crédito de 14 días y costo: la venta guarda forma de pago, crédito del cliente y utilidad
+  const cred = await escritura.crearNotaEntrega(daniel, { cliente: 'Taller Rocco Prueba', con_iva: true, registrar_venta: true, forma_pago: 'credito', dias_credito: 14,
+    articulos: [{ descripcion: 'Faro Jetta 2019', precio_unitario: 3000, proveedor: 'Depo', costo: 2000 }] });
+  assert.equal(cred.dias_credito, 14);
+  assert.equal(cred.utilidad.utilidad, 1480, '3,480 con IVA − 2,000 de costo');
+  const venta = db.cols.ventas.get(cred.venta_registrada.id);
+  assert.equal(venta.formaPago, 'credito');
+  assert.equal(venta.items[0].proveedor, 'Depo');
+  assert.equal(venta.ivaModo, 'mas_iva');
+  const cli = [...db.cols.clientes.values()].find(c => c.razonSocial === 'Taller Rocco Prueba');
+  assert.equal(cli.diasCredito, 14);
+  // Venta directa: sin IVA por omisión, más IVA si lo dicen
+  const vs = await escritura.crearVenta(daniel, { cliente: 'Clientes Facebook Prueba', confirmar_alertas: true, partidas: [{ descripcion: 'Espejo', precio: 8900 }] });
+  assert.equal(vs.creada.venta_con_iva, 8900);
+  const vm = await escritura.crearVenta(daniel, { cliente: 'Clientes Facebook Prueba', iva: 'mas_iva', confirmar_alertas: true, partidas: [{ descripcion: 'Espejo izq', precio: 8900 }] });
+  assert.equal(vm.creada.venta_con_iva, 10324);
 });

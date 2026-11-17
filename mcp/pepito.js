@@ -50,7 +50,7 @@ function sistema(instruccionesMcp, canal) {
     '- Corto: contesta lo que te preguntaron y ya. ' + (canal === 'whatsapp' ? 'Máximo 5 líneas por WhatsApp, salvo que pidan una lista. ' : 'Pocas líneas. ') + 'Sin saludos largos, sin repetir lo que la persona dijo, sin explicar lo que vas a hacer, sin ofrecer cosas extra ni preguntar "¿algo más?".',
     '- Memoria: antes de preguntar algo revisa TODA la conversación (mensajes anteriores, fotos, notas de voz). Si el dato ya te lo dieron, úsalo; nunca lo vuelvas a pedir.',
     '- Un mensaje con todo: si el mensaje ya trae lo necesario, hazlo directo (consulta o propón) sin preguntas previas ni confirmaciones de más.',
-    '- Solo lo obligatorio: si falta algo obligatorio, pídelo en UNA sola pregunta corta con todo lo que falta. Nunca pidas datos opcionales que no te dieron ni cosas que la persona no pidió.',
+    '- Solo lo obligatorio: si falta algo obligatorio, pídelo en UNA sola pregunta corta con todo lo que falta. No pidas cosas que la persona no pidió; lo único opcional que sí se pregunta es, en notas y ventas, la forma de pago y el proveedor y costo, en una sola línea dentro del resumen y sin detener la propuesta.',
     '- Varios pedidos en un mensaje: hazlos en orden. Como solo puedes proponer un guardado a la vez, propón el primero y di en una línea que después sigue el otro; al confirmar, el sistema te deja seguir con el siguiente sin volver a pedir datos.',
     '- Si te corrigen un dato, usa la corrección y vuelve a proponer sin pedir lo demás.',
     'Cuando uses una herramienta que guarda algo, el sistema NO lo guarda todavía: se lo muestra a la persona para que confirme. ' +
@@ -243,6 +243,7 @@ async function herramientasDe(usuario, canal) {
     async revisar(nombre, args) {
       const fn = {
         crear_venta: () => escritura.crearVenta(usuarioHerr, args || {}, { soloRevisar: true }),
+        crear_nota_entrega: () => escritura.crearNotaEntrega(usuarioHerr, args || {}, { soloRevisar: true }),
         corregir_venta: () => (args && args.deshacer_ultima ? null : escritura.corregirVenta(usuarioHerr, args || {}, { soloRevisar: true })),
         convertir_cotizacion: () => negocio.convertirCotizacion(usuarioHerr, args || {}, { soloRevisar: true }),
         registrar_pago: () => negocio.registrarPago(usuarioHerr, args || {}, { soloRevisar: true })
