@@ -5,6 +5,7 @@ const datos = require('./datos');
 const escritura = require('./escritura');
 
 const { ErrorUsuario } = escritura;
+const candados = require('../public/diseno/alertas.js');
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const texto = v => String(v == null ? '' : v).trim();
 const DIA = 86400000;
@@ -62,7 +63,7 @@ async function buscarFactura(a) {
   return hallazgos[0];
 }
 
-async function registrarPago(u, a) {
+async function registrarPago(u, a, opciones = {}) {
   const f = await buscarFactura(a);
   if (f.estatus === 'cancelada') throw new ErrorUsuario(f.serieFolio + ' está cancelada; no lleva pagos.');
   const saldo = r2(f.saldo);
@@ -70,6 +71,9 @@ async function registrarPago(u, a) {
   const monto = r2(a.monto);
   if (!(monto > 0)) throw new ErrorUsuario('El monto del pago debe ser mayor a cero.');
   if (monto - saldo > 0.009) throw new ErrorUsuario('El pago (' + pesos(monto) + ') es mayor que el saldo de ' + f.serieFolio + ' (' + pesos(saldo) + '). Si el cliente pagó varias facturas, regístralo factura por factura.');
+  const alertas = candados.revisarPago(f, monto);
+  if (opciones.soloRevisar) return { revision: true, alertas, factura: f.serieFolio, cliente: f.clienteNombre || f.receptorNombre, saldo_actual: saldo, saldo_despues: r2(saldo - monto) };
+  if (alertas.length && !a.confirmar_alertas) throw new ErrorUsuario('Antes de registrar el pago revisa esto con la persona: ' + alertas.join(' ') + ' Si todo está bien, repite con confirmar_alertas: true.');
   const fecha = a.fecha ? ms(a.fecha) : Date.now();
   const pago = { monto, fecha, forma: a.forma || 'Transferencia', por: quien(u), origen: 'Pepito' };
   if (texto(a.referencia)) pago.nota = texto(a.referencia);
@@ -100,7 +104,7 @@ async function buscarCotizacion(a) {
   return h[0];
 }
 
-async function convertirCotizacion(u, a) {
+async function convertirCotizacion(u, a, opciones = {}) {
   const c = await buscarCotizacion(a);
   const folio = 'COT-' + (c.notaId || c.id);
   if (c.estatus === 'vendida' || c.ventaId) throw new ErrorUsuario(folio + ' ya se convirtió en venta' + (c.ventaFolio ? ' (' + c.ventaFolio + ')' : '') + '. Si algo cambió, corrige esa venta.');
@@ -121,8 +125,10 @@ async function convertirCotizacion(u, a) {
     cliente: c.clienteNombre, fecha: a.fecha, forma_pago: a.forma_pago, estatus: a.estatus || 'Pendiente',
     vendedor: esDireccion(u) ? (a.vendedor || c.vendedor) : a.vendedor, contacto: a.contacto, impuesto_nota: a.impuesto_nota,
     precio_con_iva: false, // la cotización guarda precios sin IVA
+    confirmar_alertas: a.confirmar_alertas,
     partidas
-  });
+  }, opciones);
+  if (opciones.soloRevisar) return Object.assign(venta, { cotizacion: folio });
   await fb().actualizar('cotizaciones', c.id, { estatus: 'vendida', ventaId: venta.creada.id, ventaFolio: venta.creada.folio, vendidaEn: Date.now(), vendidaPor: quien(u) });
   datos.olvidarCache();
   return Object.assign(venta, { cotizacion: folio });

@@ -905,6 +905,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script src="/diseno/plazos.js"></script>
 <script src="/diseno/roles.js"></script>
 <script src="/diseno/sat.js"></script>
+<script src="/diseno/alertas.js"></script>
 </head>
 <body>
 <script>
@@ -3566,6 +3567,13 @@ window.saveVentaMultiLinea = async function() {
   const utilidadSinIva = costoTotal == null ? null : r2(subtotal - ajusteTotal - costoTotal);
   const siniestros = items.map(i => i.numSiniestro).filter(s => s).join(' | ');
   const dinero = { items, siniestros, subtotal, ivaTotal, ajusteTotal, total, precioConIva: conIva, costoTotal, utilidad, utilidadPct, utilidadSinIva, costoCompleto: conCosto.length === items.length };
+  // Candados (diseno/alertas.js, los mismos que usa Pepito): repetida, siniestro, precio contra costo y contra lo de antes
+  if (window.mayaAlertas) {
+    const alertas = window.mayaAlertas.revisar(
+      { id: edicion ? edicion.id : undefined, clienteId, clienteNombre, items, total, utilidad },
+      (data.ventas || []), (data.compras || []), { repetida: !edicion });
+    if (alertas.length && !confirm('Revisa esto antes de guardar:\n\n' + alertas.map((a, i) => (i + 1) + ') ' + a).join('\n') + '\n\n¿Está bien así y la guardo?')) return;
+  }
   const $ = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   if (edicion) {

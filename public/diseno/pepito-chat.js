@@ -167,6 +167,7 @@ function pintar() {
   if (conv.propuesta) {
     html += `<div class="m-chat-ticket" role="group" aria-label="Confirmar antes de guardar">
       <div class="m-chat-ticket-cabeza">${icono('circle-alert', 16)}<div><strong>Antes de guardar</strong><span>${escapar(conv.propuesta.titulo)}: revisa lo que Pepito te propuso arriba.</span></div></div>
+      ${(conv.propuesta.alertas || []).length ? `<ul class="m-chat-alertas" aria-label="Revisa esto antes de guardar">${conv.propuesta.alertas.map(a => `<li>${icono('circle-alert', 13)}<span>${escapar(a)}</span></li>`).join('')}</ul>` : ''}
       <div class="m-chat-ticket-botones">
         <button type="button" class="btn btn-secondary btn-sm" data-confirmar="no">Cancelar</button>
         <button type="button" class="btn btn-primary btn-sm" data-confirmar="si">${icono('check', 14)}<span>Guardar</span></button>

@@ -1808,3 +1808,8 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
   .m-presencia li { grid-template-columns: 12px minmax(0, 1fr); }
   .m-presencia-estado { grid-column: 2; }
 }
+
+/* Alertas del ensayo antes de guardar (ticket de Pepito) */
+.m-chat-alertas { list-style: none; margin: 8px 0 4px; padding: 10px 12px; display: grid; gap: 6px; border-radius: var(--m-r-sm); background: rgba(245, 185, 66, 0.12); border: 1px solid rgba(245, 185, 66, 0.35); }
+.m-chat-alertas li { display: grid; grid-template-columns: 14px 1fr; gap: 8px; align-items: start; color: var(--m-niebla); font-size: 0.86rem; line-height: 1.35; }
+.m-chat-alertas li svg { color: var(--m-ambar); margin-top: 2px; }

@@ -600,7 +600,7 @@ test('crear venta y cotización sin vendedor no ponen al usuario conectado; con 
   const partidas = [{ descripcion: 'Cristal', precio: 1000, iva_porcentaje: 0 }];
   const v = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, forma_pago: 'contado' });
   assert.equal(db.cols.ventas.get(v.creada.id).vendedor, '');
-  const v2 = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, vendedor: 'Daniel', forma_pago: 'contado' });
+  const v2 = await c.llamar('crear_venta', { cliente: 'Zeta Autopartes', partidas, vendedor: 'Daniel', forma_pago: 'contado', confirmar_alertas: true });
   assert.equal(db.cols.ventas.get(v2.creada.id).vendedor, 'Daniel');
   const cot = await c.llamar('crear_cotizacion', { cliente: 'Zeta Autopartes', partidas });
   assert.equal(db.cols.cotizaciones.get(cot.creada).vendedor, '');
@@ -1561,23 +1561,23 @@ test('Proceso por Pepito: cliente con sus 7 datos fiscales, nota de venta propia
 
   // La nota: el vendedor es quien habla; no se puede a nombre de otro; cliente sin registrar no
   const partidas = [{ descripcion: 'Faro delantero izq.', precio: 4350, iva_porcentaje: 16, proveedor: 'Refaccionaria Norte', costo: 2500 }]; // 4,350 ya con IVA
-  const v = await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', estatus: 'Pendiente' });
+  const v = await escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', estatus: 'Pendiente' });
   const venta = db.cols.ventas.get(v.creada.id);
   assert.equal(venta.vendedor, 'Estefanía Ventas');
   assert.equal(venta.formaPago, 'contado');
   assert.equal(venta.total, 4350);
   assert.ok(v.creada.folio);
-  await assert.rejects(escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', vendedor: 'Daniel' }), /Solo puedes registrar tus propias ventas/);
-  assert.ok(await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', vendedor: 'Estefanía' }), 'su propio nombre sí');
-  await assert.rejects(escritura.crearVenta(vend, { cliente: 'Taller Desconocido', partidas, forma_pago: 'contado' }), /no está registrado\. Primero regístralo/);
+  await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', vendedor: 'Daniel' }), /Solo puedes registrar tus propias ventas/);
+  assert.ok(await escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', vendedor: 'Estefanía' }), 'su propio nombre sí');
+  await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Taller Desconocido', partidas, forma_pago: 'contado' }), /no está registrado\. Primero regístralo/);
   await assert.rejects(escritura.crearNotaEntrega(vend, { cliente: 'Taller Desconocido', articulos: [{ descripcion: 'Faro', cantidad: 1, precio_unitario: 1 }] }), /no está registrado/);
   // Crédito: solo si está autorizado
-  await assert.rejects(escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' }), /no tiene crédito autorizado/);
+  await assert.rejects(escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' }), /no tiene crédito autorizado/);
   c.diasCredito = 15;
-  const vc = await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' });
+  const vc = await escritura.crearVenta(vend, { confirmar_alertas: true, cliente: 'Estefanía Cervantes', partidas, forma_pago: 'credito' });
   assert.equal(db.cols.ventas.get(vc.creada.id).diasCredito, 15);
   // Dirección sigue pudiendo capturar por otros y a clientes sin registrar
-  const va = await escritura.crearVenta(ADMIN, { cliente: 'Taller Desconocido', partidas, forma_pago: 'contado', vendedor: 'Daniel' });
+  const va = await escritura.crearVenta(ADMIN, { confirmar_alertas: true, cliente: 'Taller Desconocido', partidas, forma_pago: 'contado', vendedor: 'Daniel' });
   assert.equal(db.cols.ventas.get(va.creada.id).vendedor, 'Daniel');
 });
 
@@ -1587,7 +1587,7 @@ test('Registro de venta: proveedor, costo total con desglose, utilidad y % para 
   await escritura.guardarCliente(rocio, { nombre: 'Taller Utilidad Prueba', rfc: 'TAUP880101AB1', email: 'taller@utilidad.mx', tipo_persona: 'fisica', regimen_fiscal: '612', calle: 'Calle 1', numero_exterior: '5', municipio: 'Coyoacán', estado: 'CDMX', codigo_postal: '04000', uso_cfdi: 'G01' });
   const pieza = { descripcion: 'Facia delantera Nissan Versa 2020 con rejilla', siniestro: 'SIN-77881', precio: 3900, iva_porcentaje: 16 };
   // Sin proveedor ni costo no se registra
-  await assert.rejects(escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [pieza] }),
+  await assert.rejects(escritura.crearVenta(rocio, { confirmar_alertas: true, cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [pieza] }),
     /No registré la venta\. Faltan: proveedor; costo total \(pieza \+ guía \+ paquetería \+ logística\)/);
   // El ejemplo de la imagen: costo 2000 + 500 + 100 + 100 = 2700, utilidad 1200 (30.77 %)
   const r = await escritura.crearVenta(rocio, {
@@ -1611,7 +1611,7 @@ test('Registro de venta: proveedor, costo total con desglose, utilidad y % para 
   assert.equal(g.subtotal + g.ivaTotal, 3900);
   assert.equal(g.utilidadSinIva, 662.07);
   // Si dicen "más IVA", se suma
-  const masIva = await escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', precio_con_iva: false,
+  const masIva = await escritura.crearVenta(rocio, { confirmar_alertas: true, cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', precio_con_iva: false,
     partidas: [Object.assign({}, pieza, { precio: 1000, proveedor: 'X', costo: 800 })] });
   assert.equal(masIva.creada.venta_con_iva, 1160);
   assert.equal(masIva.creada.utilidad, 360);
@@ -1716,12 +1716,12 @@ test('Día a día: registrar pago, cotización → venta, historial de costos, c
   assert.ok(!(await cr.cliente.listTools()).tools.some(t => t.name === 'registrar_pago'), 'el vendedor no registra pagos');
 
   // 2) Cotización → venta con las mismas piezas; pide costo; no se convierte dos veces
-  const cot = await escritura.crearCotizacion(rocio, { cliente: 'Taller Utilidad Prueba', partidas: [{ descripcion: 'Faro Jetta 2018', precio: 2000, iva_porcentaje: 16, siniestro: 'SIN-9' }] });
+  const cot = await escritura.crearCotizacion(rocio, { cliente: 'Taller Utilidad Prueba', partidas: [{ descripcion: 'Faro Jetta 2018', precio: 2000, iva_porcentaje: 16, siniestro: 'SIN-90012' }] });
   await assert.rejects(negocio.convertirCotizacion(rocio, { id: cot.creada, forma_pago: 'contado' }), /Faltan: proveedor; costo total/);
   const v = await negocio.convertirCotizacion(rocio, { folio: cot.folio, forma_pago: 'contado', costos: [{ numero: 1, proveedor: 'Depo', costo: 1500 }] });
   assert.equal(v.creada.venta_con_iva, 2320);
   assert.equal(v.creada.utilidad, 820);
-  assert.equal(db.cols.ventas.get(v.creada.id).items[0].numSiniestro, 'SIN-9');
+  assert.equal(db.cols.ventas.get(v.creada.id).items[0].numSiniestro, 'SIN-90012');
   assert.equal(db.cols.cotizaciones.get(cot.creada).estatus, 'vendida');
   await assert.rejects(negocio.convertirCotizacion(rocio, { id: cot.creada, forma_pago: 'contado' }), /ya se convirtió en venta/);
 
@@ -1761,4 +1761,65 @@ test('Día a día: registrar pago, cotización → venta, historial de costos, c
   const pdf = negocio.pdfEstadoCuenta(e);
   assert.ok(pdf.datos.slice(0, 4).toString() === '%PDF');
   assert.match(pdf.archivo, /^estado-cuenta-taller-utilidad-prueba\.pdf$/);
+});
+
+test('Candados antes del SÍ: venta repetida, cero de más, siniestro y pago repetido se enseñan antes de guardar', async () => {
+  const escritura = require('./escritura');
+  const negocio = require('./negocio');
+  const candados = require('../public/diseno/alertas.js');
+  const pepito = require('./pepito');
+  const rocio = { uid: 'v-9', nombre: 'Rocío Comisiones', rol: 'vendedor' };
+  await escritura.guardarCliente(rocio, { nombre: 'Taller Utilidad Prueba', rfc: 'TAUP880101AB1', email: 'taller@utilidad.mx', tipo_persona: 'fisica', regimen_fiscal: '612', calle: 'Calle 1', numero_exterior: '5', municipio: 'Coyoacán', estado: 'CDMX', codigo_postal: '04000', uso_cfdi: 'G01' });
+  const facia = { descripcion: 'Facia Versa 2020', siniestro: 'SIN-55501', precio: 3900, proveedor: 'Depo', costo: 2700 };
+  const base = { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [facia] };
+  const primera = await escritura.crearVenta(rocio, base);
+  const guardada = Object.assign({ id: primera.creada.id }, db.cols.ventas.get(primera.creada.id));
+
+  // Directo al MCP: la misma venta otra vez no se guarda sin confirmar_alertas
+  await assert.rejects(escritura.crearVenta(rocio, base), /Parece repetida: ya hay una venta a Taller Utilidad Prueba .*siniestro SIN-55501 ya está/);
+  // Un cero de menos en el precio: contra su costo y contra lo de antes
+  const r = await escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [Object.assign({}, facia, { precio: 390, siniestro: 'SIN-77702' })] }, { soloRevisar: true });
+  assert.ok(r.alertas.some(a => /abajo de su costo/.test(a)));
+  assert.ok(r.alertas.some(a => /antes se vendía en alrededor de \$3,900\.00/.test(a)));
+  // Un cero de más en el costo, y un siniestro incompleto
+  const r2 = candados.revisar({ clienteNombre: 'Otro', items: [{ pedido: 'Facia Versa 2020', numSiniestro: 'S1', precio: 3362.07, iva: 537.93, costo: 27000 }], total: 3900 }, [guardada], []);
+  assert.ok(r2.some(a => /se ve incompleto/.test(a)));
+  assert.ok(r2.some(a => /antes costaba alrededor de \$2,700\.00/.test(a)));
+  // Una venta normal no da alertas
+  const ok = await escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [{ descripcion: 'Calavera Jetta', siniestro: 'SIN-88803', precio: 2000, proveedor: 'Depo', costo: 1400 }] }, { soloRevisar: true });
+  assert.deepEqual(ok.alertas, []);
+
+  // Por Pepito: las alertas salen en el resumen antes del SÍ, y al confirmar ya se guarda
+  const falso = claudeFalso([
+    herramienta('crear_venta', base),
+    texto('Ojo: parece repetida. ¿La guardo?'),
+    texto('Listo, quedó la venta.')
+  ]);
+  pepito._usarCliente(falso);
+  const antes = db.cols.ventas.size;
+  const p = await pepito.conversar(rocio, 'regístrame otra facia para el taller', 'gestor');
+  assert.ok(p.propuesta && p.propuesta.alertas.length >= 1);
+  assert.equal(p.propuesta.args.confirmar_alertas, true);
+  assert.match(falso.llamadas[1].messages.at(-1).content[0].content, /ALERTAS que debes decirle claramente.*Parece repetida/);
+  assert.match(falso.llamadas[1].messages.at(-1).content[0].content, /Cálculo del sistema.*"utilidad":1200/);
+  await pepito.resolverPropuesta(rocio, p.propuesta.id, true, 'gestor');
+  assert.equal(db.cols.ventas.size, antes + 1, 'la persona vio la alerta y dijo que sí');
+
+  // Si falta algo, Pepito no propone: lo pide
+  const falso2 = claudeFalso([
+    herramienta('crear_venta', { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [{ descripcion: 'Moldura', precio: 500 }] }),
+    texto('Me falta el proveedor y el costo.')
+  ]);
+  pepito._usarCliente(falso2);
+  const p2 = await pepito.conversar(rocio, 'vende una moldura en 500', 'gestor');
+  assert.ok(!p2.propuesta, 'sin proveedor ni costo no hay propuesta');
+  assert.match(falso2.llamadas[1].messages.at(-1).content[0].content, /Todavía no se puede proponer: No registré la venta\. Faltan: proveedor; costo total/);
+
+  // Pago repetido
+  const geraldine = { uid: 'f-1', nombre: 'Geraldine', rol: 'facturacion' };
+  await db.guardar('facturas', 'fz1', { serieFolio: 'A-7001', clienteNombre: 'Taller Utilidad Prueba', fecha: Date.now(), total: 5000, saldo: 5000, estatus: 'por_cobrar', pagos: [] });
+  await negocio.registrarPago(geraldine, { id: 'fz1', monto: 1000 });
+  await assert.rejects(negocio.registrarPago(geraldine, { id: 'fz1', monto: 1000 }), /Ya hay un pago de \$1,000\.00 a A-7001/);
+  const ok2 = await negocio.registrarPago(geraldine, { id: 'fz1', monto: 1000, confirmar_alertas: true });
+  assert.equal(ok2.saldo_nuevo, 3000);
 });
