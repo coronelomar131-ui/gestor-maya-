@@ -1681,3 +1681,77 @@ test('Corregir venta: precio, costo y piezas por si alguien se equivoca; histori
   assert.ok(t.error, 'facturada: el vendedor no puede ni por Pepito');
   await cv.cerrar();
 });
+
+test('Día a día: registrar pago, cotización → venta, historial de costos, comisiones y estado de cuenta', async () => {
+  const escritura = require('./escritura');
+  const negocio = require('./negocio');
+  const rocio = { uid: 'v-9', nombre: 'Rocío Comisiones', rol: 'vendedor' };
+  const geraldine = { uid: 'f-1', nombre: 'Geraldine', rol: 'facturacion' };
+  await escritura.guardarCliente(rocio, { nombre: 'Taller Utilidad Prueba', rfc: 'TAUP880101AB1', email: 'taller@utilidad.mx', tipo_persona: 'fisica', regimen_fiscal: '612', calle: 'Calle 1', numero_exterior: '5', municipio: 'Coyoacán', estado: 'CDMX', codigo_postal: '04000', uso_cfdi: 'G01' });
+
+  // 1) Pago: baja el saldo, valida montos y solo Facturación/Dirección tienen la herramienta
+  const hace40 = Date.now() - 40 * 86400000;
+  await db.guardar('facturas', 'fx1', { serieFolio: 'A-9001', clienteNombre: 'Taller Utilidad Prueba', fecha: hace40, vencimiento: hace40 + 30 * 86400000, total: 10000, saldo: 10000, estatus: 'por_cobrar', pagos: [], metodoPago: 'PPD', notas: [] });
+  await db.guardar('facturas', 'fx2', { serieFolio: 'A-9002', clienteNombre: 'Taller Utilidad Prueba', fecha: Date.now(), vencimiento: Date.now() + 15 * 86400000, total: 2000, saldo: 2000, estatus: 'por_cobrar', pagos: [] });
+  await assert.rejects(negocio.registrarPago(geraldine, { factura: 'A-9001', monto: 20000 }), /mayor que el saldo/);
+  await assert.rejects(negocio.registrarPago(geraldine, { factura: 'A-777', cliente: 'Taller Utilidad', monto: 5 }), /tiene por cobrar: A-9001 .*A-9002/);
+  const p = await negocio.registrarPago(geraldine, { factura: 'a 9001', monto: 4000, referencia: 'SPEI 123' });
+  assert.equal(p.saldo_nuevo, 6000);
+  assert.match(p.aviso, /complemento de pago/);
+  assert.equal(db.cols.facturas.get('fx1').pagos[0].nota, 'SPEI 123');
+  const p2 = await negocio.registrarPago(geraldine, { id: 'fx1', monto: 6000 });
+  assert.ok(p2.pagada);
+  assert.equal(db.cols.facturas.get('fx1').estatus, 'pagada');
+  const cg = await conectar(geraldine);
+  assert.ok((await cg.cliente.listTools()).tools.some(t => t.name === 'registrar_pago'));
+  await cg.cerrar();
+  const cr = await conectar(rocio);
+  assert.ok(!(await cr.cliente.listTools()).tools.some(t => t.name === 'registrar_pago'), 'el vendedor no registra pagos');
+
+  // 2) Cotización → venta con las mismas piezas; pide costo; no se convierte dos veces
+  const cot = await escritura.crearCotizacion(rocio, { cliente: 'Taller Utilidad Prueba', partidas: [{ descripcion: 'Faro Jetta 2018', precio: 2000, iva_porcentaje: 16, siniestro: 'SIN-9' }] });
+  await assert.rejects(negocio.convertirCotizacion(rocio, { id: cot.creada, forma_pago: 'contado' }), /Faltan: proveedor; costo total/);
+  const v = await negocio.convertirCotizacion(rocio, { folio: cot.folio, forma_pago: 'contado', costos: [{ numero: 1, proveedor: 'Depo', costo: 1500 }] });
+  assert.equal(v.creada.venta_con_iva, 2320);
+  assert.equal(v.creada.utilidad, 820);
+  assert.equal(db.cols.ventas.get(v.creada.id).items[0].numSiniestro, 'SIN-9');
+  assert.equal(db.cols.cotizaciones.get(cot.creada).estatus, 'vendida');
+  await assert.rejects(negocio.convertirCotizacion(rocio, { id: cot.creada, forma_pago: 'contado' }), /ya se convirtió en venta/);
+
+  // 3) Historial de costos: de ventas y de compras
+  await escritura.crearCompra(ADMIN, { proveedor: 'Importadora', fecha: '2026-10-01', articulos: [{ pieza: 'Faro Jetta 2018 izq', cantidad_comprada: 2, costo_unitario: 1400 }] });
+  require('./datos').olvidarCache();
+  const hc = await negocio.historialCostos({ pieza: 'faro jetta' });
+  assert.equal(hc.encontradas, 2);
+  assert.equal(hc.resumen.costo_minimo, 1400);
+  assert.deepEqual(hc.por_proveedor.map(x => x.proveedor).sort(), ['Depo', 'Importadora']);
+
+  // 4) Comisiones: sin porcentaje avisa; Dirección lo define y marca pagadas; el vendedor solo ve lo suyo
+  let com = await negocio.comisiones(rocio, {});
+  assert.equal(com.por_vendedor.length, 1);
+  assert.equal(com.por_vendedor[0].comision_por_pagar, null);
+  assert.match(com.aviso, /Falta definir el porcentaje de comisión de: Rocío Comisiones/);
+  await assert.rejects(negocio.configurarComision(rocio, { vendedor: 'Rocío', porcentaje: 50 }), /Solo Dirección/);
+  await negocio.configurarComision(ADMIN, { vendedor: 'Rocío', porcentaje: 10 });
+  com = await negocio.comisiones(ADMIN, { vendedor: 'Rocío' });
+  assert.equal(com.por_vendedor[0].comision_por_pagar, 82);
+  const pag = await negocio.marcarComisionesPagadas(ADMIN, { vendedor: 'Rocío', referencia: 'nómina 1' });
+  assert.equal(pag.total_pagado, 82);
+  com = await negocio.comisiones(rocio, {});
+  assert.equal(com.por_vendedor[0].comision_por_pagar, 0);
+  assert.equal(com.por_vendedor[0].ya_pagado, 82);
+  await assert.rejects(negocio.marcarComisionesPagadas(ADMIN, { vendedor: 'Rocío' }), /No hay ventas .* pendiente/);
+  assert.ok((await cr.cliente.listTools()).tools.some(t => t.name === 'comisiones'));
+  assert.ok(!(await cr.cliente.listTools()).tools.some(t => t.name === 'configurar_comision'));
+  await cr.cerrar();
+
+  // 5) Estado de cuenta + PDF
+  const e = await negocio.estadoCuenta({ cliente: 'taller utilidad' });
+  assert.equal(e.por_pagar, 2000);
+  assert.equal(e.facturas_pendientes.length, 1);
+  assert.equal(e.pagos_recientes.length, 2);
+  assert.match(e.texto_para_cliente, /Factura A-9002: saldo \$2,000\.00/);
+  const pdf = negocio.pdfEstadoCuenta(e);
+  assert.ok(pdf.datos.slice(0, 4).toString() === '%PDF');
+  assert.match(pdf.archivo, /^estado-cuenta-taller-utilidad-prueba\.pdf$/);
+});

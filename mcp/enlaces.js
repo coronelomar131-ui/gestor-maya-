@@ -1,7 +1,7 @@
 // Enlaces para descargar el PDF de una nota o cotización desde el gestor (los abre diseno/enlaces.js).
 // Al abrirlos hay que tener sesión en el gestor, así que no exponen nada a quien no tenga cuenta.
 const BASE = (process.env.GESTOR_URL || 'https://gestor-maya.vercel.app').replace(/\/+$/, '');
-const TIPOS = { crear_nota_entrega: 'nota_entrega', crear_venta: 'nota_venta', crear_cotizacion: 'cotizacion' };
+const TIPOS = { crear_nota_entrega: 'nota_entrega', crear_venta: 'nota_venta', convertir_cotizacion: 'nota_venta', crear_cotizacion: 'cotizacion' };
 
 const enlace = (tipo, id) => `${BASE}/?pdf=${encodeURIComponent(tipo)}:${encodeURIComponent(id)}`;
 

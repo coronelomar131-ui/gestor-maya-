@@ -14,6 +14,7 @@ const datos = require('./datos');
 const avisos = require('./avisos');
 const grupo = require('./grupo');
 const facturacion = require('./facturacion');
+const negocio = require('./negocio');
 const rolesDef = require('../public/diseno/roles.js');
 
 const MODELO = process.env.PEPITO_MODELO || 'claude-sonnet-5-5';
@@ -151,22 +152,33 @@ const ALARMA = new Set(HERRAMIENTAS_ALARMA.map(t => t.name));
 // solo le llega a quien lo pidió, y solo de lo que su rol puede ver)
 const HERRAMIENTA_PDF = {
   name: 'mandar_pdf',
-  description: 'Manda por este chat de WhatsApp el PDF (mismo diseño de la app) de una nota de entrega, nota de venta o cotización que ya existe. ' +
-    'Primero búscala (historial_notas, ver_nota, buscar_registros) para tener su id. Para una nota de venta usa el id de la venta.',
+  description: 'Manda por este chat de WhatsApp el PDF (mismo diseño de la app) de una nota de entrega, nota de venta o cotización que ya existe, o el estado de cuenta de un cliente. ' +
+    'Primero búscala (historial_notas, ver_nota, buscar_registros) para tener su id. Para una nota de venta usa el id de la venta. Para estado_cuenta manda cliente en vez de id.',
   input_schema: {
     type: 'object',
     properties: {
-      tipo: { type: 'string', enum: ['nota_entrega', 'nota_venta', 'cotizacion'], description: 'nota_entrega = NE, nota_venta = NV, cotizacion = COT' },
-      id: { type: 'string', description: 'id del documento, como lo regresan las búsquedas' },
+      tipo: { type: 'string', enum: ['nota_entrega', 'nota_venta', 'cotizacion', 'estado_cuenta'], description: 'nota_entrega = NE, nota_venta = NV, cotizacion = COT, estado_cuenta = facturas pendientes y pagos de un cliente' },
+      id: { type: 'string', description: 'id del documento, como lo regresan las búsquedas (no aplica a estado_cuenta)' },
+      cliente: { type: 'string', description: 'Solo para estado_cuenta: nombre del cliente' },
       folio: { type: 'string', description: 'Folio para el mensaje, ej. NE-230' }
     },
-    required: ['tipo', 'id'],
+    required: ['tipo'],
     additionalProperties: false
   }
 };
 
 async function mandarPdf(usuario, a) {
   if (!usuario.whatsapp10) return { error: true, texto: 'No tengo a dónde mandarlo: tu número no está registrado.' };
+  if (a.tipo === 'estado_cuenta') {
+    if (!(PERMISOS.facturas || []).includes(usuario.rol)) return { error: true, texto: 'Tu rol no puede ver estados de cuenta.' };
+    try {
+      const e = await negocio.estadoCuenta({ cliente: a.cliente });
+      const archivo = negocio.pdfEstadoCuenta(e);
+      const env = await wa.enviarDocumento(usuario.whatsapp10, archivo.datos, archivo.archivo, '📄 Estado de cuenta de ' + e.cliente);
+      return env.ok ? { error: false, texto: JSON.stringify({ enviado: true, cliente: e.cliente, por_pagar: e.por_pagar, vencido: e.vencido }) } : { error: true, texto: 'No se pudo mandar el PDF: ' + env.error };
+    } catch (err) { return { error: true, texto: err.message }; }
+  }
+  if (!a.id) return { error: true, texto: 'Falta el id del documento.' };
   const modulo = documentos.MODULO[a.tipo];
   if (!modulo || !(PERMISOS[modulo] || []).includes(usuario.rol)) return { error: true, texto: 'Tu rol no puede ver ese tipo de documento.' };
   const r = await documentos.mandar(usuario.whatsapp10, a.tipo, String(a.id), a.folio ? '📄 ' + a.folio : '');
@@ -241,7 +253,7 @@ async function herramientasDe(usuario, canal) {
 // ── Actividad para la Oficina 3D: qué área trabajó en cada pedido (config/pepito_actividad, últimos 12) ──
 const AREA_DE = {
   historial_notas: 'reportes', resumen_ventas: 'reportes', buscar_ventas: 'reportes', buscar_registros: 'reportes', resumen_compras: 'entregas', crear_compra: 'entregas', vender_de_compra: 'entregas', eliminar_compra: 'entregas',
-  ver_nota: 'facturacion', pendientes_facturar: 'facturacion', crear_nota_entrega: 'facturacion', crear_venta: 'facturacion', corregir_venta: 'facturacion', utilidad_comisiones: 'reportes',
+  ver_nota: 'facturacion', pendientes_facturar: 'facturacion', crear_nota_entrega: 'facturacion', crear_venta: 'facturacion', corregir_venta: 'facturacion', utilidad_comisiones: 'reportes', convertir_cotizacion: 'facturacion', registrar_pago: 'cobranza', estado_cuenta: 'cobranza', historial_costos: 'entregas', comisiones: 'reportes', configurar_comision: 'direccion', marcar_comisiones_pagadas: 'direccion',
   cobranza: 'cobranza', emparejar_factura: 'facturacion', ligar_factura: 'facturacion',
   buscar_productos: 'entregas', buscar_productos_ml: 'entregas', guardar_producto: 'entregas', guardar_entrega: 'entregas',
   cambiar_estatus_venta: 'entregas', guardar_proveedor: 'entregas',
@@ -425,8 +437,14 @@ async function resolverPropuesta(usuario, propuestaId, confirmar, canal) {
     const res = await h.llamar(p.herramienta, p.args);
     // Nota nueva desde Pepito: avisa al almacén igual que cuando se captura en el gestor
     const nueva = !res.error && documentos.deCreacion(p.herramienta, res.texto);
-    if (nueva && (p.herramienta === 'crear_nota_entrega' || p.herramienta === 'crear_venta')) {
-      await avisos.porEvento('nota_nueva', { col: p.herramienta === 'crear_venta' ? 'ventas' : 'notasEntrega', id: nueva.id }, usuario).catch(e => console.error('pepito: aviso de nota nueva', e.message));
+    if (nueva && ['crear_nota_entrega', 'crear_venta', 'convertir_cotizacion'].includes(p.herramienta)) {
+      await avisos.porEvento('nota_nueva', { col: p.herramienta === 'crear_nota_entrega' ? 'notasEntrega' : 'ventas', id: nueva.id }, usuario).catch(e => console.error('pepito: aviso de nota nueva', e.message));
+    }
+    // Pago registrado desde Pepito: avisa a Dirección y a los vendedores igual que desde Cobranza
+    if (!res.error && p.herramienta === 'registrar_pago') {
+      let pago = null;
+      try { pago = JSON.parse(res.texto); } catch (e) { /* sin aviso */ }
+      if (pago && pago.id) await avisos.porEvento('pago', { id: pago.id, monto: pago.monto }, usuario).catch(e => console.error('pepito: aviso de pago', e.message));
     }
     const cli = claude();
     if (cli && !res.error) {

@@ -69,6 +69,7 @@ Se dan en **Usuarios → Nuevo usuario**; al elegir el rol aparece qué puede ha
 - Clientes: marcar a Jeic como "Nota sin precio".
 
 ## Qué quedó listo esta semana
+- Pepito: registrar pagos (también desde la foto de la transferencia; solo Facturación y Dirección), convertir una cotización en venta, historial de costos por pieza, comisiones por vendedor (Dirección define el % con "pon la comisión de Daniel en 10%") y estado de cuenta del cliente (texto o PDF por WhatsApp).
 - Geraldine Bot: factura de CONTPAQi por WhatsApp (XML o PDF), ligada por siniestro; orden directa (FLEC) como venta facturada.
 - Días para facturar por cliente, estados (en espera, vence mañana, lista, vencida, sin movimiento) en Facturación, Seguimiento, resumen diario y Pepito (`seguimiento_facturacion`).
 - Cancelar nota con motivo obligatorio (Seguimiento y Pepito `cancelar_nota`), con aviso al vendedor y a facturación.

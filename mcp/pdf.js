@@ -86,4 +86,4 @@ async function generar(tipo, registro, extra) {
   return { datos: salida, archivo: FUNCIONES[tipo].archivo(registro) };
 }
 
-module.exports = { generar, TIPOS: Object.keys(FUNCIONES) };
+module.exports = { generar, logo: logoApp, TIPOS: Object.keys(FUNCIONES) };

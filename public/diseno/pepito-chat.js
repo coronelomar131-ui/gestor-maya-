@@ -26,7 +26,7 @@ const sellados = new Set(); // mensajes "guardado" que ya mostraron su sello (la
 const CONSULTAS = {
   historial_notas: 'Notas', ver_nota: 'Nota', resumen_ventas: 'Resumen de ventas', buscar_ventas: 'Ventas', buscar_clientes: 'Clientes',
   buscar_productos: 'Inventario', buscar_productos_ml: 'Mercado Libre', buscar_registros: 'Registros', pendientes_facturar: 'Por facturar',
-  cobranza: 'Cobranza', crear_nota_entrega: 'Nota de entrega', crear_venta: 'Nota de venta', corregir_venta: 'Corrección de venta', utilidad_comisiones: 'Utilidad y comisiones', crear_cotizacion: 'Cotización',
+  cobranza: 'Cobranza', crear_nota_entrega: 'Nota de entrega', crear_venta: 'Nota de venta', corregir_venta: 'Corrección de venta', utilidad_comisiones: 'Utilidad y comisiones', registrar_pago: 'Pago de cliente', convertir_cotizacion: 'Cotización a venta', historial_costos: 'Historial de costos', comisiones: 'Comisiones', configurar_comision: 'Porcentaje de comisión', marcar_comisiones_pagadas: 'Comisiones pagadas', estado_cuenta: 'Estado de cuenta', crear_cotizacion: 'Cotización',
   cambiar_estatus_venta: 'Estatus de venta', guardar_cliente: 'Cliente', guardar_producto: 'Producto', guardar_entrega: 'Entrega',
   guardar_proveedor: 'Proveedor', eliminar_registro: 'Borrar registro', enviar_whatsapp: 'WhatsApp'
 };
