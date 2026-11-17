@@ -110,20 +110,20 @@ function crearServidor(usuario) {
   if (puede('envios')) {
     servidor.registerTool('envios_seguimiento', {
       title: 'Envíos por paquetería',
-      description: 'Las notas que van por paquetería (Paquete Express, Skydrops, Mercado Envíos…) con su guía y estatus (sin_guia, guia_generada, en_transito, recibido, cancelado), ' +
+      description: 'Semáforo de paquetería: las notas que van por paquetería (Paquete Express, Skydrops, Mercado Envíos…) con su guía, su paso (almacen → recoleccion → transito → entregado, o incidencia / cancelado) y su color (verde a tiempo, amarillo tardado, rojo atorado o incidencia), ' +
         'y sus alertas: falta la guía, o lleva 3 días sin cambio. Conteos por paquetería. Úsala para "¿qué envíos faltan?", "¿qué guía tiene la NE-245?".',
-      inputSchema: { estatus: z.enum(['sin_guia', 'guia_generada', 'en_transito', 'recibido', 'cancelado']).optional(), paqueteria: z.string().optional() },
+      inputSchema: { estatus: z.enum(['almacen', 'recoleccion', 'transito', 'entregado', 'incidencia', 'cancelado']).optional(), paqueteria: z.string().optional() },
       annotations: LECTURA
     }, ejecutar(a => require('./envios').tablero(Date.now(), a)));
 
     servidor.registerTool('guardar_guia', {
       title: 'Guía de envío de una nota',
       description: 'Registra o actualiza el envío de una nota: tipo (local/nacional), paquetería, número de guía y estatus. ' +
-        'Con la guía la pieza pasa a En preparación; en_transito la pasa a En tránsito; recibido la marca Entregada (y avisa al vendedor). Identifica la nota por folio (NE-245, NV #71).',
+        'Pasos: almacen (empacando o esperando paquetería; la pieza pasa a En preparación), recoleccion (la paquetería ya lo recogió) y transito (en camino) la pasan a En tránsito, entregado la marca Entregada y avisa al vendedor; incidencia necesita observaciones (retenido, dirección incorrecta, dañado, devuelto). Identifica la nota por folio (NE-245, NV #71).',
       inputSchema: {
         folio: z.string(), tipo: z.enum(['local', 'nacional']).optional(),
         paqueteria: z.string().optional().describe('Paquete Express, Skydrops, Mercado Envíos, Estafeta, DHL, FedEx u otra'),
-        guia: z.string().optional(), estatus: z.enum(['sin_guia', 'guia_generada', 'en_transito', 'recibido', 'cancelado']).optional(),
+        guia: z.string().optional(), estatus: z.enum(['almacen', 'recoleccion', 'transito', 'entregado', 'incidencia', 'cancelado']).optional(),
         observaciones: z.string().optional()
       },
       annotations: ESCRITURA

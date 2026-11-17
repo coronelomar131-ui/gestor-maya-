@@ -218,11 +218,13 @@ function textoGeraldine(t, titulo, filtro) {
 // Envíos para el resumen: sin guía, quietos y en tránsito
 function textoEnvios(t) {
   if (!t || !t.activos.length) return [];
-  const sinGuia = t.activos.filter(x => x.alerta === 'sin_guia'), quietos = t.activos.filter(x => x.alerta === 'quieto');
-  const linea = x => '• ' + x.folio + ' · ' + x.cliente + (x.paqueteria ? ' · ' + x.paqueteria : '') + (x.guia ? ' ' + x.guia : '') + (x.alerta_texto ? ' · ' + x.alerta_texto : '');
-  const l = ['📦 *Envíos:* ' + t.conteo.en_transito + ' en tránsito, ' + t.conteo.guia_generada + ' con guía por salir' + (sinGuia.length ? ', ' + sinGuia.length + ' sin guía' : '')];
+  const sinGuia = t.activos.filter(x => x.alerta === 'sin_guia'), quietos = t.activos.filter(x => x.alerta === 'quieto'), incid = t.activos.filter(x => x.alerta === 'incidencia');
+  const linea = x => '• ' + (x.semaforo === 'rojo' ? '🔴 ' : x.semaforo === 'amarillo' ? '🟡 ' : '') + x.folio + ' · ' + x.cliente + (x.paqueteria ? ' · ' + x.paqueteria : '') + (x.guia ? ' ' + x.guia : '') + (x.alerta_texto ? ' · ' + x.alerta_texto : '');
+  const c = t.conteo;
+  const l = ['📦 *Envíos:* ' + c.almacen + ' en almacén, ' + c.recoleccion + ' recolectados, ' + c.transito + ' en movimiento' + (c.incidencias ? ', ' + c.incidencias + ' con incidencia' : '') + ' · 🟢 ' + c.verde + ' 🟡 ' + c.amarillo + ' 🔴 ' + c.rojo];
+  if (incid.length) l.push('🚨 Incidencias:', ...incid.slice(0, 4).map(linea));
   if (sinGuia.length) l.push('⚠️ Falta la guía:', ...sinGuia.slice(0, 4).map(linea));
-  if (quietos.length) l.push('⏳ Sin movimiento 3 días o más:', ...quietos.slice(0, 4).map(linea));
+  if (quietos.length) l.push('⏳ Tardados o atorados:', ...quietos.slice(0, 4).map(linea));
   return l;
 }
 
