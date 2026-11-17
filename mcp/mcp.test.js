@@ -744,6 +744,8 @@ function whatsappFalso() {
   let n = 0, fallar = null;
   const original = global.fetch;
   global.fetch = async (url, op) => {
+    // Subida del archivo (FormData) antes de mandar un documento: regresa el id del medio
+    if (op && op.body && typeof op.body !== 'string') { const r = { id: 'media.' + (++n) }; return { ok: true, status: 200, text: async () => JSON.stringify(r), json: async () => r }; }
     const cuerpo = JSON.parse(op.body);
     enviados.push(cuerpo);
     if (fallar && fallar(cuerpo)) return { ok: false, status: 400, text: async () => JSON.stringify({ error: { code: 131047, message: 'Re-engagement message' } }), json: async () => ({ error: { code: 131047, message: 'Re-engagement message' } }) };
@@ -1960,4 +1962,32 @@ test('Dinámica sencilla de notas: más IVA suma 16 %, sin IVA deja el precio, c
   assert.equal(vs.creada.venta_con_iva, 8900);
   const vm = await escritura.crearVenta(daniel, { cliente: 'Clientes Facebook Prueba', iva: 'mas_iva', confirmar_alertas: true, partidas: [{ descripcion: 'Espejo izq', precio: 8900 }] });
   assert.equal(vm.creada.venta_con_iva, 10324);
+});
+
+test('Reporte de ventas en PDF: cuadra con el resumen, quita las notas en $0 y Pepito lo manda por WhatsApp', async () => {
+  const reportePdf = require('./reportepdf');
+  const datos = require('./datos');
+  datos.olvidarCache();
+  const rep = await reportePdf.armar({ agrupar_por: 'cliente' });
+  const conImporte = datos.filtrar(await datos.cargarRegistros(), { tipo: 'todas' }).filter(x => x.total > 0);
+  assert.equal(rep.notas, conImporte.length);
+  assert.equal(rep.total, Math.round(conImporte.reduce((s, x) => s + x.total, 0)) / 100);
+  assert.equal(Math.round(rep.filas.reduce((s, f) => s + f.total, 0) * 100) / 100, rep.total, 'la suma de los clientes da el total');
+  assert.ok(rep.filas.every((f, i, l) => i === 0 || l[i - 1].total >= f.total), 'de mayor a menor');
+  const archivo = reportePdf.pdf(rep);
+  assert.equal(archivo.datos.slice(0, 4).toString(), '%PDF');
+  assert.equal(archivo.archivo, 'ventas-por-cliente.pdf');
+  const porMes = await reportePdf.armar({ agrupar_por: 'mes' });
+  assert.ok(porMes.filas.every(f => /^[A-Z][a-z]+ \d{4}$|sin fecha/.test(f.etiqueta)));
+  // Por WhatsApp: Pepito lo manda como documento
+  const wa = whatsappFalso();
+  try {
+    process.env.ANTHROPIC_API_KEY = 'prueba';
+    const pepito = require('./pepito');
+    const h = await pepito.herramientasDe(OMAR, 'whatsapp');
+    const r = await h.llamar('mandar_pdf', { tipo: 'reporte', agrupar_por: 'cliente' });
+    assert.equal(r.error, false, r.texto);
+    assert.ok(wa.enviados.some(e => e.type === 'document' && /ventas-por-cliente\.pdf/.test(e.document.filename)));
+    await h.cerrar();
+  } finally { wa.cerrar(); }
 });
