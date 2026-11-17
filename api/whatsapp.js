@@ -221,7 +221,7 @@ module.exports = async (req, res) => {
         } catch (e) { texto = e.noMiembro ? e.message : 'No pude mandarlo al grupo: ' + e.message; }
       } else if (!imagenes && !pdfs && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
         const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
-        texto = r.texto;
+        texto = r.texto + (r.propuesta ? '\n\nResponde *SÍ* para guardarlo o *NO* para cancelar.' : '');
         adjunto = documentos.deCreacion(r.herramienta, r.resultado);
       } else {
         const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : imagenes ? '(foto) ' : pdfs ? '(factura PDF) ' : '') + t, 'whatsapp', { imagenes, documentos: pdfs });

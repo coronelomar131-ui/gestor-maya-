@@ -1881,3 +1881,33 @@ test('WhatsApp: contestar SÍ guarda y responde bien (no "Uy, no pude contestar"
     assert.ok(wa.enviados.some(e => e.type === 'document') || textos.some(t => /descárgalo aquí/.test(t)), 'manda el PDF (o su enlace)');
   } finally { wa.cerrar(); }
 });
+
+test('Pepito: un solo mensaje con cliente y venta; tras el SÍ sigue con la venta sin volver a pedir datos', async () => {
+  process.env.ANTHROPIC_API_KEY = 'prueba';
+  const pepito = require('./pepito');
+  const vend = { uid: 'v-31', nombre: 'Paco Ventas', rol: 'vendedor' };
+  const venta = { cliente: 'Juan Mostrador Dos', partidas: [{ descripcion: 'Foco H4', precio: 116, proveedor: 'Depo', costo: 60 }] };
+  const falso = claudeFalso([
+    herramienta('guardar_cliente', { nombre: 'Juan Mostrador Dos', sin_efectos_fiscales: true }),
+    texto('Doy de alta a Juan Mostrador Dos (sin efectos fiscales) y luego sigue la venta. ¿SÍ?'),
+    herramienta('crear_venta', venta),
+    texto('Cliente CL listo. Venta: Foco H4 $116 · Depo $60 · utilidad $56 (48%). ¿SÍ?'),
+    texto('NV guardada.')
+  ]);
+  pepito._usarCliente(falso);
+  const r1 = await pepito.conversar(vend, 'registra a Juan Mostrador Dos, es sin efectos fiscales, y véndele un foco H4 en 116, se lo compré a Depo en 60', 'gestor');
+  assert.equal(r1.propuesta.herramienta, 'guardar_cliente');
+  // Reglas de forma de trabajar en el sistema
+  assert.match(falso.llamadas[0].system[0].text, /Memoria: antes de preguntar algo revisa TODA la conversación/);
+  assert.match(falso.llamadas[0].system[0].text, /Nunca pidas datos opcionales/);
+  const antesV = db.cols.ventas.size;
+  const r2 = await pepito.resolverPropuesta(vend, r1.propuesta.id, true, 'gestor');
+  assert.ok(r2.propuesta && r2.propuesta.herramienta === 'crear_venta', 'después del SÍ ya propone la venta');
+  assert.equal(r2.propuesta.args.forma_pago, undefined, 'no tuvo que preguntar la forma de pago');
+  assert.ok(falso.llamadas[2].messages.some(m => typeof m.content === 'string' && /la persona confirmó y se guardó/.test(m.content) && /sin volver a pedirlos/.test(m.content)));
+  const r3 = await pepito.resolverPropuesta(vend, r2.propuesta.id, true, 'gestor');
+  assert.equal(db.cols.ventas.size, antesV + 1);
+  assert.equal(r3.texto, 'NV guardada.');
+  const uso = db.cols.pepito_uso.get('v-31_' + require('./datos').fechaISO(new Date()));
+  assert.equal(uso.mensajes, 1, 'las confirmaciones no cuentan para el límite diario');
+});
