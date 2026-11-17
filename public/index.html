@@ -903,6 +903,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <script src="/diseno/duplicados.js"></script>
 <script src="/diseno/plazos.js"></script>
+<script src="/diseno/roles.js"></script>
 </head>
 <body>
 <script>
@@ -2408,13 +2409,14 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div class="form-group"><label>Correo electrónico</label><input type="email" id="u-email" placeholder="empleado@maya.com"></div>
       <div class="form-group"><label>Contraseña temporal</label><input type="password" id="u-pass" placeholder="Mínimo 6 caracteres"></div>
       <div class="form-group"><label>Rol</label>
-        <select id="u-rol">
+        <select id="u-rol" onchange="describirRol()">
           <option value="vendedor">Vendedor</option>
           <option value="almacen">Almacén</option>
-          <option value="entregas">Entregas</option>
+          <option value="entregas">Entregas (chofer / mensajería)</option>
           <option value="facturacion">Facturación y cobranza</option>
-          <option value="admin">Administrador</option>
+          <option value="admin">Dirección (administrador)</option>
         </select>
+        <p id="u-rol-desc" class="m-rol-desc"></p>
       </div>
     </div>
     <div class="modal-footer">
@@ -2677,6 +2679,13 @@ async function loadUserProfile(uid) {
       document.getElementById('nav-finanzas').style.display = 'none';
     }
     document.getElementById('nav-compras').style.display = ['admin', 'almacen'].includes(currentRole) ? 'flex' : 'none';
+    // El rol de entregas no ve el Resumen (trae ventas del mes): entra directo a su primer módulo
+    window.currentRole = currentRole;
+    if (window.mayaRoles && !window.mayaRoles.puedeModulo(currentRole, 'dashboard')) {
+      const dash = document.getElementById('mod-dashboard');
+      if (dash) dash.classList.remove('active');
+      setTimeout(() => window.showModule && window.showModule(window.mayaRoles.inicio(currentRole)), 0);
+    }
     return true;
   } catch(e) {
     // Antes un error aquí daba acceso de admin; ahora no se entra hasta poder leer el perfil
@@ -4565,6 +4574,17 @@ window.cotToVenta = async function(id) {
 
 <script>
 // ── UI FUNCTIONS (non-module) ──
+// Explica qué puede hacer el rol elegido al dar de alta a alguien (texto de /diseno/roles.js)
+window.describirRol = function() {
+  const sel = document.getElementById('u-rol'), p = document.getElementById('u-rol-desc');
+  if (!sel || !p || !window.mayaRoles) return;
+  const r = window.mayaRoles.ROLES[sel.value];
+  const nombres = { dashboard: 'Resumen', pepito: 'Pepito', oficina: 'Oficina', seguimiento: 'Seguimiento', 'notas-entrega': 'Notas', ventas: 'Ventas', cotizaciones: 'Cotizaciones', clientes: 'Clientes', 'busqueda-ventas': 'Buscar ventas', documentos: 'Documentos', entregas: 'Entregas', envios: 'Envíos', 'visitas-talleres': 'Visitas', inventario: 'Inventario', compras: 'Compras', proveedores: 'Proveedores', mercadolibre: 'Mercado Libre', facturacion: 'Facturación', cobranza: 'Cobranza', reportes: 'Reportes' };
+  p.textContent = r ? r.descripcion + (r.modulos === '*' ? ' Módulos: todos.' : ' Módulos: ' + r.modulos.map(m => nombres[m] || m).join(', ') + '.') : '';
+};
+document.addEventListener('change', e => { if (e.target && e.target.id === 'u-rol') window.describirRol(); });
+setTimeout(() => window.describirRol && window.describirRol(), 1500);
+
 window.showModule = function(name) {
   const rol = window.currentRole || 'vendedor';
 
@@ -4605,11 +4625,13 @@ window.showModule = function(name) {
     configuracion: ['admin']
   };
 
-  // Check if user has permission for this module
-  const allowedRoles = permissions[name] || [];
-  if (!allowedRoles.includes(rol)) {
+  // Check if user has permission for this module (roles del equipo: /diseno/roles.js)
+  const permitido = window.mayaRoles ? window.mayaRoles.puedeModulo(rol, name) : (permissions[name] || []).includes(rol);
+  if (!permitido) {
     window.toast('No tienes permiso para acceder a este módulo', 'error');
-    showModule('dashboard');
+    // A su primer módulo permitido (para entregas no es el Resumen); nunca a uno que tampoco pueda abrir
+    const inicio = window.mayaRoles ? window.mayaRoles.inicio(rol) : 'dashboard';
+    if (inicio !== name) showModule(inicio);
     return;
   }
 

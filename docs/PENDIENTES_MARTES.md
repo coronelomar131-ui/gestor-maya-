@@ -26,8 +26,23 @@ Todo lo de abajo ya está programado y publicado en gestor-maya.vercel.app. Solo
 - Plantillas para que el bot escriba primero (fuera de 24 h): `aviso_equipo` y `reporte_diario` (ver docs/GUIA_API_WHATSAPP.md, sección 6). Luego poner sus nombres en Vercel: `WHATSAPP_PLANTILLA_AVISO`, `WHATSAPP_PLANTILLA_REPORTE`.
 - Cuenta oficial verificada (OBA) para un grupo real de WhatsApp: Business Manager → verificar negocio (constancia fiscal, comprobante de domicilio) → WhatsApp Manager → número → "Cuenta oficial". Mientras, el grupo "Entregas y cobranza" funciona por medio de Pepito.
 
+## Roles del equipo (al dar accesos)
+Se dan en **Usuarios → Nuevo usuario**; al elegir el rol aparece qué puede hacer. La definición vive en `public/diseno/roles.js` y la usan la pantalla, el menú y Pepito.
+
+| Rol | Para quién | Abre | No ve |
+| --- | --- | --- | --- |
+| Dirección (admin) | Omar / jefe | Todo, incluidos Finanzas, Usuarios y Configuración; único que borra | — |
+| Vendedor | Ventas | Resumen, Pepito, Oficina, Seguimiento, Notas, Ventas, Cotizaciones, Clientes, Buscar ventas, Documentos, Entregas, Envíos, Visitas; existencias por Pepito | Facturación, Cobranza, Inventario (edición), Compras, Finanzas, Reportes |
+| Almacén | Almacén | Resumen, Pepito, Oficina, Seguimiento, Notas, Buscar ventas, Inventario, Compras, Proveedores, Mercado Libre, Entregas, Envíos, Visitas | Ventas, Clientes, Facturación, Cobranza, Finanzas, Reportes |
+| Entregas | Chofer / mensajería (Israel) | Seguimiento (entra aquí), Entregas, Envíos, Oficina, Pepito | Resumen, ventas, precios, facturación |
+| Facturación y cobranza | Geraldine | Resumen, Pepito, Oficina, Seguimiento, Facturación, Cobranza, Notas, Ventas, Clientes, Buscar ventas, Documentos, Reportes | Inventario, Compras, Finanzas, Configuración |
+
+**Importante de seguridad**: los roles controlan lo que cada quien ve en el gestor y lo que Pepito le contesta, pero la base de datos (Firestore) todavía acepta lecturas de cualquier cuenta con sesión. Antes de dar accesos:
+- Firebase → Authentication → Settings → **desactivar el registro de cuentas nuevas** (que solo el admin cree usuarios desde el gestor).
+- Más adelante: reglas de Firestore por rol (se pueden hacer juntas en la oficina; requieren probar con cada rol para no dejar a nadie fuera).
+
 ## 6. En el gestor (5 minutos)
-- Usuarios: registrar el WhatsApp de cada persona del equipo.
+- Usuarios: dar de alta a cada persona con su rol (tabla de arriba) y registrar su WhatsApp.
 - Campanita → Grupo → elegir a los 4 del grupo Entregas y cobranza.
 - Facturación: poner los días para facturar de cada cliente (Jake 6, FLEC 3…). Si no, se usan 6.
 - Clientes: marcar a Jeic como "Nota sin precio".

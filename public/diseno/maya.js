@@ -38,23 +38,19 @@ const MODULOS = [
   { id: 'usuarios', nombre: 'Usuarios', corto: 'Usuarios', icono: 'user-cog', grupo: 'Administración', desc: 'Accesos y roles del equipo' },
   { id: 'configuracion', nombre: 'Configuración', corto: 'Ajustes', icono: 'settings', grupo: 'Administración', desc: 'Datos fiscales y ajustes generales' }
 ];
-const PERMISOS = {
-  dashboard: ['admin', 'vendedor', 'almacen', 'facturacion'], pepito: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
-  oficina: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'], seguimiento: ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion'],
-  facturacion: ['admin', 'facturacion'], cobranza: ['admin', 'facturacion'],
-  ventas: ['admin', 'vendedor', 'facturacion'], inventario: ['admin', 'almacen'], compras: ['admin', 'almacen'],
-  clientes: ['admin', 'vendedor', 'facturacion'], cotizaciones: ['admin', 'vendedor'], proveedores: ['admin', 'almacen'],
-  entregas: ['admin', 'vendedor', 'almacen'], envios: ['admin', 'vendedor', 'almacen'], 'visitas-talleres': ['admin', 'vendedor', 'almacen'],
-  reportes: ['admin'], mercadolibre: ['admin'], documentos: ['admin', 'vendedor', 'facturacion'], 'notas-entrega': ['admin', 'vendedor', 'almacen', 'facturacion'],
-  'busqueda-ventas': ['admin', 'vendedor', 'almacen', 'facturacion'], usuarios: ['admin'], finanzas: ['admin', 'vendedor', 'almacen'], configuracion: ['admin']
-};
+// Qué módulos abre cada rol: una sola definición para pantalla, menú y Pepito (diseno/roles.js)
+const PERMISOS = MODULOS.reduce((o, m) => {
+  const R = window.mayaRoles;
+  o[m.id] = R ? R.LISTA.filter(rolId => R.puedeModulo(rolId, m.id)) : ['admin'];
+  return o;
+}, {});
 window.__permisosMaya = PERMISOS;
 const FIJADOS_INICIALES = {
   admin: ['dashboard', 'oficina', 'pepito', 'notas-entrega', 'ventas', 'facturacion', 'cobranza', 'reportes'],
   facturacion: ['dashboard', 'oficina', 'facturacion', 'cobranza', 'seguimiento', 'pepito'],
-  entregas: ['oficina', 'seguimiento', 'pepito'],
+  entregas: ['seguimiento', 'envios', 'entregas', 'oficina', 'pepito'],
   vendedor: ['dashboard', 'pepito', 'notas-entrega', 'ventas', 'clientes', 'cotizaciones'],
-  almacen: ['dashboard', 'pepito', 'seguimiento', 'notas-entrega', 'inventario', 'compras', 'entregas']
+  almacen: ['dashboard', 'pepito', 'seguimiento', 'notas-entrega', 'inventario', 'compras', 'envios', 'mercadolibre']
 };
 const MAX_FIJADOS = 8;
 const EN_BARRA = 4;

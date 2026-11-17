@@ -1408,3 +1408,24 @@ test('Envíos: la guía vive en la nota, mueve la etapa, avisa, y el tablero ale
     await h.cerrar();
   } finally { wa.cerrar(); }
 });
+
+test('roles: una sola definición para pantalla y Pepito; entregas ve logística sin precios, vendedor consulta existencias', async () => {
+  const roles = require('../public/diseno/roles.js');
+  assert.deepEqual(roles.LISTA, ['admin', 'vendedor', 'almacen', 'entregas', 'facturacion']);
+  assert.ok(roles.puedeModulo('admin', 'configuracion'));
+  assert.ok(roles.puedeModulo('entregas', 'envios') && roles.puedeModulo('entregas', 'entregas') && roles.puedeModulo('entregas', 'seguimiento'));
+  assert.ok(!roles.puedeModulo('entregas', 'ventas') && !roles.puedeModulo('entregas', 'facturacion') && !roles.puedeModulo('entregas', 'dashboard'));
+  assert.ok(roles.puedeModulo('almacen', 'mercadolibre'));
+  assert.ok(roles.puedeModulo('facturacion', 'reportes') && !roles.puedeModulo('facturacion', 'inventario'));
+  ['vendedor', 'almacen', 'entregas', 'facturacion'].forEach(r => assert.ok(!roles.puedeModulo(r, 'finanzas') && !roles.puedeModulo(r, 'usuarios'), r + ' sin finanzas ni usuarios'));
+  Object.values(roles.ROLES).forEach(r => assert.ok(r.nombre && r.descripcion.length > 40));
+  const lista = async u => { const c = await conectar(u); const { tools } = await c.cliente.listTools(); await c.cerrar(); return tools.map(t => t.name); };
+  const chofer = await lista({ uid: 'e-1', nombre: 'Israel', rol: 'entregas' });
+  assert.ok(chofer.includes('envios_seguimiento') && chofer.includes('guardar_guia') && chofer.includes('guardar_entrega'));
+  assert.ok(!chofer.some(n => ['historial_notas', 'resumen_ventas', 'buscar_ventas', 'cobranza', 'buscar_productos', 'crear_nota_entrega'].includes(n)), 'el chofer no ve ventas, precios ni cobranza');
+  const vend = await lista(VENDEDOR);
+  assert.ok(vend.includes('buscar_productos'), 'el vendedor consulta existencias');
+  assert.ok(!vend.includes('guardar_producto') && !vend.includes('buscar_productos_ml') && !vend.includes('cobranza'));
+  const regsVend = await (async () => { const c = await conectar(VENDEDOR); const { tools } = await c.cliente.listTools(); await c.cerrar(); return tools.find(t => t.name === 'buscar_registros'); })();
+  assert.ok(!JSON.stringify(regsVend.inputSchema).includes('pagos'), 'finanzas solo dirección');
+});
