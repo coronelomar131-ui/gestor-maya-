@@ -71,7 +71,11 @@ function instrucciones(usuario) {
     'Una venta puede tener tres folios: NV #243 (su número en Ventas), NV-219 (el de Facturas) y F-219 (el de su factura). Si una nota trae otros_folios, son los de la venta ligada; úsalos al responder para que el usuario la reconozca.',
     'Para no agotar el límite diario de lecturas de Firebase, las consultas reutilizan los datos hasta 5 minutos: si alguien acaba de capturar algo en la app y no aparece, espera unos minutos. Lo que se guarda desde aquí aparece al momento.',
     'Las herramientas que crean, cambian o borran guardan directo en la app que usa el negocio. Antes de usarlas, muéstrale al usuario exactamente qué vas a guardar (cliente, artículos, cantidades, precios, IVA y total) y espera su confirmación. Nunca inventes precios ni cantidades: si faltan, pregúntalos. Las altas y bajas de compras también requieren confirmación explícita: presenta proveedor, fecha, artículos, cantidades y costos antes de crear; antes de eliminar, identifica la compra y pide confirmación.',
-    'En notas, ventas y cotizaciones no pongas vendedor a menos que la persona diga quién vendió; no uses al usuario conectado como vendedor.',
+    usuario.rol === 'admin' && !usuario.rolReal
+      ? 'En notas, ventas y cotizaciones no pongas vendedor a menos que la persona diga quién vendió; no uses al usuario conectado como vendedor.'
+      : 'Cada integrante registra SUS propias ventas: en notas y ventas el vendedor es siempre quien te habla (se pone solo). Nadie puede registrar una venta que no hizo; si te piden ponerla a nombre de otro, explica que esa persona la registre con su usuario.',
+    'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente y estos datos obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
+      '2) Al registrarlo, pregunta si quiere generar una nota de venta. 3) Para la nota pide productos, precio y forma de pago (contado o crédito; crédito solo si el cliente lo tiene autorizado). 4) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
 }
@@ -363,7 +367,8 @@ function crearServidor(usuario) {
       inputSchema: {
         cliente: z.string().min(1),
         fecha: FECHA.optional().describe('Por omisión hoy'),
-        vendedor: z.string().optional().describe('Solo si la persona dice quién vendió; si no, va vacío'),
+        vendedor: z.string().optional().describe('Quien vendió. Si no eres Dirección, siempre es quien te habla (se pone solo)'),
+        forma_pago: z.enum(['contado', 'credito']).describe('Contado, o crédito solo si el cliente tiene crédito autorizado; pregúntalo si no lo dicen'),
         estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
         incluye_datos_fiscales: z.boolean().default(false),
         partidas: z.array(PARTIDA).min(1)
@@ -391,6 +396,9 @@ function crearServidor(usuario) {
         id: opcional, nombre: z.string().optional().describe('Nombre o razón social; obligatorio para alta'), codigo: opcional, rfc: opcional,
         email: opcional, telefono: opcional, calle: opcional, numero_exterior: opcional, numero_interior: opcional, colonia: opcional,
         municipio: opcional, ciudad: opcional, estado: opcional, pais: opcional, codigo_postal: opcional,
+        tipo_persona: z.enum(['fisica', 'moral']).optional().describe('Persona física (RFC de 13) o moral (RFC de 12)'),
+        regimen_fiscal: z.string().optional().describe('Clave del SAT, p. ej. 601 General de Ley PM, 612 Actividades Empresariales, 621 RIF, 626 RESICO, 616 Sin obligaciones'),
+        uso_cfdi: z.string().optional().describe('Clave del SAT, p. ej. G01 Adquisición de mercancías, G03 Gastos en general, S01 Sin efectos fiscales'),
         venta_publica_redes: z.boolean().optional().describe('Cliente de venta pública (redes sociales)'),
         es_otro_cliente: z.boolean().optional().describe('Solo si la persona confirmó que es distinto a un cliente con nombre casi igual')
       },

@@ -16,6 +16,26 @@ const sinNulos = o => Object.keys(o).reduce((r, k) => { if (o[k] !== undefined) 
 
 class ErrorUsuario extends Error {}
 const duplicados = require('../public/diseno/duplicados.js');
+const sat = require('../public/diseno/sat.js');
+
+// Reglas del equipo (proceso de venta por Pepito): cada quien registra SUS ventas y el cliente debe estar registrado.
+// Dirección puede capturar por otros (vendedor libre) y vender a un cliente sin registrar.
+const esDireccion = u => (u && (u.rolReal || u.rol)) === 'admin';
+function vendedorDe(u, a) {
+  if (esDireccion(u)) return texto(a.vendedor);
+  const yo = texto(u && (u.nombre || u.email));
+  const dicho = texto(a.vendedor);
+  const primera = s => datos.norm(s).split(' ')[0];
+  // "Israel" o "Israel Ramírez" para Israel Ramírez está bien; otro nombre no
+  if (dicho && primera(dicho) !== primera(yo)) {
+    throw new ErrorUsuario('Solo puedes registrar tus propias ventas: esta quedaría a nombre de ' + dicho + '. Que ' + dicho + ' la registre con su usuario.');
+  }
+  return yo;
+}
+function exigirClienteRegistrado(u, cliente, nombre) {
+  if (esDireccion(u) || cliente.registrado) return;
+  throw new ErrorUsuario('El cliente "' + nombre + '" no está registrado. Primero regístralo con sus datos fiscales (guardar_cliente) y luego hacemos la nota.');
+}
 
 // Usa el nombre del cliente registrado si coincide (sin acentos ni mayúsculas), para no crear variantes del mismo cliente
 async function resolverCliente(nombre) {
@@ -48,6 +68,8 @@ function registroVenta(id, venta) {
 // Igual que saveNotaEntrega(), incluida la venta automática de la casilla "Registrar también como venta"
 async function crearNotaEntrega(u, a) {
   const cliente = await resolverCliente(a.cliente);
+  exigirClienteRegistrado(u, cliente, a.cliente);
+  const vendedor = vendedorDe(u, a);
   const fecha = a.fecha || hoy();
   const items = a.articulos.map(it => ({
     descripcion: texto(it.descripcion), siniestro: texto(it.siniestro), anio: texto(it.anio),
@@ -60,7 +82,7 @@ async function crearNotaEntrega(u, a) {
     notaId, fecha, cliente: cliente.nombre,
     siniestro: items.map(it => it.siniestro).filter(Boolean).join(' | '),
     siniestros: items.filter(it => it.siniestro).map(it => ({ num: it.siniestro, anio: it.anio })),
-    vendedor: texto(a.vendedor), items, subtotal, ivaTotal, total: subtotal + ivaTotal,
+    vendedor, items, subtotal, ivaTotal, total: subtotal + ivaTotal,
     createdAt: new Date().toISOString()
   }, autor(u));
   const id = await fb().agregar('notasEntrega', nota);
@@ -102,19 +124,30 @@ async function crearNotaEntrega(u, a) {
 // Igual que saveVentaMultiLinea(); la fecha se guarda a mediodía local para que todas las vistas muestren el mismo día
 async function crearVenta(u, a) {
   const cliente = await resolverCliente(a.cliente);
+  exigirClienteRegistrado(u, cliente, a.cliente);
+  const vendedor = vendedorDe(u, a);
+  // Forma de pago: contado, o crédito solo si el cliente tiene crédito autorizado (días de crédito en Clientes / Cobranza)
+  const formaPago = a.forma_pago || 'contado';
+  let diasCredito = 0;
+  if (formaPago === 'credito') {
+    const doc = cliente.id ? await fb().obtener('clientes', cliente.id) : null;
+    diasCredito = doc ? Number(doc.diasCredito) || 0 : 0;
+    if (!diasCredito) throw new ErrorUsuario(cliente.nombre + ' no tiene crédito autorizado (0 días de crédito). Véndele de contado o pide a Dirección o Facturación que le autoricen días de crédito.');
+  }
   const fecha = a.fecha || hoy();
   const p = partidas(a.partidas);
   const notaId = String(maxNumero(await fb().leerColeccion('ventas'), v => v.notaId || v.notaNumero) + 1);
   const venta = Object.assign({
     notaId, fecha: mediodiaMs(fecha), clienteId: cliente.id, clienteNombre: cliente.nombre,
-    vendedor: texto(a.vendedor), items: p.items, siniestros: p.siniestros,
+    vendedor, items: p.items, siniestros: p.siniestros,
     subtotal: p.subtotal, ivaTotal: p.ivaTotal, ajusteTotal: p.ajusteTotal, total: p.total,
+    formaPago, diasCredito,
     incluyeDatosFiscales: !!a.incluye_datos_fiscales, estado: 'pendiente', estatus: a.estatus,
     facturaURL: '', tieneFactura: false, createdAt: fb().marcaTiempo()
   }, autor(u));
   const id = await fb().agregar('ventas', venta);
   datos.olvidarCache();
-  return { creada: Object.assign(registroVenta(id, venta), { estatus: venta.estatus }), cliente_registrado: cliente.registrado };
+  return { creada: Object.assign(registroVenta(id, venta), { estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito }), cliente_registrado: cliente.registrado };
 }
 
 async function encontrarVenta(a) {
@@ -143,7 +176,7 @@ async function cambiarEstatusVenta(u, a) {
 const CAMPOS_CLIENTE = {
   nombre: 'razonSocial', rfc: 'rfc', email: 'email', telefono: 'telefono', calle: 'calle', numero_exterior: 'numeroExterior',
   numero_interior: 'numeroInterior', colonia: 'colonia', municipio: 'municipio', ciudad: 'ciudad', estado: 'estado',
-  pais: 'pais', codigo_postal: 'codigoPostal'
+  pais: 'pais', codigo_postal: 'codigoPostal', tipo_persona: 'tipoPersona', regimen_fiscal: 'regimenFiscal', uso_cfdi: 'usoCfdi'
 };
 
 // Alta igual que saveCliente() (código CL + consecutivo); con id solo cambia los campos que se manden
@@ -176,13 +209,21 @@ async function guardarCliente(u, a) {
     const e = parecido.cliente;
     return { no_se_creo: true, parecido: true, aviso: duplicados.mensajeParecido(parecido) + ' Si la persona confirma que es distinto, vuelve a mandarlo con es_otro_cliente: true.', id: e.id, codigo: e.codigoCliente || null, nombre: e.razonSocial || e.nombre };
   }
+  // Datos fiscales obligatorios (CFDI 4.0), salvo clientes de venta pública
+  if (!cambios.redesSociales) {
+    const v = sat.validarCliente(cambios);
+    if (!v.ok) throw new ErrorUsuario('No registré al cliente. ' + sat.mensaje(v) + ' Pídele a la persona lo que falta, en un solo mensaje.');
+    Object.assign(cambios, { rfc: v.normalizado.rfc, tipoPersona: v.normalizado.tipoPersona, regimenFiscal: v.normalizado.regimenFiscal, usoCfdi: v.normalizado.usoCfdi });
+  }
   const codigoCliente = texto(a.codigo) || 'CL' + (maxNumero(todos.filter(c => String(c.codigoCliente || '').startsWith('CL')), c => c.codigoCliente) + 1);
   const cliente = Object.assign({
     codigoCliente, razonSocial: '', rfc: '', email: '', telefono: '', calle: '', numeroExterior: '', numeroInterior: '',
     colonia: '', municipio: '', ciudad: '', estado: '', pais: 'México', codigoPostal: '', redesSociales: false
   }, cambios, { createdAt: fb().marcaTiempo(), origen: ORIGEN });
   const id = await fb().agregar('clientes', cliente);
-  return { creado: id, codigo: codigoCliente, nombre: cliente.razonSocial };
+  return { creado: id, codigo: codigoCliente, nombre: cliente.razonSocial,
+    datos_fiscales: cliente.redesSociales ? null : { rfc: cliente.rfc, tipo_persona: cliente.tipoPersona, regimen_fiscal: cliente.regimenFiscal + ' ' + ((sat.REGIMENES[cliente.regimenFiscal] || [])[0] || ''), uso_cfdi: cliente.usoCfdi + ' ' + (sat.USOS_CFDI[cliente.usoCfdi] || '') },
+    siguiente: 'Pregúntale a la persona si quiere generar una nota de venta para este cliente.' };
 }
 
 // Alta igual que saveProducto(); con id o código existente cambia campos y ajusta existencias (+/-)

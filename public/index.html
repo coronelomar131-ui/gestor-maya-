@@ -904,6 +904,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script src="/diseno/duplicados.js"></script>
 <script src="/diseno/plazos.js"></script>
 <script src="/diseno/roles.js"></script>
+<script src="/diseno/sat.js"></script>
 </head>
 <body>
 <script>
@@ -2172,7 +2173,13 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
       <div class="grid-2">
         <div class="form-group"><label>Teléfono</label><input type="tel" id="c-telefono" oninput="revisarClienteDuplicado()" placeholder="(55) 1234-5678"></div>
+        <div class="form-group"><label>Tipo de persona *</label><select id="c-tipo-persona" onchange="llenarRegimenes()"><option value="">Elige…</option><option value="fisica">Física (RFC de 13)</option><option value="moral">Moral (RFC de 12)</option></select></div>
       </div>
+      <div class="grid-2">
+        <div class="form-group"><label>Régimen fiscal *</label><select id="c-regimen"><option value="">Elige primero el tipo de persona</option></select></div>
+        <div class="form-group"><label>Uso de CFDI *</label><select id="c-uso-cfdi"></select></div>
+      </div>
+      <p class="m-op-nota" style="margin:-4px 2px 10px">* Obligatorios para registrar al cliente (CFDI 4.0): nombre o razón social, RFC, correo, tipo de persona, régimen fiscal, dirección fiscal completa y uso de CFDI. Los clientes de venta pública no los necesitan.</p>
       <div id="c-duplicado" class="m-aviso-duplicado" role="alert" hidden></div>
 
       <div class="form-group" style="display:flex;align-items:center;gap:8px">
@@ -3519,9 +3526,38 @@ window.revisarClienteDuplicado = function() {
   pintarDuplicado(d, d ? null : window.mayaDuplicados.buscarParecido(datosClienteForm(), lista));
 };
 
+// Catálogos del SAT para el formulario (/diseno/sat.js): régimen según el tipo de persona y uso de CFDI
+window.llenarRegimenes = function() {
+  const S = window.mayaSat; if (!S) return;
+  const tipo = document.getElementById('c-tipo-persona').value, sel = document.getElementById('c-regimen'), antes = sel.value;
+  sel.innerHTML = '<option value="">' + (tipo ? 'Elige el régimen…' : 'Elige primero el tipo de persona') + '</option>' +
+    Object.entries(S.REGIMENES).filter(([, r]) => !tipo || (tipo === 'fisica' ? r[1] : r[2])).map(([k, r]) => '<option value="' + k + '">' + k + ' · ' + r[0] + '</option>').join('');
+  sel.value = antes;
+};
+function llenarUsosCfdi() {
+  const S = window.mayaSat, sel = document.getElementById('c-uso-cfdi');
+  if (!S || !sel || sel.options.length) return;
+  sel.innerHTML = '<option value="">Elige el uso…</option>' + Object.entries(S.USOS_CFDI).map(([k, v]) => '<option value="' + k + '"' + (k === 'G01' ? ' selected' : '') + '>' + k + ' · ' + v + '</option>').join('');
+}
+setTimeout(() => { llenarUsosCfdi(); window.llenarRegimenes && window.llenarRegimenes(); }, 1200);
+
 window.saveCliente = async function() {
   const razonSocial = document.getElementById('c-razonSocial').value.trim();
   if (!razonSocial) return toast('Razón Social es requerida', 'error');
+  // Datos fiscales obligatorios (los mismos que pide Pepito), salvo venta pública
+  const fiscal = {
+    razonSocial, rfc: document.getElementById('c-rfc').value, email: document.getElementById('c-email').value,
+    tipoPersona: document.getElementById('c-tipo-persona').value, regimenFiscal: document.getElementById('c-regimen').value, usoCfdi: document.getElementById('c-uso-cfdi').value,
+    calle: document.getElementById('c-calle').value, numeroExterior: document.getElementById('c-numeroExterior').value,
+    municipio: document.getElementById('c-municipio').value, ciudad: document.getElementById('c-ciudad').value,
+    estado: document.getElementById('c-estado').value, codigoPostal: document.getElementById('c-codigoPostal').value
+  };
+  const ventaPublica = document.getElementById('c-redes-sociales').checked;
+  let validado = null;
+  if (!ventaPublica && window.mayaSat) {
+    validado = window.mayaSat.validarCliente(fiscal);
+    if (!validado.ok) return toast(window.mayaSat.mensaje(validado), 'error');
+  }
   if (!window.mayaDuplicados) return toast('No se pudo revisar si el cliente ya existe. Recarga la página.', 'error');
 
   try {
@@ -3551,7 +3587,7 @@ window.saveCliente = async function() {
     const obj = {
       codigoCliente: codigoCliente,
       razonSocial: razonSocial,
-      rfc: document.getElementById('c-rfc').value.trim() || '',
+      rfc: validado ? validado.normalizado.rfc : (document.getElementById('c-rfc').value.trim() || ''),
       email: document.getElementById('c-email').value.trim() || '',
       telefono: document.getElementById('c-telefono').value.trim() || '',
       calle: document.getElementById('c-calle').value.trim() || '',
@@ -3565,6 +3601,9 @@ window.saveCliente = async function() {
       codigoPostal: document.getElementById('c-codigoPostal').value.trim() || '',
       redesSociales: document.getElementById('c-redes-sociales').checked,
       notaSinPrecio: document.getElementById('c-sin-precio').checked,
+      tipoPersona: validado ? validado.normalizado.tipoPersona : document.getElementById('c-tipo-persona').value,
+      regimenFiscal: validado ? validado.normalizado.regimenFiscal : document.getElementById('c-regimen').value,
+      usoCfdi: validado ? validado.normalizado.usoCfdi : document.getElementById('c-uso-cfdi').value,
       createdAt: serverTimestamp()
     };
 
@@ -3581,6 +3620,7 @@ window.saveCliente = async function() {
       });
     document.getElementById('c-redes-sociales').checked = false;
     document.getElementById('c-sin-precio').checked = false;
+    document.getElementById('c-tipo-persona').value = ''; document.getElementById('c-regimen').value = '';
     document.getElementById('c-estado').value = '';
     document.getElementById('c-pais').value = 'México';
     pintarDuplicado(null);
