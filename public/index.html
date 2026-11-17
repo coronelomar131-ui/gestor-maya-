@@ -3063,6 +3063,7 @@ function renderUsuarios() {
       <td style="white-space:nowrap">${rol === 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="resetPasswordUsuario('${u.email || ''}')" title="Enviar link para restablecer contraseña">🔑</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
+  if (window.mayaPintarPresencia) window.mayaPintarPresencia();
 }
 
 // Cambiar el rol de alguien (solo Dirección). Lo que puede abrir cambia en su siguiente inicio de sesión.
@@ -10407,6 +10408,7 @@ window.previewNotaEntregaPDFById = function(id) {
 <script type="module" src="/diseno/enlaces.js"></script>
 <script type="module" src="/diseno/operacion.js"></script>
 <script type="module" src="/diseno/avisos.js"></script>
+<script type="module" src="/diseno/presencia.js"></script>
 <script type="module" src="/diseno/compras.js"></script>
 </body>
 </html>
