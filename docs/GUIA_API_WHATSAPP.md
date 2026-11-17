@@ -114,11 +114,17 @@ Meta contesta "aceptado" al momento y el rechazo lo avisa después al webhook. E
 
 Plantillas (Meta Business Suite → WhatsApp Manager → Plantillas → Crear plantilla, categoría **Utilidad**, Español (MEX)):
 
-1. `reporte_diario`: `Buenos días, {{1}}. Tu reporte de Maya: {{2}}. Escríbeme para ver el detalle.`
+1. `reporte_diario`: `Buenos días, {{1}}. Tu reporte de Maya Autopartes: {{2}}. Respóndeme este mensaje para ver el detalle.`
+   Ejemplos que pide Meta: {{1}} = `Omar`, {{2}} = `ventas $16,588.00 en 4 notas, por facturar $64,032.00, vencido $0.00`.
    → en Vercel `WHATSAPP_PLANTILLA_REPORTE=reporte_diario` (se usa para admin y facturación).
-2. `aviso_equipo`: `Aviso de Maya Autopartes: {{1}}`
+2. `aviso_equipo`: `Hola, tienes un aviso de Maya Autopartes: {{1}}. Respóndeme este mensaje para ver el detalle con Pepito.`
+   Ejemplo: {{1}} = `Autoservicio Las Águilas pagó $10,000.00 de la A-9001`.
    → en Vercel `WHATSAPP_PLANTILLA_AVISO=aviso_equipo` (alarmas, avisos al momento y el resumen de los demás roles).
 3. `WHATSAPP_PLANTILLA_IDIOMA=es_MX`.
+
+Meta rechaza una plantilla si empieza o termina con una variable, o si tiene muy poco texto fijo para sus
+variables; por eso los textos de arriba llevan una frase antes y después. El nombre va en minúsculas y con guion bajo.
+En el diagnóstico (`/api/whatsapp`) aparece si las dos plantillas ya están puestas en Vercel.
 
 Meta cobra cada mensaje de plantilla (unos centavos de dólar en México; revisa la tarifa vigente en
 https://developers.facebook.com/docs/whatsapp/pricing). Los mensajes dentro de las 24 horas no se cobran.

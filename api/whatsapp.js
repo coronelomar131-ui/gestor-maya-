@@ -94,7 +94,11 @@ module.exports = async (req, res) => {
         WHATSAPP_PHONE_ID: !!process.env.WHATSAPP_PHONE_ID,
         WHATSAPP_APP_SECRET: !!process.env.WHATSAPP_APP_SECRET,
         ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
-        'GROQ_API_KEY u OPENAI_API_KEY (notas de voz)': voz.configurada()
+        'GROQ_API_KEY u OPENAI_API_KEY (notas de voz)': voz.configurada(),
+        // Plantillas de Meta para escribir fuera de las 24 h (solo si están puestas, sin mostrar su valor)
+        WHATSAPP_PLANTILLA_AVISO: !!String(process.env.WHATSAPP_PLANTILLA_AVISO || '').trim(),
+        WHATSAPP_PLANTILLA_REPORTE: !!String(process.env.WHATSAPP_PLANTILLA_REPORTE || '').trim(),
+        CRON_SECRET: !!String(process.env.CRON_SECRET || '').trim()
       }
     });
   }
