@@ -15,6 +15,7 @@ const avisos = require('./avisos');
 const grupo = require('./grupo');
 const facturacion = require('./facturacion');
 const negocio = require('./negocio');
+const reportePdf = require('./reportepdf');
 const escritura = require('./escritura');
 const rolesDef = require('../public/diseno/roles.js');
 
@@ -160,14 +161,21 @@ const ALARMA = new Set(HERRAMIENTAS_ALARMA.map(t => t.name));
 // solo le llega a quien lo pidió, y solo de lo que su rol puede ver)
 const HERRAMIENTA_PDF = {
   name: 'mandar_pdf',
-  description: 'Manda por este chat de WhatsApp el PDF (mismo diseño de la app) de una nota de entrega, nota de venta o cotización que ya existe, o el estado de cuenta de un cliente. ' +
-    'Primero búscala (historial_notas, ver_nota, buscar_registros) para tener su id. Para una nota de venta usa el id de la venta. Para estado_cuenta manda cliente en vez de id.',
+  description: 'Manda por este chat de WhatsApp un PDF: una nota de entrega, nota de venta o cotización que ya existe (con su id), el estado de cuenta de un cliente (tipo estado_cuenta + cliente), ' +
+    'o un reporte de ventas (tipo reporte + agrupar_por cliente/vendedor/dia/mes/articulo y, si los dicen, desde/hasta/cliente/vendedor). Para una nota de venta usa el id de la venta. ' +
+    'Si te piden un reporte "en PDF", no digas que no se puede: usa tipo reporte con los mismos filtros.',
   input_schema: {
     type: 'object',
     properties: {
-      tipo: { type: 'string', enum: ['nota_entrega', 'nota_venta', 'cotizacion', 'estado_cuenta'], description: 'nota_entrega = NE, nota_venta = NV, cotizacion = COT, estado_cuenta = facturas pendientes y pagos de un cliente' },
-      id: { type: 'string', description: 'id del documento, como lo regresan las búsquedas (no aplica a estado_cuenta)' },
-      cliente: { type: 'string', description: 'Solo para estado_cuenta: nombre del cliente' },
+      tipo: { type: 'string', enum: ['nota_entrega', 'nota_venta', 'cotizacion', 'estado_cuenta', 'reporte'], description: 'nota_entrega = NE, nota_venta = NV, cotizacion = COT, estado_cuenta = facturas pendientes y pagos de un cliente, reporte = ventas agrupadas' },
+      id: { type: 'string', description: 'id del documento, como lo regresan las búsquedas (no aplica a estado_cuenta ni reporte)' },
+      cliente: { type: 'string', description: 'estado_cuenta: el cliente. reporte: filtra a ese cliente (opcional)' },
+      agrupar_por: { type: 'string', enum: ['cliente', 'vendedor', 'dia', 'mes', 'articulo'], description: 'Solo reporte; por omisión cliente' },
+      desde: { type: 'string', description: 'Solo reporte: AAAA-MM-DD' },
+      hasta: { type: 'string', description: 'Solo reporte: AAAA-MM-DD' },
+      vendedor: { type: 'string', description: 'Solo reporte: filtra a ese vendedor (opcional)' },
+      tipo_nota: { type: 'string', enum: ['todas', 'entrega', 'venta'], description: 'Solo reporte; por omisión todas' },
+      quitar_en_cero: { type: 'boolean', description: 'Solo reporte: quita las notas en $0 (por omisión sí)' },
       folio: { type: 'string', description: 'Folio para el mensaje, ej. NE-230' }
     },
     required: ['tipo'],
@@ -177,6 +185,15 @@ const HERRAMIENTA_PDF = {
 
 async function mandarPdf(usuario, a) {
   if (!usuario.whatsapp10) return { error: true, texto: 'No tengo a dónde mandarlo: tu número no está registrado.' };
+  if (a.tipo === 'reporte') {
+    if (!(PERMISOS.notas || []).includes(usuario.rol)) return { error: true, texto: 'Tu rol no puede ver reportes de ventas.' };
+    try {
+      const rep = await reportePdf.armar({ agrupar_por: a.agrupar_por, desde: a.desde, hasta: a.hasta, cliente: a.cliente, vendedor: a.vendedor, tipo: a.tipo_nota || 'todas', quitar_en_cero: a.quitar_en_cero });
+      const archivo = reportePdf.pdf(rep);
+      const env = await wa.enviarDocumento(usuario.whatsapp10, archivo.datos, archivo.archivo, '📊 ' + rep.titulo + ' · ' + rep.periodo);
+      return env.ok ? { error: false, texto: JSON.stringify({ enviado: true, reporte: rep.titulo, periodo: rep.periodo, notas: rep.notas, total: rep.total, grupos: rep.filas.length }) } : { error: true, texto: 'No se pudo mandar el PDF: ' + env.error };
+    } catch (err) { return { error: true, texto: err.message }; }
+  }
   if (a.tipo === 'estado_cuenta') {
     if (!(PERMISOS.facturas || []).includes(usuario.rol)) return { error: true, texto: 'Tu rol no puede ver estados de cuenta.' };
     try {
