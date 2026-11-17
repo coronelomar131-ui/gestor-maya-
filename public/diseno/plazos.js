@@ -11,6 +11,12 @@
 (function (raiz) {
   const DIA = 86400000;
   const DIAS_FACTURAR = 6;
+  // Geraldine Bot solo vigila las notas creadas desde que arrancó. Lo anterior se facturó en CONTPAQi sin subir el XML
+  // al gestor, así que aquí aparece "sin factura" aunque ya esté facturado: no se alarma (se cambia en config/geraldine.desde).
+  const DESDE = '2026-11-10';
+  const creadaEn = doc => ms(doc && doc.createdAt) || ms(doc && doc.fecha) || 0;
+  const desdeMs = desde => Date.parse((desde || DESDE) + 'T00:00:00-06:00');
+  const esHistorica = (doc, desde) => { const c = creadaEn(doc); return !!c && c < desdeMs(desde); };
   const DIAS_SIN_MOVIMIENTO = 10;
   const MOTIVOS_CANCELACION = [
     { id: 'taller_no_acepto', nombre: 'El taller no aceptó la pieza' },
@@ -37,9 +43,10 @@
   }
 
   // etapa: registrada | preparacion | transito | entregada | facturada | pagada | cancelada
-  function estadoFacturacion(doc, etapa, dias, ahora) {
+  function estadoFacturacion(doc, etapa, dias, ahora, desde) {
     ahora = ahora || Date.now();
     if (['facturada', 'pagada', 'cancelada'].includes(etapa)) return null;
+    if (esHistorica(doc, desde)) return null;
     const plazo = dias == null ? DIAS_FACTURAR : dias;
     if (etapa !== 'entregada') {
       const quieto = Math.floor((ahora - (ultimoMovimiento(doc) || ahora)) / DIA);
@@ -65,14 +72,15 @@
   const nombreEnvio = id => { const e = ESTATUS_ENVIO.find(x => x.id === id); return e ? e.nombre : String(id || ''); };
   const DIAS_ENVIO_QUIETO = 3;
   // Alerta de un envío: sin guía (nacional sin guía), quieto (guía generada o en tránsito sin cambio en 3 días) o null
-  function alertaEnvio(doc, etapa, ahora) {
+  function alertaEnvio(doc, etapa, ahora, desde) {
     const e = doc && doc.envio;
     if (!e || ['entregada', 'facturada', 'pagada', 'cancelada'].includes(etapa)) return null;
+    if (esHistorica(doc, desde)) return null;
     if (e.estatus === 'recibido' || e.estatus === 'cancelado') return null;
     ahora = ahora || Date.now();
     if (e.tipo === 'nacional' && (!e.guia || e.estatus === 'sin_guia')) return { clave: 'sin_guia', texto: 'Falta la guía', dias: 0 };
-    const desde = ms(e.actualizado) || ms(e.fechaEnvio) || ultimoMovimiento(doc);
-    const d = desde ? Math.floor((ahora - desde) / DIA) : 0;
+    const ultimo = ms(e.actualizado) || ms(e.fechaEnvio) || ultimoMovimiento(doc);
+    const d = ultimo ? Math.floor((ahora - ultimo) / DIA) : 0;
     if (['guia_generada', 'en_transito'].includes(e.estatus) && d >= DIAS_ENVIO_QUIETO) return { clave: 'quieto', texto: nombreEnvio(e.estatus) + ' ' + d + ' d sin cambio', dias: d };
     return null;
   }
@@ -80,7 +88,7 @@
   const ORDEN = ['vencida', 'lista', 'por_vencer', 'sin_movimiento', 'espera', 'en_entrega'];
   const NOMBRES = { vencida: 'Vencidas', lista: 'Listas para facturar', por_vencer: 'Por vencer', sin_movimiento: 'Sin movimiento', espera: 'En espera', en_entrega: 'En entrega' };
 
-  const api = { DIA, DIAS_FACTURAR, DIAS_SIN_MOVIMIENTO, MOTIVOS_CANCELACION, nombreMotivo, diasFacturarDe, entregadaEn, ultimoMovimiento, estadoFacturacion, ORDEN, NOMBRES, PAQUETERIAS, ESTATUS_ENVIO, nombreEnvio, DIAS_ENVIO_QUIETO, alertaEnvio };
+  const api = { DESDE, creadaEn, esHistorica, DIA, DIAS_FACTURAR, DIAS_SIN_MOVIMIENTO, MOTIVOS_CANCELACION, nombreMotivo, diasFacturarDe, entregadaEn, ultimoMovimiento, estadoFacturacion, ORDEN, NOMBRES, PAQUETERIAS, ESTATUS_ENVIO, nombreEnvio, DIAS_ENVIO_QUIETO, alertaEnvio };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.mayaPlazos = api;
 })(typeof window !== 'undefined' ? window : globalThis);

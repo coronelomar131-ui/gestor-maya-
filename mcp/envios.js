@@ -28,13 +28,15 @@ const buscarPorFolio = (lista, texto) => { const t = norm(texto).replace(/[\s#-]
 // Tablero de envíos: lo que va por paquetería y sus alertas
 async function tablero(ahora = Date.now(), filtro = {}) {
   const lista = await activas();
+  const c = await fb().obtener('config', 'geraldine').catch(() => null);
+  const desde = (c && c.desde) || plazos.DESDE;
   const envios = [];
   lista.forEach(r => {
     const e = r.raw.envio;
     if (!e) return;
     if (filtro.paqueteria && norm(e.paqueteria) !== norm(filtro.paqueteria)) return;
     if (filtro.estatus && e.estatus !== filtro.estatus) return;
-    const alerta = plazos.alertaEnvio(r.raw, r.etapa, ahora);
+    const alerta = plazos.alertaEnvio(r.raw, r.etapa, ahora, desde);
     envios.push({ col: r.col, id: r.id, folio: r.folio, cliente: r.cliente, vendedor: r.vendedor, piezas: r.piezas, etapa: r.etapa,
       tipo: e.tipo || 'nacional', paqueteria: e.paqueteria || '', guia: e.guia || '', estatus: e.estatus || 'sin_guia', estatus_nombre: plazos.nombreEnvio(e.estatus || 'sin_guia'),
       fecha_envio: e.fechaEnvio ? new Date(plazosMs(e.fechaEnvio)).toISOString().slice(0, 10) : null, fecha_entrega: e.fechaEntrega ? new Date(plazosMs(e.fechaEntrega)).toISOString().slice(0, 10) : null,

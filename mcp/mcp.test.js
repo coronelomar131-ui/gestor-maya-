@@ -1181,19 +1181,31 @@ test('Geraldine Bot: estados por días del cliente (espera, por vencer, lista, v
   const D = plazos.DIA;
   const ahora = Date.parse('2026-11-10T18:00:00Z');
   const entregada = hace => ({ etapa: 'entregada', seguimiento: [{ etapa: 'entregada', fecha: ahora - hace * D }] });
-  assert.equal(plazos.estadoFacturacion(entregada(2), 'entregada', 6, ahora).clave, 'espera');
-  assert.equal(plazos.estadoFacturacion(entregada(5), 'entregada', 6, ahora).clave, 'por_vencer');
-  assert.equal(plazos.estadoFacturacion(entregada(6), 'entregada', 6, ahora).clave, 'lista');
-  assert.equal(plazos.estadoFacturacion(entregada(7), 'entregada', 6, ahora).clave, 'vencida');
-  assert.equal(plazos.estadoFacturacion(entregada(3), 'entregada', 3, ahora).clave, 'lista', 'FLEC factura a los 3');
-  assert.equal(plazos.estadoFacturacion({ createdAt: new Date(ahora - 11 * D) }, 'transito', 6, ahora).clave, 'sin_movimiento');
-  assert.equal(plazos.estadoFacturacion({ createdAt: new Date(ahora - 2 * D) }, 'registrada', 6, ahora).clave, 'en_entrega');
+  assert.equal(plazos.estadoFacturacion(entregada(2), 'entregada', 6, ahora, '2026-01-01').clave, 'espera');
+  assert.equal(plazos.estadoFacturacion(entregada(5), 'entregada', 6, ahora, '2026-01-01').clave, 'por_vencer');
+  assert.equal(plazos.estadoFacturacion(entregada(6), 'entregada', 6, ahora, '2026-01-01').clave, 'lista');
+  assert.equal(plazos.estadoFacturacion(entregada(7), 'entregada', 6, ahora, '2026-01-01').clave, 'vencida');
+  assert.equal(plazos.estadoFacturacion(entregada(3), 'entregada', 3, ahora, '2026-01-01').clave, 'lista', 'FLEC factura a los 3');
+  assert.equal(plazos.estadoFacturacion({ createdAt: new Date(ahora - 11 * D) }, 'transito', 6, ahora, '2026-01-01').clave, 'sin_movimiento');
+  assert.equal(plazos.estadoFacturacion({ createdAt: new Date(ahora - 2 * D) }, 'registrada', 6, ahora, '2026-01-01').clave, 'en_entrega');
   assert.equal(plazos.estadoFacturacion(entregada(9), 'facturada', 6, ahora), null);
   assert.equal(plazos.estadoFacturacion(entregada(9), 'cancelada', 6, ahora), null);
   assert.equal(plazos.diasFacturarDe({ diasFacturar: 3 }), 3);
   assert.equal(plazos.diasFacturarDe({ diasFacturar: 0 }), 0);
   assert.equal(plazos.diasFacturarDe({}), 6);
 
+  // Lo histórico (antes de que Geraldine Bot arrancara) no se alarma: se facturó en CONTPAQi sin subir el XML
+  db.cols.notasEntrega.get('ne039').createdAt = '2026-07-20T17:20:00.000Z';
+  Object.assign(db.cols.notasEntrega.get('ne039'), entregada(8), { createdAt: '2026-07-20T17:20:00.000Z' });
+  require('./datos').olvidarCache();
+  const viejo = await facturacion.tablero(ahora);
+  assert.ok(!viejo.notas.some(n => n.folio === 'NE-039'), 'una nota de julio no aparece como vencida');
+  assert.ok(viejo.historicas_sin_xml >= 1);
+  assert.match(viejo.aviso, /sin subir el XML/);
+  assert.equal(viejo.vigila_desde, plazos.DESDE);
+  assert.equal(plazos.estadoFacturacion({ createdAt: '2026-06-01T12:00:00Z', etapa: 'entregada' }, 'entregada', 6, ahora), null);
+  // Con la fecha de inicio movida (config/geraldine.desde) sí se vigilan
+  await db.guardar('config', 'geraldine', { desde: '2026-01-01' });
   // Base de prueba: NE-039 (Refacciones Prueba, 6 días) entregada hace 8 → vencida; NE-226 entregada hace 3 con cliente a 3 días → lista;
   // NV #71 sin entregar y sin cambios en 12 días → sin movimiento
   db.cols.clientes.set('cRP', { razonSocial: 'Refacciones Prueba', diasFacturar: 6 });
@@ -1343,6 +1355,7 @@ test('Envíos: la guía vive en la nota, mueve la etapa, avisa, y el tablero ale
     const vendedora = { uid: 'v-9', nombre: 'Vendedora Uno', rol: 'vendedor' };
     const israel = { uid: 'e-1', nombre: 'Israel', rol: 'entregas' };
     [vendedora, israel, OMAR].forEach((u, i) => db.cols.usuarios.set('eu' + i, u));
+    await db.guardar('config', 'geraldine', { desde: '2026-01-01' });
     await assert.rejects(envios.guardarGuia(israel, { folio: 'NE-039', estatus: 'en_transito' }), /hace falta el número de guía/);
     // Guía de Paquete Express: la pieza pasa a En preparación y el vendedor no recibe nada (ese aviso es para entregas)
     const r1 = await envios.guardarGuia(israel, { folio: 'NE-039', tipo: 'nacional', paqueteria: 'Paquete Express', guia: 'PX123456' });

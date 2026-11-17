@@ -115,8 +115,16 @@ function etapaDe(doc, facturasPorId) {
 }
 
 // ── Tablero de Geraldine Bot: cada nota pendiente con su estado según los días del cliente ──
+// Desde cuándo vigila Geraldine Bot (config/geraldine.desde, AAAA-MM-DD; si no, plazos.DESDE)
+async function desdeConfig() {
+  const c = await fb().obtener('config', 'geraldine').catch(() => null);
+  return (c && /^\d{4}-\d{2}-\d{2}$/.test(c.desde || '') && c.desde) || plazos.DESDE;
+}
+
 async function tablero(ahora = Date.now(), filtro = {}) {
   const { lista, facturas, clientes } = await pendientes();
+  const desde = await desdeConfig();
+  let historicas = 0;
   const porId = new Map(facturas.map(f => [f.id, f]));
   const q = norm(filtro.cliente), v = norm(filtro.vendedor);
   const notas = [];
@@ -124,7 +132,8 @@ async function tablero(ahora = Date.now(), filtro = {}) {
     const etapa = etapaDe(r.raw, porId);
     const cliente = clientePor(clientes, r.cliente);
     const dias = plazos.diasFacturarDe(cliente);
-    const estado = plazos.estadoFacturacion(r.raw, etapa, dias, ahora);
+    if (plazos.esHistorica(r.raw, desde)) { historicas++; return; }
+    const estado = plazos.estadoFacturacion(r.raw, etapa, dias, ahora, desde);
     if (!estado) return;
     if (q && !norm(r.cliente).includes(q)) return;
     const vendedor = r.raw.vendedor || '';
@@ -143,7 +152,9 @@ async function tablero(ahora = Date.now(), filtro = {}) {
     notas.forEach(n => { const k = n[campo] || 'Sin ' + campo; (g[k] = g[k] || { [campo]: k, notas: 0, total: 0, vencidas: 0, listas: 0 }); g[k].notas++; g[k].total += n.total; if (n.estado === 'vencida') g[k].vencidas++; if (n.estado === 'lista') g[k].listas++; });
     return Object.values(g).sort((a, b) => b.vencidas - a.vencidas || b.notas - a.notas);
   };
-  return { ahora: new Date(ahora).toISOString().slice(0, 10), conteo, notas, por_cliente: agrupar('cliente'), por_vendedor: agrupar('vendedor'), dias_por_defecto: plazos.DIAS_FACTURAR };
+  return { ahora: new Date(ahora).toISOString().slice(0, 10), vigila_desde: desde, conteo, notas, por_cliente: agrupar('cliente'), por_vendedor: agrupar('vendedor'), dias_por_defecto: plazos.DIAS_FACTURAR,
+    historicas_sin_xml: historicas,
+    aviso: historicas ? historicas + ' notas son de antes del ' + desde + ': se facturaron en CONTPAQi sin subir el XML al gestor, así que no se cuentan como vencidas ni sin movimiento. No digas que están sin facturar.' : undefined };
 }
 
 // ── Cancelar una nota (NE o NV) con motivo obligatorio; sale de pendientes de facturar y del seguimiento activo ──

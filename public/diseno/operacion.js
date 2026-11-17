@@ -53,7 +53,14 @@ const CANCELADA = { id: 'cancelada', nombre: 'Cancelada', icono: 'x' };
 const nombreEtapa = id => (id === 'cancelada' ? CANCELADA.nombre : (ETAPAS.find(e => e.id === id) || ETAPAS[0]).nombre);
 const plazos = () => window.mayaPlazos;
 // Estado de facturación de una nota pendiente (días del cliente): vencida, lista, por_vencer, espera, en_entrega, sin_movimiento
-const estadoFac = r => { const p = plazos(); return p ? p.estadoFacturacion(r.raw, etapa(r), p.diasFacturarDe(clientePorNombreORfc(r.cliente))) : null; };
+let desdeGeraldine = null;
+function cargarDesde() {
+  if (desdeGeraldine !== null || !window.getDoc || !window.db) return;
+  desdeGeraldine = '';
+  window.getDoc(window.doc(window.db, 'config', 'geraldine')).then(s => { desdeGeraldine = (s.exists() && s.data().desde) || ''; pintarActivo(); }).catch(() => {});
+}
+const desdeFac = () => (cargarDesde(), desdeGeraldine || (plazos() && plazos().DESDE));
+const estadoFac = r => { const p = plazos(); return p ? p.estadoFacturacion(r.raw, etapa(r), p.diasFacturarDe(clientePorNombreORfc(r.cliente)), Date.now(), desdeFac()) : null; };
 
 let facturas = [];
 let quitarFacturas = null;
@@ -131,7 +138,7 @@ function pintarSeguimiento() {
     const paso = ETAPAS.findIndex(e => e.id === et);
     const est = facturable(r) && r.total > 0 ? estadoFac(r) : null;
     const env = r.raw.envio;
-    const alEnv = env && plazos() ? plazos().alertaEnvio(r.raw, et) : null;
+    const alEnv = env && plazos() ? plazos().alertaEnvio(r.raw, et, Date.now(), desdeFac()) : null;
     const chipEnv = env && env.guia ? ` <span class="m-op-guia${alEnv ? ' alerta' : ''}" title="${escapar((env.paqueteria || '') + ' · ' + (plazos() ? plazos().nombreEnvio(env.estatus) : env.estatus))}">${icono('truck', 12)} ${escapar(env.paqueteria || 'Guía')} ${escapar(env.guia)}${alEnv ? ' · ' + escapar(alEnv.texto) : ''}</span>` : (alEnv ? ` <span class="m-op-guia alerta">${icono('truck', 12)} ${escapar(alEnv.texto)}</span>` : '');
     const alerta = (est && ['vencida', 'lista', 'por_vencer', 'sin_movimiento'].includes(est.clave) ? ` <span class="m-op-etapa e-${est.clave}" title="${escapar(est.detalle)}">${escapar(est.texto)}</span>` : '') + chipEnv;
     return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
@@ -290,7 +297,7 @@ function pintarFacturacion() {
     const pesoEstado = cli => { const l = porCliente[cli]; return Math.max(...l.map(r => { const e = estados.get(r.col + ':' + r.id); return e ? P.ORDEN.length - P.ORDEN.indexOf(e.clave) : 0; })); };
     const puedeDias = ['admin', 'facturacion'].includes(rol());
     cuerpo.innerHTML = `<div class="m-fac-dos"><div class="m-fac-izq">` +
-      (conteo.length ? `<div class="m-fac-estados">${conteo.map(([k, n]) => `<span class="m-op-etapa e-${k}">${escapar(P.NOMBRES[k])} <b>${n}</b></span>`).join('')}<small>Según los días para facturar de cada cliente (${P.DIAS_FACTURAR} si no tiene).</small></div>` : '') +
+      (P ? `<div class="m-fac-estados">${conteo.map(([k, n]) => `<span class="m-op-etapa e-${k}">${escapar(P.NOMBRES[k])} <b>${n}</b></span>`).join('')}<small>Geraldine Bot vigila las notas desde el ${escapar(desdeFac())}, según los días para facturar de cada cliente (${P.DIAS_FACTURAR} si no tiene).${pend.filter(r => P.esHistorica(r.raw, desdeFac())).length ? ' Las ' + pend.filter(r => P.esHistorica(r.raw, desdeFac())).length + ' de antes se facturaron en CONTPAQi sin subir su XML: no se alarman.' : ''}</small></div>` : '') +
       (Object.keys(porCliente).length ? Object.entries(porCliente).sort((a, b) => (P ? pesoEstado(b[0]) - pesoEstado(a[0]) : 0) || b[1].length - a[1].length).map(([cli, lista]) => {
         const c = clientePorNombreORfc(cli);
         const dias = P ? P.diasFacturarDe(c) : null;
