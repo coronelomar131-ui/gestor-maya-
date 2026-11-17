@@ -1549,7 +1549,7 @@ test('Proceso por Pepito: cliente con sus 7 datos fiscales, nota de venta propia
   assert.ok((await escritura.guardarCliente(vend, { nombre: 'Cliente Facebook Prueba', venta_publica_redes: true })).creado);
 
   // La nota: el vendedor es quien habla; no se puede a nombre de otro; cliente sin registrar no
-  const partidas = [{ descripcion: 'Faro delantero izq.', precio: 3750, iva_porcentaje: 16 }];
+  const partidas = [{ descripcion: 'Faro delantero izq.', precio: 3750, iva_porcentaje: 16, proveedor: 'Refaccionaria Norte', costo: 2500 }];
   const v = await escritura.crearVenta(vend, { cliente: 'Estefanía Cervantes', partidas, forma_pago: 'contado', estatus: 'Pendiente' });
   const venta = db.cols.ventas.get(v.creada.id);
   assert.equal(venta.vendedor, 'Estefanía Ventas');
@@ -1568,4 +1568,43 @@ test('Proceso por Pepito: cliente con sus 7 datos fiscales, nota de venta propia
   // Dirección sigue pudiendo capturar por otros y a clientes sin registrar
   const va = await escritura.crearVenta(ADMIN, { cliente: 'Taller Desconocido', partidas, forma_pago: 'contado', vendedor: 'Daniel' });
   assert.equal(db.cols.ventas.get(va.creada.id).vendedor, 'Daniel');
+});
+
+test('Registro de venta: proveedor, costo total con desglose, utilidad y % para comisiones (obligatorio)', async () => {
+  const escritura = require('./escritura');
+  const rocio = { uid: 'v-9', nombre: 'Rocío Comisiones', rol: 'vendedor' };
+  await escritura.guardarCliente(rocio, { nombre: 'Taller Utilidad Prueba', rfc: 'TAUP880101AB1', email: 'taller@utilidad.mx', tipo_persona: 'fisica', regimen_fiscal: '612', calle: 'Calle 1', numero_exterior: '5', municipio: 'Coyoacán', estado: 'CDMX', codigo_postal: '04000', uso_cfdi: 'G01' });
+  const pieza = { descripcion: 'Facia delantera Nissan Versa 2020 con rejilla', siniestro: 'SIN-77881', precio: 3900, iva_porcentaje: 16 };
+  // Sin proveedor ni costo no se registra
+  await assert.rejects(escritura.crearVenta(rocio, { cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', partidas: [pieza] }),
+    /No registré la venta\. Faltan: proveedor; costo total \(pieza \+ guía \+ paquetería \+ logística\)/);
+  // El ejemplo de la imagen: costo 2000 + 500 + 100 + 100 = 2700, utilidad 1200 (30.77 %)
+  const r = await escritura.crearVenta(rocio, {
+    cliente: 'Taller Utilidad Prueba', forma_pago: 'contado', contacto: 'Sr. Ramírez', impuesto_nota: '16% Masiva',
+    partidas: [Object.assign({}, pieza, { proveedor: 'Autopartes del Centro', costo: 2700, costo_desglose: 'pieza 2000 + guía 500 + paquetería 100 + logística 100' })]
+  });
+  assert.equal(r.creada.venta_sin_iva, 3900);
+  assert.equal(r.creada.costo_total, 2700);
+  assert.equal(r.creada.utilidad, 1200);
+  assert.equal(r.creada.utilidad_porcentaje, 30.77);
+  assert.equal(r.creada.impuesto, '16% Masiva');
+  assert.deepEqual(r.creada.proveedores, ['Autopartes del Centro']);
+  const g = db.cols.ventas.get(r.creada.id);
+  assert.equal(g.utilidad, 1200);
+  assert.equal(g.items[0].costoDesglose, 'pieza 2000 + guía 500 + paquetería 100 + logística 100');
+  assert.equal(g.contacto, 'Sr. Ramírez');
+  assert.equal(g.total, 4524);
+  // Comisiones: la vendedora solo ve lo suyo; Dirección ve a todos y las ventas sin costo aparte
+  const cv = await conectar(rocio);
+  const suya = await cv.llamar('utilidad_comisiones', { vendedor: 'Daniel' });
+  assert.equal(suya.por_vendedor.length, 1);
+  assert.equal(suya.por_vendedor[0].vendedor, 'Rocío Comisiones');
+  assert.equal(suya.por_vendedor[0].utilidad, 1200);
+  assert.equal(suya.por_vendedor[0].utilidad_porcentaje, 30.77);
+  await cv.cerrar();
+  const ca = await conectar(ADMIN);
+  const todo = await ca.llamar('utilidad_comisiones', {});
+  assert.ok(todo.por_vendedor.some(x => x.vendedor === 'Rocío Comisiones'));
+  assert.ok(todo.ventas_sin_costo > 0, 'las ventas viejas sin costo se listan para completarlas');
+  await ca.cerrar();
 });

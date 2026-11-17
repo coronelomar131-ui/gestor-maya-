@@ -371,6 +371,47 @@ async function productosML(f, limite) {
   return r;
 }
 
+// Utilidad para comisiones: por vendedor, venta sin IVA (menos ajustes), costo total (pieza + guía + paquetería + logística),
+// utilidad = venta − costo y % = utilidad / venta × 100. Las ventas canceladas no cuentan; las que no traen costo se listan aparte.
+async function utilidad(f) {
+  const desde = f.desde ? diaLocal(f.desde, false) : null;
+  const hasta = f.hasta ? diaLocal(f.hasta, true) : null;
+  const quien = norm(f.vendedor);
+  const grupos = new Map();
+  const sinCosto = [];
+  (await leer('ventas')).forEach(v => {
+    if (/^cancel/.test(norm(v.estatus)) || v.estado === 'cancelada') return;
+    const x = desdeVenta(v);
+    if ((desde || hasta) && !x.fecha) return;
+    if (desde && x.fecha < desde) return;
+    if (hasta && x.fecha > hasta) return;
+    const vendedor = x.vendedor || 'Sin vendedor';
+    if (quien && !norm(vendedor).includes(quien)) return;
+    const items = Array.isArray(v.items) ? v.items : [];
+    const venta = (x.subtotal - x.ajuste) / 100;
+    const conCosto = items.length > 0 && items.every(i => i.costo != null);
+    if (!conCosto) { sinCosto.push({ folio: x.folio, vendedor, cliente: x.cliente, venta_sin_iva: venta }); return; }
+    const costo = items.reduce((s, i) => s + (Number(i.costo) || 0), 0);
+    const g = grupos.get(vendedor) || { vendedor, ventas: 0, venta_sin_iva: 0, costo_total: 0 };
+    g.ventas++; g.venta_sin_iva += venta; g.costo_total += costo;
+    grupos.set(vendedor, g);
+  });
+  const r2 = n => Math.round(n * 100) / 100;
+  const lista = [...grupos.values()].map(g => {
+    const u = g.venta_sin_iva - g.costo_total;
+    return { vendedor: g.vendedor, ventas: g.ventas, venta_sin_iva: r2(g.venta_sin_iva), costo_total: r2(g.costo_total), utilidad: r2(u), utilidad_porcentaje: g.venta_sin_iva > 0 ? r2(u / g.venta_sin_iva * 100) : null };
+  }).sort((a, b) => b.utilidad - a.utilidad);
+  const t = lista.reduce((s, g) => ({ venta: s.venta + g.venta_sin_iva, costo: s.costo + g.costo_total }), { venta: 0, costo: 0 });
+  return {
+    filtros: { desde: f.desde || null, hasta: f.hasta || null, vendedor: f.vendedor || null },
+    por_vendedor: lista,
+    total: { venta_sin_iva: r2(t.venta), costo_total: r2(t.costo), utilidad: r2(t.venta - t.costo), utilidad_porcentaje: t.venta > 0 ? r2((t.venta - t.costo) / t.venta * 100) : null },
+    ventas_sin_costo: sinCosto.length,
+    sin_costo: sinCosto.slice(0, 30),
+    nota: 'Utilidad = precio de venta sin IVA − costo total. Las ventas sin costo capturado no entran en la utilidad: hay que completarlas para pagar su comisión.'
+  };
+}
+
 // Todas las ventas tal cual (también canceladas y las creadas desde una NE), con su estatus y factura
 async function ventas(f, limite) {
   const q = norm(f.texto);
@@ -608,6 +649,6 @@ async function cobranza(f) {
 
 module.exports = {
   leer, pendientesFacturar, cobranza, compras,
-  cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, registros,
+  cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, utilidad, registros,
   armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };

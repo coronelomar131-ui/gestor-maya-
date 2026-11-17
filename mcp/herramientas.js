@@ -28,7 +28,10 @@ const PARTIDA = z.object({
   precio: z.number().min(0).describe('Precio de la partida completa, sin IVA'),
   iva_porcentaje: z.number().min(0).max(100).default(16).describe('IVA en % sobre el precio: 16 por omisión como en la app; 0 si no lleva'),
   ajuste: z.number().min(0).default(0).describe('Descuento en pesos que se resta'),
-  siniestro: z.string().optional()
+  siniestro: z.string().optional(),
+  proveedor: z.string().optional().describe('A quién se le compró la pieza'),
+  costo: z.number().min(0).optional().describe('Costo total de la partida sin IVA: pieza + guía + paquetería + logística'),
+  costo_desglose: z.string().optional().describe('Cómo se forma el costo, p. ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100"')
 });
 const opcional = z.string().optional();
 
@@ -76,6 +79,10 @@ function instrucciones(usuario) {
       : 'Cada integrante registra SUS propias ventas: en notas y ventas el vendedor es siempre quien te habla (se pone solo). Nadie puede registrar una venta que no hizo; si te piden ponerla a nombre de otro, explica que esa persona la registre con su usuario.',
     'Proceso para registrar cliente y vender (no se omite ningún paso): 1) Registrar al cliente con guardar_cliente y estos datos obligatorios: nombre completo o razón social, RFC, correo, tipo de persona (física o moral), régimen fiscal, dirección fiscal completa (calle y número, colonia si la hay, alcaldía o municipio, estado y C.P.) y uso de CFDI. Si falta alguno, pídelos todos juntos en un solo mensaje; no inventes ni completes datos fiscales. Los clientes de venta pública (redes) no los necesitan. ' +
       '2) Al registrarlo, pregunta si quiere generar una nota de venta. 3) Para la nota pide productos, precio y forma de pago (contado o crédito; crédito solo si el cliente lo tiene autorizado). 4) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
+    'Registro de venta (obligatorio en todas las ventas, se usa para las comisiones). Pide, todo junto en un solo mensaje, lo que falte de: cliente, contacto, siniestro, pieza con su descripción completa, precio de venta (sin IVA), proveedor, impuesto (p. ej. "16% Masiva") y costo total. ' +
+      'El costo total es la suma de pieza + guía + paquetería + logística: pide cada parte, súmalas tú, ponlo en costo y el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No inventes costos: si no saben uno, pregúntalo. ' +
+      'Antes de guardar muestra el resumen con venta, costo total, utilidad (precio de venta − costo total) y % de utilidad (utilidad / precio de venta × 100), y espera el SÍ. Al guardar da el folio, la venta, el costo, la utilidad y su %. ' +
+      'Si la utilidad sale negativa o muy baja (menos de 10%), avísalo antes de guardar. Para comisiones o "cuánto dejó" usa utilidad_comisiones.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
   ].join('\n');
 }
@@ -186,6 +193,23 @@ function crearServidor(usuario) {
   }
 
   if (puede('ventas')) {
+    servidor.registerTool('utilidad_comisiones', {
+      title: 'Utilidad por vendedor (comisiones)',
+      description: 'Utilidad de las ventas por vendedor en un periodo: venta sin IVA, costo total (pieza + guía + paquetería + logística), utilidad y %. ' +
+        'Es la base para calcular comisiones. Avisa de las ventas que no tienen costo capturado. Quien no es Dirección ni Facturación solo ve las suyas.',
+      inputSchema: {
+        desde: FECHA.optional().describe('Primer día incluido (AAAA-MM-DD)'),
+        hasta: FECHA.optional().describe('Último día incluido (AAAA-MM-DD)'),
+        vendedor: z.string().optional().describe('Parte del nombre del vendedor')
+      },
+      annotations: LECTURA
+    }, ejecutar(a => {
+      const rol = usuario.rolReal || usuario.rol;
+      const veTodo = ['admin', 'facturacion'].includes(rol);
+      const propio = String(usuario.nombre || usuario.email || '').split(/[\s@]/)[0];
+      return datos.utilidad(veTodo ? a : Object.assign({}, a, { vendedor: propio }));
+    }));
+
     servidor.registerTool('buscar_ventas', {
       title: 'Buscar ventas',
       description: 'Ventas (notas de venta) como están en el módulo Ventas, incluidas las canceladas y las creadas desde una nota de entrega, ' +
@@ -362,7 +386,8 @@ function crearServidor(usuario) {
   if (puede('ventas')) {
     servidor.registerTool('crear_venta', {
       title: 'Crear nota de venta',
-      description: 'Registra una venta (nota de venta, folio consecutivo) igual que el módulo Ventas: cada partida con su precio, IVA y ajuste. ' +
+      description: 'Registra una venta (nota de venta, folio consecutivo) igual que el módulo Ventas: cada partida con su precio, IVA, ajuste, proveedor y costo total ' +
+        '(pieza + guía + paquetería + logística). Calcula la utilidad (precio de venta sin IVA − costo total) y su %, que se usa para las comisiones. ' +
         'Confirma con el usuario antes de usarla.',
       inputSchema: {
         cliente: z.string().min(1),
@@ -371,6 +396,8 @@ function crearServidor(usuario) {
         forma_pago: z.enum(['contado', 'credito']).describe('Contado, o crédito solo si el cliente tiene crédito autorizado; pregúntalo si no lo dicen'),
         estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
         incluye_datos_fiscales: z.boolean().default(false),
+        contacto: z.string().optional().describe('Persona de contacto del cliente (quien pidió la pieza), si la dicen'),
+        impuesto_nota: z.string().optional().describe('Cómo se maneja el impuesto, p. ej. "16% Masiva"'),
         partidas: z.array(PARTIDA).min(1)
       },
       annotations: ESCRITURA

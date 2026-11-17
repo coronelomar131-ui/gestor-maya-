@@ -49,7 +49,12 @@ function partidas(lista) {
   const items = lista.map(p => {
     const precio = Number(p.precio) || 0;
     const porcentaje = p.iva_porcentaje == null ? 16 : Number(p.iva_porcentaje);
-    return { pedido: texto(p.descripcion), numSiniestro: texto(p.siniestro), precio, iva: parseFloat(((precio * porcentaje) / 100).toFixed(2)), ajuste: Number(p.ajuste) || 0 };
+    const item = { pedido: texto(p.descripcion), numSiniestro: texto(p.siniestro), precio, iva: parseFloat(((precio * porcentaje) / 100).toFixed(2)), ajuste: Number(p.ajuste) || 0 };
+    // Proveedor y costo total (pieza + guía + paquetería + logística) para la utilidad y las comisiones
+    if (p.proveedor) item.proveedor = texto(p.proveedor);
+    if (p.costo != null) item.costo = redondear2(Number(p.costo) || 0);
+    if (p.costo_desglose) item.costoDesglose = texto(p.costo_desglose);
+    return item;
   });
   let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
   items.forEach(i => { subtotal += i.precio; ivaTotal += i.iva; ajusteTotal += i.ajuste; });
@@ -59,6 +64,16 @@ function partidas(lista) {
     subtotal: redondear2(subtotal), ivaTotal: redondear2(ivaTotal), ajusteTotal: redondear2(ajusteTotal),
     total: redondear2(subtotal + ivaTotal - ajusteTotal)
   };
+}
+
+// Utilidad = precio de venta (sin IVA, menos ajustes) − costo total; % = utilidad / precio de venta × 100. Es la base de las comisiones.
+function utilidadDe(items, subtotal) {
+  const conCosto = items.filter(i => i.costo != null);
+  const costoTotal = redondear2(conCosto.reduce((s, i) => s + i.costo, 0));
+  const venta = redondear2((subtotal || 0) - items.reduce((s, i) => s + (i.ajuste || 0), 0));
+  if (!conCosto.length) return { costoTotal: null, utilidad: null, utilidadPct: null, completo: false };
+  const utilidad = redondear2(venta - costoTotal);
+  return { costoTotal, utilidad, utilidadPct: venta > 0 ? redondear2((utilidad / venta) * 100) : null, completo: conCosto.length === items.length };
 }
 
 function registroVenta(id, venta) {
@@ -135,19 +150,41 @@ async function crearVenta(u, a) {
     if (!diasCredito) throw new ErrorUsuario(cliente.nombre + ' no tiene crédito autorizado (0 días de crédito). Véndele de contado o pide a Dirección o Facturación que le autoricen días de crédito.');
   }
   const fecha = a.fecha || hoy();
+  // Registro obligatorio de toda venta: cada pieza con su proveedor y su costo total (Dirección puede capturar sin ellos)
+  if (!esDireccion(u)) {
+    const faltan = [];
+    a.partidas.forEach((x, i) => {
+      const n = a.partidas.length > 1 ? ' de la partida ' + (i + 1) + ' (' + texto(x.descripcion) + ')' : '';
+      if (!texto(x.proveedor)) faltan.push('proveedor' + n);
+      if (x.costo == null) faltan.push('costo total' + n + ' (pieza + guía + paquetería + logística)');
+    });
+    if (faltan.length) throw new ErrorUsuario('No registré la venta. Faltan: ' + faltan.join('; ') + '. Sin costo no se puede calcular la utilidad para las comisiones.');
+  }
   const p = partidas(a.partidas);
+  const u_ = utilidadDe(p.items, p.subtotal);
   const notaId = String(maxNumero(await fb().leerColeccion('ventas'), v => v.notaId || v.notaNumero) + 1);
   const venta = Object.assign({
     notaId, fecha: mediodiaMs(fecha), clienteId: cliente.id, clienteNombre: cliente.nombre,
     vendedor, items: p.items, siniestros: p.siniestros,
     subtotal: p.subtotal, ivaTotal: p.ivaTotal, ajusteTotal: p.ajusteTotal, total: p.total,
     formaPago, diasCredito,
+    contacto: texto(a.contacto), impuestoNota: texto(a.impuesto_nota),
+    costoTotal: u_.costoTotal, utilidad: u_.utilidad, utilidadPct: u_.utilidadPct, costoCompleto: u_.completo,
     incluyeDatosFiscales: !!a.incluye_datos_fiscales, estado: 'pendiente', estatus: a.estatus,
     facturaURL: '', tieneFactura: false, createdAt: fb().marcaTiempo()
   }, autor(u));
   const id = await fb().agregar('ventas', venta);
   datos.olvidarCache();
-  return { creada: Object.assign(registroVenta(id, venta), { estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito }), cliente_registrado: cliente.registrado };
+  return {
+    creada: Object.assign(registroVenta(id, venta), {
+      estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito,
+      contacto: venta.contacto || null, impuesto: venta.impuestoNota || null,
+      proveedores: [...new Set(p.items.map(i => i.proveedor).filter(Boolean))],
+      venta_sin_iva: p.subtotal, costo_total: u_.costoTotal, utilidad: u_.utilidad, utilidad_porcentaje: u_.utilidadPct,
+      costo_completo: u_.completo
+    }),
+    cliente_registrado: cliente.registrado
+  };
 }
 
 async function encontrarVenta(a) {

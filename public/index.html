@@ -2080,6 +2080,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Precio ($)</th>
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:80px">% IVA</th>
                 <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:100px">Ajuste ($)</th>
+                <th style="padding:8px;text-align:left;border:1px solid #3BBCD4;width:130px">Proveedor</th>
+                <th style="padding:8px;text-align:right;border:1px solid #3BBCD4;width:150px" title="Pieza + guía + paquetería + logística. Puedes escribir la suma: 2000+500+100+100">Costo total ($)</th>
                 <th style="padding:8px;text-align:center;border:1px solid #3BBCD4;width:40px">🗑</th>
               </tr>
             </thead>
@@ -2106,6 +2108,14 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             <div style="display:flex;justify-content:space-between;padding:5px 0;color:#666">
               <span>Ajuste Total:</span>
               <strong style="color:#d32f2f" id="v-ajuste-total">-$0.00</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;color:#666;border-top:1px dashed #9bb;margin-top:4px">
+              <span>Costo total:</span>
+              <strong style="color:#1E4F7A" id="v-costo-total">—</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;color:#666" title="Precio de venta sin IVA − costo total. Se usa para las comisiones.">
+              <span>Utilidad:</span>
+              <strong style="color:#666" id="v-utilidad">—</strong>
             </div>
           </div>
           <div style="display:flex;flex-direction:column;justify-content:center;align-items:flex-end">
@@ -3301,6 +3311,12 @@ window.agregarFilaPieza = function() {
     <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
       <input type="number" class="v-item-ajuste" placeholder="0.00" min="0" step="0.01" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" onchange="recalcularTotales()" value="0">
     </td>
+    <td style="padding:8px;border:1px solid #3BBCD4">
+      <input type="text" class="v-item-proveedor" placeholder="A quién se compró" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em">
+    </td>
+    <td style="padding:8px;border:1px solid #3BBCD4;text-align:right">
+      <input type="text" inputmode="decimal" class="v-item-costo" placeholder="2000+500+100+100" title="Pieza + guía + paquetería + logística" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:0.9em;text-align:right" oninput="recalcularTotales()">
+    </td>
     <td style="padding:8px;border:1px solid #3BBCD4;text-align:center">
       <button class="btn btn-danger btn-sm" onclick="eliminarFilaPieza('v-item-row-${rowCount}');recalcularTotales()">🗑</button>
     </td>
@@ -3332,9 +3348,22 @@ window.calcularIVA = function(row) {
   }
 };
 
+// Costo total de una pieza: un número o la suma escrita (pieza + guía + paquetería + logística), p. ej. "2000+500+100+100"
+window.mayaSumaCosto = function(t) {
+  const txt = String(t || '').trim();
+  if (!txt) return null;
+  const partes = txt.split('+').map(x => x.replace(/[^\d.]/g, '')).filter(Boolean).map(Number).filter(n => !isNaN(n));
+  if (!partes.length) return null;
+  return { total: parseFloat(partes.reduce((a, b) => a + b, 0).toFixed(2)), desglose: partes.length > 1 ? txt : '' };
+};
+
 window.recalcularTotales = function() {
-  let subtotal = 0, ivaTotal = 0, ajusteTotal = 0;
+  let subtotal = 0, ivaTotal = 0, ajusteTotal = 0, costoTotal = 0, conCosto = 0;
   const rows = document.querySelectorAll('#v-items-body tr');
+  rows.forEach(row => {
+    const c = window.mayaSumaCosto(row.querySelector('.v-item-costo')?.value);
+    if (c) { costoTotal += c.total; conCosto++; }
+  });
 
   rows.forEach(row => {
     const precio = parseFloat(row.querySelector('.v-item-precio')?.value || 0);
@@ -3353,6 +3382,18 @@ window.recalcularTotales = function() {
   document.getElementById('v-iva-total').textContent = '$' + ivaTotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
   document.getElementById('v-ajuste-total').textContent = '-$' + ajusteTotal.toLocaleString('es-MX', {minimumFractionDigits: 2});
   document.getElementById('v-total-final').textContent = '$' + total.toLocaleString('es-MX', {minimumFractionDigits: 2});
+  // Utilidad = precio de venta (sin IVA, menos ajustes) − costo total; % = utilidad / precio de venta × 100
+  const ventaNeta = subtotal - ajusteTotal;
+  const elC = document.getElementById('v-costo-total'), elU = document.getElementById('v-utilidad');
+  if (elC) elC.textContent = conCosto ? '$' + costoTotal.toLocaleString('es-MX', {minimumFractionDigits: 2}) : '—';
+  if (elU) {
+    if (!conCosto) { elU.textContent = '—'; elU.style.color = '#666'; }
+    else {
+      const u = ventaNeta - costoTotal, pct = ventaNeta > 0 ? (u / ventaNeta) * 100 : 0;
+      elU.textContent = '$' + u.toLocaleString('es-MX', {minimumFractionDigits: 2}) + ' (' + pct.toFixed(2) + '%)';
+      elU.style.color = pct < 10 ? '#d32f2f' : '#1b8a3c';
+    }
+  }
 };
 
 window.abrirModalNuevoCliente = function() {
@@ -3397,13 +3438,12 @@ window.saveVentaMultiLinea = async function() {
     console.log(`🏷️ Fila ${idx}: ${pedido} | ${numSiniestro} | $${precio} | IVA $${iva} | Ajuste $${ajuste}`);
 
     if (pedido) {
-      items.push({
-        pedido,
-        numSiniestro,
-        precio,
-        iva,
-        ajuste
-      });
+      const item = { pedido, numSiniestro, precio, iva, ajuste };
+      const proveedor = (row.querySelector('.v-item-proveedor')?.value || '').trim();
+      const costo = window.mayaSumaCosto(row.querySelector('.v-item-costo')?.value);
+      if (proveedor) item.proveedor = proveedor;
+      if (costo) { item.costo = costo.total; if (costo.desglose) item.costoDesglose = costo.desglose; }
+      items.push(item);
     }
   });
 
@@ -3412,6 +3452,11 @@ window.saveVentaMultiLinea = async function() {
   if (items.length === 0) {
     toast('Agrega al menos una pieza', 'error');
     return;
+  }
+  // Registro obligatorio: cada pieza con proveedor y costo total (Dirección puede guardar sin ellos)
+  if ((window.currentRole || 'vendedor') !== 'admin') {
+    const faltan = items.filter(it => !it.proveedor || it.costo == null).map(it => it.pedido);
+    if (faltan.length) { toast('Falta proveedor o costo total en: ' + faltan.join(', ') + '. Se necesitan para la utilidad y las comisiones.', 'error'); return; }
   }
 
   // Calcular totales
@@ -3422,6 +3467,11 @@ window.saveVentaMultiLinea = async function() {
     ajusteTotal += item.ajuste;
   });
   const total = subtotal + ivaTotal - ajusteTotal;
+  const conCosto = items.filter(it => it.costo != null);
+  const costoTotal = conCosto.length ? parseFloat(conCosto.reduce((a, it) => a + it.costo, 0).toFixed(2)) : null;
+  const ventaNeta = subtotal - ajusteTotal;
+  const utilidad = costoTotal == null ? null : parseFloat((ventaNeta - costoTotal).toFixed(2));
+  const utilidadPct = utilidad == null || ventaNeta <= 0 ? null : parseFloat(((utilidad / ventaNeta) * 100).toFixed(2));
 
   // Generar número de nota (números simples: 1, 2, 3...)
   const notasSnap = await getDocs(collection(db, 'ventas'));
@@ -3467,6 +3517,7 @@ window.saveVentaMultiLinea = async function() {
     ivaTotal: parseFloat(ivaTotal.toFixed(2)),
     ajusteTotal: parseFloat(ajusteTotal.toFixed(2)),
     total: parseFloat(total.toFixed(2)),
+    costoTotal, utilidad, utilidadPct, costoCompleto: conCosto.length === items.length,
     incluyeDatosFiscales,
     estado: 'pendiente',
     estatus: estatusInicial,
@@ -5750,6 +5801,32 @@ window.abrirDetallesVenta = async function(ventaId) {
           <div style="color:#3BBCD4;font-weight:700;font-size:16px">$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
         </div>
       </div>
+
+      ${(() => {
+        // Registro de venta: proveedor, costo total (pieza + guía + paquetería + logística) y utilidad para comisiones
+        const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const $ = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const its = (v.items || []).filter(it => it.costo != null || it.proveedor);
+        const extra = (v.contacto ? '<div><span style="color:#999">Contacto:</span> ' + esc(v.contacto) + '</div>' : '') +
+          (v.impuestoNota ? '<div><span style="color:#999">Impuesto:</span> ' + esc(v.impuestoNota) + '</div>' : '');
+        if (v.utilidad == null && !its.length) {
+          return '<div style="background:var(--surface2);padding:12px 15px;border-radius:8px;margin-bottom:20px;font-size:12px;color:#F59E0B">' + extra +
+            '⚠️ Esta venta no tiene costo capturado: no se puede calcular su utilidad para comisiones.</div>';
+        }
+        const filas = its.map(it => '<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid rgba(59,188,212,0.1)"><span>' +
+          esc(it.pedido || '—') + (it.proveedor ? ' <span style="color:#999">· ' + esc(it.proveedor) + '</span>' : '') +
+          (it.costoDesglose ? '<br><span style="color:#999">' + esc(it.costoDesglose) + '</span>' : '') + '</span><span>' + (it.costo != null ? $(it.costo) : '—') + '</span></div>').join('');
+        const baja = v.utilidadPct != null && v.utilidadPct < 10;
+        return '<div style="background:var(--surface2);padding:15px;border-radius:8px;margin-bottom:20px;font-size:12px">' +
+          '<div style="color:#999;margin-bottom:8px">💹 Costo y utilidad (comisiones)</div>' + extra + filas +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:10px">' +
+          '<div><div style="color:#999">Venta sin IVA</div><div style="font-weight:600">' + $((v.subtotal || 0) - (v.ajusteTotal || 0)) + '</div></div>' +
+          '<div><div style="color:#999">Costo total</div><div style="font-weight:600">' + (v.costoTotal != null ? $(v.costoTotal) : '—') + '</div></div>' +
+          '<div><div style="color:#999">Utilidad</div><div style="font-weight:700;color:' + (baja ? '#FF6B6B' : '#22C55E') + '">' + (v.utilidad != null ? $(v.utilidad) : '—') +
+          (v.utilidadPct != null ? ' (' + v.utilidadPct.toFixed(2) + '%)' : '') + '</div></div></div>' +
+          (v.costoCompleto === false ? '<div style="color:#F59E0B;margin-top:8px">⚠️ Falta el costo de alguna pieza; la utilidad está incompleta.</div>' : '') +
+          '</div>';
+      })()}
 
       <div style="background:white;color:black;padding:20px;border-radius:8px;margin-top:20px">
         <div style="text-align:center;margin-bottom:20px;border-bottom:2px solid #ccc;padding-bottom:15px">
