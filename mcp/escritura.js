@@ -17,6 +17,20 @@ const sinNulos = o => Object.keys(o).reduce((r, k) => { if (o[k] !== undefined) 
 class ErrorUsuario extends Error {}
 const duplicados = require('../public/diseno/duplicados.js');
 const sat = require('../public/diseno/sat.js');
+const candados = require('../public/diseno/alertas.js');
+
+// Candados antes de guardar (public/diseno/alertas.js): venta repetida, siniestro, precio contra costo y contra lo de antes.
+// Pepito los corre como ensayo (soloRevisar) y se los enseña a la persona antes del SÍ; quien llama directo al MCP
+// tiene que mandar confirmar_alertas: true después de mostrárselos.
+async function alertasDe(venta, ventas, opciones) {
+  const compras = await datos.leer('compras').catch(() => []);
+  return candados.revisar(venta, ventas, compras, opciones);
+}
+function exigirConfirmacion(alertas, a, que) {
+  if (alertas.length && !a.confirmar_alertas) {
+    throw new ErrorUsuario('Antes de guardar ' + que + ' revisa esto con la persona: ' + alertas.map((x, i) => (i + 1) + ') ' + x).join(' ') + ' Si todo está bien, repite con confirmar_alertas: true.');
+  }
+}
 
 // Reglas del equipo (proceso de venta por Pepito): cada quien registra SUS ventas y el cliente debe estar registrado.
 // Dirección puede capturar por otros (vendedor libre) y vender a un cliente sin registrar.
@@ -173,7 +187,7 @@ async function diasCreditoDe(cliente, formaPago) {
   return dias;
 }
 
-async function crearVenta(u, a) {
+async function crearVenta(u, a, opciones = {}) {
   const cliente = await resolverCliente(a.cliente);
   exigirClienteRegistrado(u, cliente, a.cliente);
   const vendedor = vendedorDe(u, a);
@@ -188,7 +202,11 @@ async function crearVenta(u, a) {
   const conIva = a.precio_con_iva !== false;
   const p = partidas(a.partidas, conIva);
   const u_ = utilidadDe(p);
-  const notaId = String(maxNumero(await fb().leerColeccion('ventas'), v => v.notaId || v.notaNumero) + 1);
+  const todas = await fb().leerColeccion('ventas');
+  const alertas = await alertasDe({ clienteId: cliente.id, clienteNombre: cliente.nombre, items: p.items, total: p.total, utilidad: u_.utilidad }, todas);
+  if (opciones.soloRevisar) return { revision: true, alertas, cliente: cliente.nombre, dinero: resumenDinero(p, u_) };
+  exigirConfirmacion(alertas, a, 'la venta');
+  const notaId = String(maxNumero(todas, v => v.notaId || v.notaNumero) + 1);
   const venta = Object.assign({
     notaId, fecha: mediodiaMs(fecha), clienteId: cliente.id, clienteNombre: cliente.nombre,
     vendedor, items: p.items, siniestros: p.siniestros,
@@ -236,7 +254,7 @@ const fotoDe = v => CAMPOS_ANTES.reduce((o, k) => { if (v[k] !== undefined) o[k]
 const pesos2 = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const corrigeTodo = u => esDireccion(u) || (u && (u.rolReal || u.rol)) === 'facturacion';
 
-async function corregirVenta(u, a) {
+async function corregirVenta(u, a, opciones = {}) {
   const v = await encontrarVenta(a);
   const folio = registroVenta(v.id, v).folio;
   if (!corrigeTodo(u)) {
@@ -311,6 +329,10 @@ async function corregirVenta(u, a) {
 
   const t = sumar(items);
   const u_ = utilidadDe(t);
+  const alertas = await alertasDe({ id: v.id, clienteId: nuevo.clienteId || v.clienteId, clienteNombre: nuevo.clienteNombre || v.clienteNombre, items: t.items, total: t.total, utilidad: u_.utilidad },
+    await fb().leerColeccion('ventas'), { repetida: false });
+  if (opciones.soloRevisar) return { revision: true, alertas, venta: folio, dinero: resumenDinero(t, u_) };
+  exigirConfirmacion(alertas, a, 'la corrección');
   if (t.total !== v.total) cambios.push('Total: ' + pesos2(v.total) + ' → ' + pesos2(t.total));
   if (u_.utilidad !== (v.utilidad == null ? null : v.utilidad)) cambios.push('Utilidad: ' + pesos2(v.utilidad) + ' → ' + pesos2(u_.utilidad) + (u_.utilidadPct != null ? ' (' + u_.utilidadPct + ' %)' : ''));
   Object.assign(nuevo, {

@@ -412,6 +412,7 @@ function crearServidor(usuario) {
         incluye_datos_fiscales: z.boolean().default(false),
         contacto: z.string().optional().describe('Persona de contacto del cliente (quien pidió la pieza), si la dicen'),
         impuesto_nota: z.string().optional().describe('Cómo se maneja el impuesto, p. ej. "16% Masiva"'),
+        confirmar_alertas: z.boolean().optional().describe('Solo después de enseñarle a la persona las alertas que regresó la herramienta y que diga que sí está bien'),
         precio_con_iva: PRECIO_CON_IVA,
         partidas: z.array(PARTIDA_VENTA).min(1)
       },
@@ -440,7 +441,8 @@ function crearServidor(usuario) {
         forma_pago: z.enum(['contado', 'credito']).optional(),
         precio_con_iva: PRECIO_CON_IVA,
         motivo: z.string().optional().describe('Por qué se corrige, en pocas palabras'),
-        deshacer_ultima: z.boolean().optional().describe('true = regresa la venta a como estaba antes de la última corrección')
+        deshacer_ultima: z.boolean().optional().describe('true = regresa la venta a como estaba antes de la última corrección'),
+        confirmar_alertas: z.boolean().optional().describe('Solo después de enseñarle a la persona las alertas que regresó la herramienta y que diga que sí está bien')
       },
       annotations: ESCRITURA
     }, ejecutar(a => {
@@ -584,7 +586,8 @@ function crearServidor(usuario) {
         monto: z.number().positive().describe('Monto pagado en pesos'),
         fecha: FECHA.optional().describe('Fecha del pago; por omisión hoy'),
         forma: z.enum(['Transferencia', 'Efectivo', 'Cheque', 'Tarjeta']).default('Transferencia'),
-        referencia: z.string().optional().describe('Referencia o clave de rastreo de la transferencia')
+        referencia: z.string().optional().describe('Referencia o clave de rastreo de la transferencia'),
+        confirmar_alertas: z.boolean().optional().describe('Solo después de enseñarle a la persona las alertas que regresó la herramienta y que diga que sí está bien')
       },
       annotations: ESCRITURA
     }, ejecutar(a => {
@@ -608,7 +611,8 @@ function crearServidor(usuario) {
         })).default([]),
         fecha: FECHA.optional(), estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
         vendedor: z.string().optional().describe('Solo Dirección; los demás registran a su nombre'),
-        contacto: z.string().optional(), impuesto_nota: z.string().optional()
+        contacto: z.string().optional(), impuesto_nota: z.string().optional(),
+        confirmar_alertas: z.boolean().optional().describe('Solo después de enseñarle a la persona las alertas que regresó la herramienta y que diga que sí está bien')
       },
       annotations: ESCRITURA
     }, ejecutar(a => {

@@ -15,6 +15,7 @@ const avisos = require('./avisos');
 const grupo = require('./grupo');
 const facturacion = require('./facturacion');
 const negocio = require('./negocio');
+const escritura = require('./escritura');
 const rolesDef = require('../public/diseno/roles.js');
 
 const MODELO = process.env.PEPITO_MODELO || 'claude-sonnet-5-5';
@@ -231,6 +232,17 @@ async function herramientasDe(usuario, canal) {
     tools: lista.map(t => ({ name: t.name, description: (fueraDeRol(t.name) ? '[Fuera del rol de esta persona: hazlo si te lo pide; queda registrado para Dirección] ' : '') + (t.description || t.title || t.name), input_schema: t.inputSchema }))
       .concat(propias.map(t => (fueraDeRol(t.name) ? Object.assign({}, t, { description: '[Fuera del rol de esta persona: hazlo si te lo pide; queda registrado para Dirección] ' + t.description }) : t))),
     fueraDeRol,
+    // Ensayo sin guardar de lo delicado: regresa { alertas, dinero } o lanza el error de lo que falta
+    async revisar(nombre, args) {
+      const fn = {
+        crear_venta: () => escritura.crearVenta(usuarioHerr, args || {}, { soloRevisar: true }),
+        corregir_venta: () => (args && args.deshacer_ultima ? null : escritura.corregirVenta(usuarioHerr, args || {}, { soloRevisar: true })),
+        convertir_cotizacion: () => negocio.convertirCotizacion(usuarioHerr, args || {}, { soloRevisar: true }),
+        registrar_pago: () => negocio.registrarPago(usuarioHerr, args || {}, { soloRevisar: true })
+      }[nombre];
+      if (!fn) return null;
+      try { return await fn(); } catch (e) { if (e instanceof escritura.ErrorUsuario) e.esDeUsuario = true; throw e; }
+    },
     escribe: nombre => { if (facturacion.NOMBRES.has(nombre)) return facturacion.ESCRIBE.has(nombre); if (nombre === HERRAMIENTA_PDF.name || ALARMA.has(nombre) || grupo.NOMBRES.has(nombre)) return false; const t = lista.find(x => x.name === nombre); return !t || !t.annotations || t.annotations.readOnlyHint !== true; },
     titulo: nombre => (nombre === HERRAMIENTA_WHATSAPP.name ? 'Mandar WhatsApp' : nombre === HERRAMIENTA_PDF.name ? 'Mandar PDF' : nombre === 'crear_recordatorio' ? 'Alarma' : nombre === 'mis_recordatorios' ? 'Mis alarmas' : nombre === 'cancelar_recordatorio' ? 'Cancelar alarma' : nombre === 'mandar_al_grupo' ? 'Mensaje al grupo' : nombre === 'ver_grupo' ? 'Ver grupo' : nombre === 'ligar_factura' ? 'Ligar factura' : nombre === 'emparejar_factura' ? 'Buscar notas de la factura' : ((lista.find(x => x.name === nombre) || {}).title || nombre)),
     async llamar(nombre, args) {
@@ -342,8 +354,18 @@ async function ciclo(cli, h, mensajesClaude, canal) {
           resultados.push({ type: 'tool_result', tool_use_id: t.id, content: 'No se hizo: solo se propone una cosa a la vez. Primero que confirme la anterior.', is_error: true });
           continue;
         }
-        propuesta = { id: 'p' + Date.now().toString(36), herramienta: t.name, titulo: h.titulo(t.name), args: t.input, creada: Date.now() };
-        resultados.push({ type: 'tool_result', tool_use_id: t.id, content: 'PENDIENTE DE CONFIRMACIÓN. No se ha guardado nada. Ahora explícale a la persona qué se guardará y pídele que confirme.' });
+        // Ensayo antes del SÍ: si falta algo, no se propone (Pepito lo pide); si algo se ve raro, va en el resumen
+        let rev = null;
+        try { rev = await h.revisar(t.name, t.input); } catch (e) {
+          if (e && e.esDeUsuario) { resultados.push({ type: 'tool_result', tool_use_id: t.id, content: 'Todavía no se puede proponer: ' + e.message + ' Pídele a la persona lo que falta (todo junto) o corrige el dato y vuelve a proponer.', is_error: true }); continue; }
+          console.error('pepito: ensayo de ' + t.name, e && e.message);
+        }
+        const alertas = (rev && rev.alertas) || [];
+        const args = alertas.length ? Object.assign({}, t.input, { confirmar_alertas: true }) : t.input;
+        propuesta = { id: 'p' + Date.now().toString(36), herramienta: t.name, titulo: h.titulo(t.name), args, alertas, creada: Date.now() };
+        resultados.push({ type: 'tool_result', tool_use_id: t.id, content: 'PENDIENTE DE CONFIRMACIÓN. No se ha guardado nada. Ahora explícale a la persona qué se guardará y pídele que confirme.' +
+          (rev && rev.dinero ? ' Cálculo del sistema (usa estas cifras en el resumen): ' + JSON.stringify(rev.dinero) + '.' : '') +
+          (alertas.length ? ' ⚠️ ALERTAS que debes decirle claramente, antes de pedir el SÍ, porque pueden ser un error de captura: ' + alertas.map((x, i) => (i + 1) + ') ' + x).join(' ') + ' Pregúntale si está bien así o qué corregimos.' : '') });
         continue;
       }
       let res;
