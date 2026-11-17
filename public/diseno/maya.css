@@ -1770,3 +1770,17 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-cf-ia.ajuste { border-color: rgba(59, 188, 212, 0.45); background: rgba(59, 188, 212, 0.08); }
 .m-cf-ia.duda { border-color: rgba(245, 185, 66, 0.45); background: rgba(245, 185, 66, 0.08); }
 .m-cf-ia .btn { justify-self: start; width: auto; }
+
+/* ── Pulido: renglón de nota con etiqueta de estado (Facturación) ── */
+.m-op-check:has(> .m-op-etapa) { grid-template-columns: auto 90px minmax(0, 1fr) auto auto; }
+@media (max-width: 640px) {
+  .m-op-check:has(> .m-op-etapa) { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .m-op-check > .m-op-etapa { grid-column: 2; justify-self: start; }
+  .m-op-check > .m-op-monto { grid-column: 3; grid-row: 1; }
+}
+/* Usuarios: rol con nombre y selector */
+.m-rol-sel { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(59, 188, 212, 0.35); background: rgba(59, 188, 212, 0.1); color: var(--m-faro-claro); font: 600 12.5px var(--m-f-texto); max-width: 230px; }
+/* Envíos: guías de las notas */
+.m-env-notas { margin: 0 0 18px; border-radius: var(--m-r-lg); }
+.m-env-notas h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font: 700 16px var(--m-f-titulo); color: var(--m-niebla); }
+.m-env-notas .m-op-lista { gap: 8px; }

@@ -1661,7 +1661,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 
       <!-- FINANZAS -->
       <div class="module-view" id="mod-finanzas">
-        <div class="firebase-notice">💰 Gestión de Finanzas (solo Admin)</div>
+        <div class="firebase-notice">💰 Finanzas: solo Dirección y Facturación</div>
 
         <!-- Tabs -->
         <div style="display:flex;gap:10px;margin-bottom:20px;border-bottom:2px solid var(--border);padding-bottom:10px">
@@ -3042,11 +3042,26 @@ function renderUsuarios() {
     <tr>
       <td style="font-weight:600">${u.nombre || '—'}</td>
       <td>${u.email || '—'}</td>
-      <td><span class="badge badge-b">${u.rol || '—'}</span></td>
+      <td>${rol === 'admin' && window.mayaRoles
+        ? `<select class="m-rol-sel" onchange="cambiarRolUsuario('${u.id}', this.value, this)" title="${(window.mayaRoles.ROLES[u.rol] || {}).descripcion || ''}">${window.mayaRoles.LISTA.map(r => `<option value="${r}"${r === u.rol ? ' selected' : ''}>${window.mayaRoles.ROLES[r].nombre}</option>`).join('')}</select>`
+        : `<span class="badge badge-b">${(window.mayaRoles && window.mayaRoles.ROLES[u.rol] ? window.mayaRoles.ROLES[u.rol].nombre : u.rol) || '—'}</span>`}</td>
       <td style="white-space:nowrap">${rol === 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="resetPasswordUsuario('${u.email || ''}')" title="Enviar link para restablecer contraseña">🔑</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
 }
+
+// Cambiar el rol de alguien (solo Dirección). Lo que puede abrir cambia en su siguiente inicio de sesión.
+window.cambiarRolUsuario = async function(id, nuevo, sel) {
+  const u = data.usuarios.find(x => x.id === id);
+  if (!u || window.currentRole !== 'admin') return;
+  const R = window.mayaRoles;
+  if (u.uid === (window.auth && window.auth.currentUser && window.auth.currentUser.uid) && nuevo !== 'admin') { sel.value = u.rol; return toast('No puedes quitarte a ti mismo el rol de Dirección', 'error'); }
+  if (!confirm('¿Cambiar a ' + (u.nombre || u.email) + ' a "' + (R ? R.ROLES[nuevo].nombre : nuevo) + '"?\n\n' + (R ? R.ROLES[nuevo].descripcion : ''))) { sel.value = u.rol; return; }
+  try {
+    await updateDoc(doc(db, 'usuarios', id), { rol: nuevo });
+    toast('Listo: ' + (u.nombre || u.email) + ' ahora es ' + (R ? R.ROLES[nuevo].nombre : nuevo) + '. Lo verá al volver a entrar.', 'success');
+  } catch (e) { sel.value = u.rol; toast('No se pudo cambiar el rol: ' + e.message, 'error'); }
+};
 
 // ── DASHBOARD ──
 function updateDashboard(envios = []) {
