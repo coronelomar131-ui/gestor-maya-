@@ -1753,3 +1753,7 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-op-envio-form input, .m-op-envio-form select { padding: 8px 10px; border-radius: var(--m-r-sm, 8px); border: 1px solid var(--m-vidrio-borde); background: var(--m-relleno); color: var(--m-niebla); font: 14px var(--m-f-texto); }
 @media (max-width: 640px) { .m-op-envio-form { grid-template-columns: 1fr; } }
 .m-op-cancel[hidden] { display: none; }
+
+/* ── Usuarios: qué puede hacer cada rol ── */
+.m-rol-desc { margin: 8px 0 0; padding: 10px 12px; border-radius: var(--m-r, 12px); background: rgba(59, 188, 212, 0.08); border: 1px solid rgba(59, 188, 212, 0.25); color: var(--m-texto-2); font-size: 13px; line-height: 1.45; }
+.m-rol-desc:empty { display: none; }

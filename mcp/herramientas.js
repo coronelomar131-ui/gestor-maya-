@@ -5,24 +5,8 @@ const datos = require('./datos');
 const escritura = require('./escritura');
 const buzon = require('./buzon');
 
-// Los mismos roles por módulo que showModule() en public/index.html; borrar es solo de admin
-const PERMISOS = {
-  notas: ['admin', 'vendedor', 'almacen', 'facturacion'],
-  ventas: ['admin', 'vendedor', 'facturacion'],
-  clientes: ['admin', 'vendedor', 'facturacion'],
-  facturas: ['admin', 'facturacion'],
-  inventario: ['admin', 'almacen'],
-  compras: ['admin', 'almacen'],
-  entregas: ['admin', 'vendedor', 'almacen'],
-  envios: ['admin', 'vendedor', 'almacen'],
-  visitas_talleres: ['admin', 'vendedor', 'almacen'],
-  cotizaciones: ['admin', 'vendedor'],
-  proveedores: ['admin', 'almacen'],
-  pagos: ['admin', 'vendedor', 'almacen'],
-  prestamos: ['admin'],
-  usuarios: ['admin'],
-  borrar: ['admin']
-};
+// Permisos por área, derivados de los roles del equipo (public/diseno/roles.js, la misma definición que usa la pantalla)
+const PERMISOS = require('../public/diseno/roles.js').PERMISOS_MCP;
 // El buzón de Pepito lo atiende una cuenta admin; no es un módulo del equipo
 const ATIENDE_BUZON = ['admin'];
 
@@ -93,11 +77,12 @@ function instrucciones(usuario) {
 }
 
 function crearServidor(usuario) {
-  const puede = modulo => PERMISOS[modulo].includes(usuario.rol);
+  const puede = area => (PERMISOS[area] || []).includes(usuario.rol);
   const servidor = new McpServer({ name: 'maya-autopartes', title: 'Maya Autopartes', version: '2.4.0' }, { instructions: instrucciones(usuario) });
 
   // ── Consultas ──
-  if (puede('notas')) {
+  // Envíos por paquetería: también para el rol de entregas (no ve precios)
+  if (puede('envios')) {
     servidor.registerTool('envios_seguimiento', {
       title: 'Envíos por paquetería',
       description: 'Las notas que van por paquetería (Paquete Express, Skydrops, Mercado Envíos…) con su guía y estatus (sin_guia, guia_generada, en_transito, recibido, cancelado), ' +
@@ -118,7 +103,9 @@ function crearServidor(usuario) {
       },
       annotations: ESCRITURA
     }, ejecutar(async a => { try { return await require('./envios').guardarGuia(usuario, a); } catch (e) { throw new escritura.ErrorUsuario(e.message); } }));
+  }
 
+  if (puede('notas')) {
     servidor.registerTool('seguimiento_facturacion', {
       title: 'Seguimiento de facturación (Geraldine Bot)',
       description: 'Cada nota pendiente de facturar con su estado según los días para facturar de su cliente (6 por defecto): ' +
@@ -224,7 +211,7 @@ function crearServidor(usuario) {
     }, ejecutar(({ texto, limite }) => datos.clientes(texto, limite)));
   }
 
-  if (puede('inventario')) {
+  if (puede('inventario_consulta')) {
     servidor.registerTool('buscar_productos', {
       title: 'Buscar en inventario',
       description: 'Productos del inventario con precio y existencias. Busca por código, descripción, marca o compatibilidad; ' +
@@ -236,7 +223,9 @@ function crearServidor(usuario) {
       },
       annotations: LECTURA
     }, ejecutar(({ texto, solo_bajo_stock, limite }) => datos.productos(texto, solo_bajo_stock, limite)));
+  }
 
+  if (puede('inventario')) {
     servidor.registerTool('buscar_productos_ml', {
       title: 'Publicaciones de Mercado Libre',
       description: 'Publicaciones de Mercado Libre con precio, piezas disponibles, estatus y link, según la última sincronización de la app ' +
