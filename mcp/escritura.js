@@ -179,12 +179,30 @@ async function crearNotaEntrega(u, a) {
 }
 
 // Igual que saveVentaMultiLinea(); la fecha se guarda a mediodía local para que todas las vistas muestren el mismo día
-async function diasCreditoDe(cliente, formaPago) {
-  if (formaPago !== 'credito') return 0;
+// Crédito: 7 o 14 días. Si piden crédito y dicen los días (dias_credito), se le asignan al cliente sin trabas;
+// si no los dicen y el cliente ya tiene, se usan los suyos; si no tiene, se pregunta solo "¿7 o 14 días?".
+const PLAZOS_CREDITO = [7, 14];
+async function creditoDe(cliente, formaPago, pedido) {
+  if (formaPago !== 'credito') return { dias: 0, asignar: false };
   const doc = cliente.id ? await fb().obtener('clientes', cliente.id) : null;
-  const dias = doc ? Number(doc.diasCredito) || 0 : 0;
-  if (!dias) throw new ErrorUsuario(cliente.nombre + ' no tiene crédito autorizado (0 días de crédito). Véndele de contado o pide a Dirección o Facturación que le autoricen días de crédito.');
-  return dias;
+  const actuales = doc ? Number(doc.diasCredito) || 0 : 0;
+  if (pedido != null && pedido !== '') {
+    const dias = Number(pedido);
+    if (!PLAZOS_CREDITO.includes(dias)) throw new ErrorUsuario('El crédito es de 7 o 14 días. ¿Cuál le damos a ' + cliente.nombre + '?');
+    return { dias, asignar: !!cliente.id && dias !== actuales };
+  }
+  if (actuales) return { dias: actuales, asignar: false };
+  throw new ErrorUsuario(cliente.nombre + ' todavía no tiene días de crédito. ¿Le damos 7 o 14 días? (vuelve a proponer con dias_credito)');
+}
+async function diasCreditoDe(cliente, formaPago, pedido) { return (await creditoDe(cliente, formaPago, pedido)).dias; }
+// Guarda el plazo en el cliente y avisa a Dirección si lo dio alguien más
+async function asignarCredito(u, cliente, dias) {
+  await fb().actualizar('clientes', cliente.id, { diasCredito: dias, creditoAsignado: { dias, por: texto(u.nombre || u.email), fecha: Date.now() } });
+  if (!corrigeTodo(u)) {
+    const avisos = require('./avisos');
+    const admins = (await fb().leerColeccion('usuarios')).filter(x => x.rol === 'admin' && x.uid !== u.uid);
+    for (const a of admins) await avisos.avisar(a, { tipo: 'momento', titulo: 'Crédito asignado', texto: '💳 ' + texto(u.nombre || u.email) + ' le dio ' + dias + ' días de crédito a ' + cliente.nombre + '.' }).catch(() => {});
+  }
 }
 
 async function crearVenta(u, a, opciones = {}) {
@@ -192,8 +210,9 @@ async function crearVenta(u, a, opciones = {}) {
   exigirClienteRegistrado(u, cliente, a.cliente);
   const vendedor = vendedorDe(u, a);
   // Forma de pago: contado, o crédito solo si el cliente tiene crédito autorizado (días de crédito en Clientes / Cobranza)
-  const formaPago = a.forma_pago || 'contado';
-  const diasCredito = await diasCreditoDe(cliente, formaPago);
+  const formaPago = a.forma_pago || (a.dias_credito ? 'credito' : 'contado');
+  const credito = await creditoDe(cliente, formaPago, a.dias_credito);
+  const diasCredito = credito.dias;
   const fecha = a.fecha || hoy();
   // Registro obligatorio de toda venta: cada pieza con su proveedor y su costo total (Dirección puede capturar sin ellos)
   if (!esDireccion(u)) {
@@ -204,8 +223,9 @@ async function crearVenta(u, a, opciones = {}) {
   const u_ = utilidadDe(p);
   const todas = await fb().leerColeccion('ventas');
   const alertas = await alertasDe({ clienteId: cliente.id, clienteNombre: cliente.nombre, items: p.items, total: p.total, utilidad: u_.utilidad }, todas);
-  if (opciones.soloRevisar) return { revision: true, alertas, cliente: cliente.nombre, dinero: resumenDinero(p, u_) };
+  if (opciones.soloRevisar) return { revision: true, alertas, cliente: cliente.nombre, dinero: resumenDinero(p, u_), credito: formaPago === 'credito' ? { dias: diasCredito, se_asigna_al_cliente: credito.asignar } : null };
   exigirConfirmacion(alertas, a, 'la venta');
+  if (credito.asignar) await asignarCredito(u, cliente, diasCredito);
   const notaId = String(maxNumero(todas, v => v.notaId || v.notaNumero) + 1);
   const venta = Object.assign({
     notaId, fecha: mediodiaMs(fecha), clienteId: cliente.id, clienteNombre: cliente.nombre,
@@ -222,7 +242,7 @@ async function crearVenta(u, a, opciones = {}) {
   datos.olvidarCache();
   return {
     creada: Object.assign(registroVenta(id, venta), {
-      estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito,
+      estatus: venta.estatus, forma_pago: formaPago, dias_credito: diasCredito, credito_asignado_al_cliente: credito.asignar || undefined,
       contacto: venta.contacto || null, impuesto: venta.impuestoNota || null,
       proveedores: [...new Set(p.items.map(i => i.proveedor).filter(Boolean))]
     }, resumenDinero(p, u_), { se_puede_corregir: 'Si algo quedó mal, se corrige con corregir_venta (o en el gestor: Ver → Corregir).' }),
@@ -319,10 +339,15 @@ async function corregirVenta(u, a, opciones = {}) {
   if (a.fecha) { cambios.push('Fecha → ' + a.fecha); nuevo.fecha = mediodiaMs(a.fecha); }
   if (a.contacto != null) { cambios.push('Contacto: ' + (v.contacto || '—') + ' → ' + (texto(a.contacto) || '—')); nuevo.contacto = texto(a.contacto); }
   if (a.impuesto_nota != null) { cambios.push('Impuesto: ' + (v.impuestoNota || '—') + ' → ' + (texto(a.impuesto_nota) || '—')); nuevo.impuestoNota = texto(a.impuesto_nota); }
-  if (a.forma_pago) {
-    nuevo.diasCredito = await diasCreditoDe({ id: nuevo.clienteId || v.clienteId, nombre: nuevo.clienteNombre || v.clienteNombre }, a.forma_pago);
+  if (a.forma_pago || a.dias_credito) {
+    const cli = { id: nuevo.clienteId || v.clienteId, nombre: nuevo.clienteNombre || v.clienteNombre };
+    const fp = a.forma_pago || 'credito';
+    const cr = await creditoDe(cli, fp, a.dias_credito);
+    nuevo.diasCredito = cr.dias;
+    if (cr.asignar && !opciones.soloRevisar) await asignarCredito(u, cli, cr.dias);
+    a = Object.assign({}, a, { forma_pago: fp });
     nuevo.formaPago = a.forma_pago;
-    cambios.push('Forma de pago: ' + (v.formaPago || 'contado') + ' → ' + a.forma_pago);
+    cambios.push('Forma de pago: ' + (v.formaPago || 'contado') + ' → ' + a.forma_pago + (a.forma_pago === 'credito' ? ' ' + cr.dias + ' días' : ''));
   }
   if (!cambios.length) throw new ErrorUsuario('No dijiste qué corregir de ' + folio + '.');
   if (!esDireccion(u)) faltaRegistro(items, 'No guardé la corrección de ' + folio + '.');
@@ -370,6 +395,10 @@ async function guardarCliente(u, a) {
   if (a.venta_publica_redes !== undefined) cambios.redesSociales = !!a.venta_publica_redes;
   // Sin efectos fiscales: uso de CFDI S01, no lleva RFC ni datos fiscales obligatorios
   if (a.sin_efectos_fiscales) { cambios.usoCfdi = sat.SIN_EFECTOS; cambios.sinEfectosFiscales = true; }
+  if (a.dias_credito != null) {
+    if (![0].concat(PLAZOS_CREDITO).includes(Number(a.dias_credito))) throw new ErrorUsuario('El crédito es de 7 o 14 días (0 = contado).');
+    cambios.diasCredito = Number(a.dias_credito);
+  }
   else if (a.sin_efectos_fiscales === false && a.id) cambios.sinEfectosFiscales = false;
 
   if (a.id) {

@@ -88,6 +88,7 @@ function instrucciones(usuario) {
       '2) Si en el pedido también viene la venta, después del cliente sigue con la venta con los datos que ya dieron (no preguntes si quiere nota: ya la pidió). Si solo pidieron el cliente, no ofrezcas la nota. 3) Al guardar, da el folio; por WhatsApp el PDF se manda solo.',
     'Registro de venta. Obligatorio: cliente, pieza, precio al que se vendió (lo que paga el cliente, ya con IVA), proveedor y costo total. Si falta alguno de esos, pídelo en una sola pregunta corta. ' +
       'Opcional (úsalo solo si te lo dan, NUNCA lo pidas): siniestro, contacto, impuesto (p. ej. "16% Masiva"), desglose del costo. Forma de pago: contado, salvo que digan crédito. ' +
+      'Crédito: solo hay de 7 o 14 días. Si dicen "a crédito" con los días (o "tiene crédito a 14 días"), usa forma_pago credito y dias_credito; se le asigna al cliente al guardar, sin trabas ni permisos. Si dicen crédito sin días y el cliente no tiene, pregunta solo "¿7 o 14 días?". ' +
       'El precio que te dan ya trae IVA: no le sumes IVA; el sistema lo desglosa. Solo si la persona dice que su precio es "más IVA" usa precio_con_iva: false. ' +
       'El costo total incluye pieza + guía + paquetería + logística. Si te dan un solo número, ese es el costo total. Si te dan las partes, súmalas tú y pon el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No pidas el desglose. ' +
       'El resumen antes del SÍ va compacto: cliente, una línea por pieza (pieza · precio · proveedor · costo) y una línea "Venta $X · Costo $Y · Utilidad $Z (N%)". Si te corrigen algo, vuelve a proponer con el dato bueno. Al guardar, una línea con el folio y la utilidad. ' +
@@ -408,7 +409,8 @@ function crearServidor(usuario) {
         cliente: z.string().min(1),
         fecha: FECHA.optional().describe('Por omisión hoy'),
         vendedor: z.string().optional().describe('Quien vendió. Si no eres Dirección, siempre es quien te habla (se pone solo)'),
-        forma_pago: z.enum(['contado', 'credito']).default('contado').describe('Contado por omisión; crédito solo si lo dicen y el cliente tiene crédito autorizado. No lo preguntes.'),
+        forma_pago: z.enum(['contado', 'credito']).default('contado').describe('Contado por omisión; crédito si lo dicen. No lo preguntes.'),
+        dias_credito: z.union([z.literal(7), z.literal(14)]).optional().describe('Días de crédito: 7 o 14. Si el cliente no tiene crédito y te dicen los días, se le asignan al guardar (sin pedir permiso a nadie)'),
         estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
         incluye_datos_fiscales: z.boolean().default(false),
         contacto: z.string().optional().describe('Persona de contacto del cliente (quien pidió la pieza), si la dicen'),
@@ -440,6 +442,7 @@ function crearServidor(usuario) {
         agregar_partidas: z.array(PARTIDA_VENTA).optional(),
         cliente: z.string().optional(), fecha: FECHA.optional(), contacto: z.string().optional(), impuesto_nota: z.string().optional(),
         forma_pago: z.enum(['contado', 'credito']).optional(),
+        dias_credito: z.union([z.literal(7), z.literal(14)]).optional().describe('Días de crédito: 7 o 14. Si el cliente no tiene crédito y te dicen los días, se le asignan al guardar (sin pedir permiso a nadie)'),
         precio_con_iva: PRECIO_CON_IVA,
         motivo: z.string().optional().describe('Por qué se corrige, en pocas palabras'),
         deshacer_ultima: z.boolean().optional().describe('true = regresa la venta a como estaba antes de la última corrección'),
@@ -475,6 +478,7 @@ function crearServidor(usuario) {
         regimen_fiscal: z.string().optional().describe('Clave del SAT, p. ej. 601 General de Ley PM, 612 Actividades Empresariales, 621 RIF, 626 RESICO, 616 Sin obligaciones'),
         uso_cfdi: z.string().optional().describe('Clave del SAT, p. ej. G01 Adquisición de mercancías, G03 Gastos en general, S01 Sin efectos fiscales'),
         venta_publica_redes: z.boolean().optional().describe('Cliente de venta pública (redes sociales)'),
+        dias_credito: z.union([z.literal(0), z.literal(7), z.literal(14)]).optional().describe('Días de crédito del cliente: 7 o 14 (0 = solo contado)'),
         sin_efectos_fiscales: z.boolean().optional().describe('Cliente sin efectos fiscales (uso de CFDI S01): no se le factura a su nombre; solo se necesita su nombre, el RFC y los datos fiscales son opcionales'),
         es_otro_cliente: z.boolean().optional().describe('Solo si la persona confirmó que es distinto a un cliente con nombre casi igual')
       },
@@ -606,6 +610,7 @@ function crearServidor(usuario) {
       inputSchema: {
         folio: z.string().optional().describe('Folio de la cotización, ej. COT-45 o 45'), id: opcional,
         forma_pago: z.enum(['contado', 'credito']).default('contado'),
+        dias_credito: z.union([z.literal(7), z.literal(14)]).optional().describe('Días de crédito: 7 o 14. Si el cliente no tiene crédito y te dicen los días, se le asignan al guardar (sin pedir permiso a nadie)'),
         costos: z.array(z.object({
           numero: z.number().int().min(1).describe('Número de pieza en la cotización (1 = la primera)'),
           proveedor: z.string().optional(), costo: z.number().min(0).optional().describe('Costo total de esa pieza'),
