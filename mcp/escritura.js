@@ -368,6 +368,9 @@ async function guardarCliente(u, a) {
   const cambios = {};
   Object.keys(CAMPOS_CLIENTE).forEach(k => { if (a[k] !== undefined) cambios[CAMPOS_CLIENTE[k]] = texto(a[k]); });
   if (a.venta_publica_redes !== undefined) cambios.redesSociales = !!a.venta_publica_redes;
+  // Sin efectos fiscales: uso de CFDI S01, no lleva RFC ni datos fiscales obligatorios
+  if (a.sin_efectos_fiscales) { cambios.usoCfdi = sat.SIN_EFECTOS; cambios.sinEfectosFiscales = true; }
+  else if (a.sin_efectos_fiscales === false && a.id) cambios.sinEfectosFiscales = false;
 
   if (a.id) {
     const actual = await fb().obtener('clientes', a.id);
@@ -398,6 +401,7 @@ async function guardarCliente(u, a) {
     const v = sat.validarCliente(cambios);
     if (!v.ok) throw new ErrorUsuario('No registré al cliente. ' + sat.mensaje(v) + ' Pídele a la persona lo que falta, en un solo mensaje.');
     Object.assign(cambios, { rfc: v.normalizado.rfc, tipoPersona: v.normalizado.tipoPersona, regimenFiscal: v.normalizado.regimenFiscal, usoCfdi: v.normalizado.usoCfdi });
+    if (v.sinEfectosFiscales) cambios.sinEfectosFiscales = true;
   }
   const codigoCliente = texto(a.codigo) || 'CL' + (maxNumero(todos.filter(c => String(c.codigoCliente || '').startsWith('CL')), c => c.codigoCliente) + 1);
   const cliente = Object.assign({
@@ -406,7 +410,7 @@ async function guardarCliente(u, a) {
   }, cambios, { createdAt: fb().marcaTiempo(), origen: ORIGEN });
   const id = await fb().agregar('clientes', cliente);
   return { creado: id, codigo: codigoCliente, nombre: cliente.razonSocial,
-    datos_fiscales: cliente.redesSociales ? null : { rfc: cliente.rfc, tipo_persona: cliente.tipoPersona, regimen_fiscal: cliente.regimenFiscal + ' ' + ((sat.REGIMENES[cliente.regimenFiscal] || [])[0] || ''), uso_cfdi: cliente.usoCfdi + ' ' + (sat.USOS_CFDI[cliente.usoCfdi] || '') },
+    datos_fiscales: cliente.redesSociales ? null : cliente.sinEfectosFiscales ? { uso_cfdi: 'S01 Sin efectos fiscales', rfc: cliente.rfc || 'sin RFC' } : { rfc: cliente.rfc, tipo_persona: cliente.tipoPersona, regimen_fiscal: cliente.regimenFiscal + ' ' + ((sat.REGIMENES[cliente.regimenFiscal] || [])[0] || ''), uso_cfdi: cliente.usoCfdi + ' ' + (sat.USOS_CFDI[cliente.usoCfdi] || '') },
     siguiente: 'Pregúntale a la persona si quiere generar una nota de venta para este cliente.' };
 }
 
