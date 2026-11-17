@@ -6,7 +6,7 @@ const wa = require('./whatsapp');
 const enlaces = require('./enlaces');
 
 const COLECCION = { nota_entrega: 'notasEntrega', nota_venta: 'ventas', cotizacion: 'cotizaciones' };
-const DE_HERRAMIENTA = { crear_nota_entrega: 'nota_entrega', crear_venta: 'nota_venta', crear_cotizacion: 'cotizacion' };
+const DE_HERRAMIENTA = { crear_nota_entrega: 'nota_entrega', crear_venta: 'nota_venta', convertir_cotizacion: 'nota_venta', crear_cotizacion: 'cotizacion' };
 // Mismo permiso que pide la herramienta que lee ese tipo de documento
 const MODULO = { nota_entrega: 'notas', nota_venta: 'notas', cotizacion: 'cotizaciones' };
 

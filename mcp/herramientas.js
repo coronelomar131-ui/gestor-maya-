@@ -3,6 +3,8 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { z } = require('zod');
 const datos = require('./datos');
 const escritura = require('./escritura');
+const negocio = require('./negocio');
+const ROLES = require('../public/diseno/roles.js');
 const buzon = require('./buzon');
 
 // Permisos por área, derivados de los roles del equipo (public/diseno/roles.js, la misma definición que usa la pantalla)
@@ -89,6 +91,10 @@ function instrucciones(usuario) {
       'El costo total es la suma de pieza + guía + paquetería + logística: pide cada parte, súmalas tú, ponlo en costo y el desglose en costo_desglose (ej. "pieza 2000 + guía 500 + paquetería 100 + logística 100" = 2700). No inventes costos: si no saben uno, pregúntalo. ' +
       'Antes de guardar muestra el resumen con venta con IVA (y su IVA desglosado), costo total, utilidad (venta con IVA − costo total) y % de utilidad (utilidad / venta × 100), y espera el SÍ. Si en el resumen te corrigen algo, arma la propuesta otra vez con el dato bueno. Al guardar da el folio, la venta, el costo, la utilidad y su %. ' +
       'Si la utilidad sale negativa o muy baja (menos de 10%), avísalo antes de guardar. Para comisiones o "cuánto dejó" usa utilidad_comisiones.',
+    'Pagos de clientes: si te mandan la foto o el PDF de una transferencia, lee monto, fecha, referencia y quién pagó; busca su factura con cobranza y propón registrar_pago. Si el monto cubre varias facturas, propón una por una y dilo. Nunca inventes ni redondees el monto.',
+    'Cuando un cliente acepta una cotización ("ya se vendió la COT-45"), no captures de nuevo: usa convertir_cotizacion pidiendo proveedor y costo de cada pieza y la forma de pago.',
+    'Para cotizar o saber "en cuánto nos salió" una pieza usa historial_costos. Para comisiones usa comisiones (la utilidad es la base); el porcentaje lo define Dirección.',
+    'Si piden el estado de cuenta de un cliente usa estado_cuenta; trae un texto listo para mandarle. Por WhatsApp puedes mandarlo en PDF con mandar_pdf tipo estado_cuenta.',
     'Si alguien se equivocó en una venta ya guardada ("me equivoqué", "era 4,000", "el costo era otro", "quita la facia"), no hagas otra venta: busca la venta con buscar_ventas, di cómo está, y usa corregir_venta solo con lo que cambia; muestra antes → después (total y utilidad) y espera el SÍ. ' +
       'Si la corrección también quedó mal, corregir_venta con deshacer_ultima: true la regresa a como estaba. Si la venta ya está facturada y quien habla no es Facturación ni Dirección, explica que se lo pida a Facturación.',
     'Para cambiar o borrar algo, primero búscalo para tener su id. Borrar es definitivo en la app (queda una copia en la colección "papelera" de Firebase); pide confirmación explícita.'
@@ -562,6 +568,97 @@ function crearServidor(usuario) {
       },
       annotations: ESCRITURA
     }, ejecutar(a => buzon.responder(usuario, a)));
+  }
+
+  // ── Día a día: pagos, cotización → venta, costos, comisiones y estado de cuenta (mcp/negocio.js) ──
+  // Pagos: dinero; solo Facturación y Dirección de verdad (no se presta "fuera de rol")
+  if (['admin', 'facturacion'].includes(usuario.rolReal || usuario.rol) && usuario.rol !== ROLES.AMPLIADO) {
+    servidor.registerTool('registrar_pago', {
+      title: 'Registrar pago',
+      description: 'Registra el pago de un cliente a una factura, igual que Cobranza → Registrar pago: baja el saldo y, si queda en cero, la marca pagada. ' +
+        'Si te mandan la foto o el PDF de una transferencia, lee monto, fecha y referencia de ahí; nunca inventes el monto. Busca la factura con cobranza si no la dicen. ' +
+        'Un pago a varias facturas se registra factura por factura. Confirma con la persona antes de usarla.',
+      inputSchema: {
+        factura: z.string().optional().describe('Folio de la factura, ej. A-9001'), id: opcional,
+        cliente: z.string().optional().describe('Cliente, para encontrar la factura o confirmarla'),
+        monto: z.number().positive().describe('Monto pagado en pesos'),
+        fecha: FECHA.optional().describe('Fecha del pago; por omisión hoy'),
+        forma: z.enum(['Transferencia', 'Efectivo', 'Cheque', 'Tarjeta']).default('Transferencia'),
+        referencia: z.string().optional().describe('Referencia o clave de rastreo de la transferencia')
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => {
+      if (!a.id && !a.factura && !a.cliente) throw new escritura.ErrorUsuario('Indica la factura (o el cliente) del pago');
+      return negocio.registrarPago(usuario, a);
+    }));
+  }
+
+  if (puede('notas')) {
+    servidor.registerTool('convertir_cotizacion', {
+      title: 'Convertir cotización en venta',
+      description: 'Cuando el cliente acepta una cotización, crea la nota de venta con las mismas piezas, siniestros y precios (no hay que capturar de nuevo) y marca la cotización como vendida. ' +
+        'Pide el proveedor y el costo total (pieza + guía + paquetería + logística) de cada pieza y la forma de pago. Muestra el resumen con utilidad y confirma antes de usarla.',
+      inputSchema: {
+        folio: z.string().optional().describe('Folio de la cotización, ej. COT-45 o 45'), id: opcional,
+        forma_pago: z.enum(['contado', 'credito']),
+        costos: z.array(z.object({
+          numero: z.number().int().min(1).describe('Número de pieza en la cotización (1 = la primera)'),
+          proveedor: z.string().optional(), costo: z.number().min(0).optional().describe('Costo total de esa pieza'),
+          costo_desglose: z.string().optional()
+        })).default([]),
+        fecha: FECHA.optional(), estatus: z.enum(ESTATUS_VENTA).default('Pendiente'),
+        vendedor: z.string().optional().describe('Solo Dirección; los demás registran a su nombre'),
+        contacto: z.string().optional(), impuesto_nota: z.string().optional()
+      },
+      annotations: ESCRITURA
+    }, ejecutar(a => {
+      if (!a.id && !a.folio) throw new escritura.ErrorUsuario('Indica el folio de la cotización (COT-45) o su id');
+      return negocio.convertirCotizacion(usuario, a);
+    }));
+  }
+
+  if (puede('ventas')) {
+    servidor.registerTool('historial_costos', {
+      title: 'Historial de costos por pieza',
+      description: 'A quién se le compró una pieza y en cuánto: costos de ventas anteriores (proveedor y costo total de cada partida) y de Compras, con el último, mínimo, máximo y promedio. ' +
+        'Úsala para cotizar o para preguntas como "¿en cuánto nos salió la última facia de Versa?".',
+      inputSchema: { pieza: z.string().min(2).describe('Pieza a buscar, ej. "facia versa 2020"'), limite: z.number().int().min(1).max(50).default(15) },
+      annotations: LECTURA
+    }, ejecutar(a => negocio.historialCostos(a)));
+
+    servidor.registerTool('comisiones', {
+      title: 'Comisiones por vendedor',
+      description: 'Comisión por pagar de cada vendedor en un periodo: utilidad de sus ventas con costo × su porcentaje, lo ya pagado y las ventas sin costo que faltan. ' +
+        'Quien no es Dirección ni Facturación solo ve las suyas.',
+      inputSchema: { desde: FECHA.optional(), hasta: FECHA.optional(), vendedor: z.string().optional() },
+      annotations: LECTURA
+    }, ejecutar(a => negocio.comisiones(usuario, a)));
+  }
+
+  if ((usuario.rolReal || usuario.rol) === 'admin' && usuario.rol === 'admin') {
+    servidor.registerTool('configurar_comision', {
+      title: 'Porcentaje de comisión',
+      description: 'Define el porcentaje de comisión de un vendedor (sobre la utilidad). Solo Dirección. Confirma antes de usarla.',
+      inputSchema: { vendedor: z.string().min(1), porcentaje: z.number().min(0).max(100) },
+      annotations: ESCRITURA
+    }, ejecutar(a => negocio.configurarComision(usuario, a)));
+
+    servidor.registerTool('marcar_comisiones_pagadas', {
+      title: 'Marcar comisiones pagadas',
+      description: 'Marca como pagadas las comisiones pendientes de un vendedor en un periodo (para que no se vuelvan a contar). Solo Dirección. Muestra el monto con comisiones antes y confirma.',
+      inputSchema: { vendedor: z.string().min(1), desde: FECHA.optional(), hasta: FECHA.optional(), referencia: z.string().optional() },
+      annotations: ESCRITURA
+    }, ejecutar(a => negocio.marcarComisionesPagadas(usuario, a)));
+  }
+
+  if (puede('facturas')) {
+    servidor.registerTool('estado_cuenta', {
+      title: 'Estado de cuenta de un cliente',
+      description: 'Facturas pendientes de un cliente (saldo, vencimiento, días vencida), pagos recientes y un texto listo para mandarle al cliente. ' +
+        'Por WhatsApp también se puede mandar en PDF con mandar_pdf (tipo estado_cuenta).',
+      inputSchema: { cliente: z.string().min(2), dias_pagos: z.number().int().min(1).max(365).default(60).describe('Pagos de los últimos N días') },
+      annotations: LECTURA
+    }, ejecutar(a => negocio.estadoCuenta(a)));
   }
 
   return servidor;
