@@ -147,7 +147,7 @@ module.exports = async (req, res) => {
     let t = null;
     let encabezado = '';
     let imagenes = null;
-    let documentos = null;
+    let pdfs = null; // PDF que manda la persona (no confundir con el módulo documentos, que arma el PDF de la nota)
     let propuestaDirecta = null;
     if (msg.type === 'text') {
       t = String(msg.text && msg.text.body || '').trim();
@@ -182,7 +182,7 @@ module.exports = async (req, res) => {
         if (!facturacion.puedeFacturar(usuario)) throw Object.assign(new Error('Tu rol no puede subir facturas. Pídele a facturación o a dirección que la suban.'), { paraPersona: true });
         const { datos } = await wa.bajarMedia(msg.document.id);
         if (datos.length > 4.5 * 1024 * 1024) throw new Error('El PDF pesa más de 4.5 MB');
-        documentos = [{ mime: 'application/pdf', base64: datos.toString('base64'), nombre: msg.document.filename || 'factura.pdf' }];
+        pdfs = [{ mime: 'application/pdf', base64: datos.toString('base64'), nombre: msg.document.filename || 'factura.pdf' }];
         t = String(msg.document.caption || '').trim() || 'Te mandé la factura en PDF.';
         await anotar('factura PDF recibida', (msg.document.filename || '') + ' · ' + Math.round(datos.length / 1024) + ' KB');
       } catch (e) {
@@ -212,19 +212,19 @@ module.exports = async (req, res) => {
     } else if (t !== null) {
       const conv = await fb().obtener('pepito_conversacion', usuario.uid);
       const corto = t.replace(/[.,!¡¿?\s]+$/g, '').trim();
-      const alGrupo = !imagenes && !documentos && !encabezado ? grupo.textoParaGrupo(t) : null;
+      const alGrupo = !imagenes && !pdfs && !encabezado ? grupo.textoParaGrupo(t) : null;
       if (alGrupo) {
         // "grupo: ya salió la guía": se reparte tal cual a los demás del grupo, sin pasar por Claude
         try {
           const r = await grupo.mandar(usuario, alGrupo, { canal: 'whatsapp' });
           texto = r.enviado_a.length ? '👥 Listo, se lo mandé al grupo ' + grupo.NOMBRE + ': ' + r.enviado_a.join(', ') + '.' : '👥 Lo guardé en el grupo, pero todavía no hay nadie más en él.';
         } catch (e) { texto = e.noMiembro ? e.message : 'No pude mandarlo al grupo: ' + e.message; }
-      } else if (!imagenes && !documentos && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
+      } else if (!imagenes && !pdfs && conv && conv.propuesta && (esSi(corto) || esNo(corto))) {
         const r = await pepito.resolverPropuesta(usuario, conv.propuesta.id, esSi(corto), 'whatsapp');
         texto = r.texto;
         adjunto = documentos.deCreacion(r.herramienta, r.resultado);
       } else {
-        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : imagenes ? '(foto) ' : documentos ? '(factura PDF) ' : '') + t, 'whatsapp', { imagenes, documentos });
+        const r = await pepito.conversar(usuario, (encabezado ? '(nota de voz) ' : imagenes ? '(foto) ' : pdfs ? '(factura PDF) ' : '') + t, 'whatsapp', { imagenes, documentos: pdfs });
         texto = r.texto + (r.propuesta ? '\n\nResponde *SÍ* para guardarlo o *NO* para cancelar.' : '');
       }
       texto = encabezado + texto;
