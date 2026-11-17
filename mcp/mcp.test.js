@@ -1842,3 +1842,35 @@ test('Cliente sin efectos fiscales (S01): solo el nombre, sin RFC, y ya se le pu
   const v = await escritura.crearVenta(vend, { cliente: 'Juan Mostrador', forma_pago: 'contado', partidas: [{ descripcion: 'Foco H4', precio: 116, proveedor: 'Depo', costo: 60 }] });
   assert.ok(v.creada.folio);
 });
+
+test('WhatsApp: contestar SÍ guarda y responde bien (no "Uy, no pude contestar") y manda el PDF', async () => {
+  const { Readable } = require('stream');
+  const pepito = require('./pepito');
+  const wa = whatsappFalso();
+  try {
+    db.cols.usuarios.get('u1').whatsapp10 = '5512345678';
+    const webhook = require('../api/whatsapp');
+    const mandar = async (texto, id) => {
+      const cuerpo = JSON.stringify({ entry: [{ changes: [{ value: { messages: [{ id, from: '5215512345678', type: 'text', text: { body: texto } }] } }] }] });
+      const req = Object.assign(Readable.from([Buffer.from(cuerpo)]), { method: 'POST', headers: {}, url: '/api/whatsapp' });
+      const res = { statusCode: 0, status(c) { this.statusCode = c; return this; }, json(o) { this.cuerpo = o; return this; }, send(o) { this.cuerpo = o; return this; } };
+      await webhook(req, res);
+      return res;
+    };
+    pepito._usarCliente(claudeFalso([
+      herramienta('crear_cotizacion', { cliente: 'Zeta Autopartes', partidas: [{ descripcion: 'Faro', precio: 1000, iva_porcentaje: 16 }] }),
+      texto('Voy a guardar la cotización por $1,160. ¿La guardo?'),
+      texto('Listo, quedó la COT.')
+    ]));
+    const antes = db.cols.cotizaciones.size;
+    await mandar('hazme una cotización de un faro para Zeta a 1000', 'wamid.prueba1');
+    assert.match(wa.enviados.at(-1).text.body, /Responde \*SÍ\*/);
+    const r = await mandar('sí', 'wamid.prueba2');
+    assert.equal(r.statusCode, 200);
+    assert.equal(db.cols.cotizaciones.size, antes + 1, 'se guardó');
+    const textos = wa.enviados.filter(e => e.type === 'text').map(e => e.text.body);
+    assert.ok(!textos.some(t => /Uy, no pude contestar/.test(t)), 'no debe decir que falló: ' + textos.join(' | '));
+    assert.ok(textos.some(t => /Listo, quedó la COT/.test(t)));
+    assert.ok(wa.enviados.some(e => e.type === 'document') || textos.some(t => /descárgalo aquí/.test(t)), 'manda el PDF (o su enlace)');
+  } finally { wa.cerrar(); }
+});
