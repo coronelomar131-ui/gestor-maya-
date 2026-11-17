@@ -99,6 +99,11 @@ function alternarFijado(id) {
   prefs.datos.fijados = lista;
   guardarPrefs();
   pintarTodo();
+  const m = porId(id);
+  if (m && window.toast) {
+    const pos = lista.indexOf(id);
+    window.toast(pos >= 0 ? '📌 Fijaste ' + m.nombre + (esTelefono() && pos < EN_BARRA ? ' en tu barra de abajo' : ' en tus accesos') + '. Para abrirlo, toca el nombre.' : 'Quitaste ' + m.nombre + ' de tus fijados.', 'info');
+  }
 }
 const tourVisto = clave => !!(prefs.datos.tours && prefs.datos.tours[clave]);
 function marcarTour(clave) { prefs.datos.tours = Object.assign({}, prefs.datos.tours, { [clave]: Date.now() }); guardarPrefs(); }
@@ -661,6 +666,15 @@ function iniciarTour(def, clave) {
   raiz.innerHTML = '<div class="m-tour-bloqueo"></div><div class="m-tour-foco"></div><div class="m-tour-pop" role="dialog" aria-modal="true" aria-labelledby="m-tour-titulo"></div>';
   document.body.appendChild(raiz);
   tour = { def, clave, pasos, i: 0, raiz, foco: $('.m-tour-foco', raiz), pop: $('.m-tour-pop', raiz), regreso: document.activeElement };
+  // Tocar fuera del globo cierra el recorrido y el toque llega a lo que se tocó (antes se lo tragaba una capa invisible)
+  $('.m-tour-bloqueo', raiz).addEventListener('click', e => {
+    const x = e.clientX, y = e.clientY;
+    terminarTour(true, true);
+    const debajo = document.elementFromPoint(x, y);
+    const objetivo = debajo && debajo.closest('button, a, [data-ir], [data-accion], input, select, textarea, [onclick], [role="button"], label');
+    if (!objetivo) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(objetivo.tagName)) objetivo.focus(); else objetivo.click();
+  });
   tour.pop.addEventListener('click', e => {
     const b = e.target.closest('[data-tour]');
     if (!b) return;
@@ -737,10 +751,11 @@ function teclaTour(e) {
   else if (e.key === 'ArrowRight') pasoTour(1);
   else if (e.key === 'ArrowLeft') pasoTour(-1);
 }
-function terminarTour(marcar) {
+function terminarTour(marcar, sinFoco) {
   if (!tour) return;
   const t = tour;
   tour = null;
+  t.raiz.classList.add('saliendo'); // ya no atrapa toques mientras se desvanece
   window.removeEventListener('resize', reubicarTour);
   window.removeEventListener('scroll', reubicarTour, true);
   document.removeEventListener('keydown', teclaTour);
@@ -750,7 +765,7 @@ function terminarTour(marcar) {
   }
   if (movimientoReducido() || !t.raiz.animate) t.raiz.remove();
   else t.raiz.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'ease-in' }).finished.then(() => t.raiz.remove(), () => t.raiz.remove());
-  if (t.regreso && t.regreso.focus) t.regreso.focus({ preventScroll: true });
+  if (!sinFoco && t.regreso && t.regreso.focus) t.regreso.focus({ preventScroll: true });
 }
 function quitarAviso() {
   clearTimeout(temporizadorAviso);
