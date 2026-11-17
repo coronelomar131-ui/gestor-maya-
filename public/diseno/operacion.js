@@ -141,7 +141,7 @@ function pintarSeguimiento() {
     const est = facturable(r) && r.total > 0 ? estadoFac(r) : null;
     const env = r.raw.envio;
     const alEnv = env && plazos() ? plazos().alertaEnvio(r.raw, et, Date.now(), desdeFac()) : null;
-    const chipEnv = env && env.guia ? ` <span class="m-op-guia${alEnv ? ' alerta' : ''}" title="${escapar((env.paqueteria || '') + ' · ' + (plazos() ? plazos().nombreEnvio(env.estatus) : env.estatus))}">${icono('truck', 12)} ${escapar(env.paqueteria || 'Guía')} ${escapar(env.guia)}${alEnv ? ' · ' + escapar(alEnv.texto) : ''}</span>` : (alEnv ? ` <span class="m-op-guia alerta">${icono('truck', 12)} ${escapar(alEnv.texto)}</span>` : '');
+    const chipEnv = env && !['entregada', 'facturada', 'pagada', 'cancelada'].includes(et) ? ' ' + semaforoHtml(r.raw) : '';
     const alerta = (est && ['vencida', 'lista', 'por_vencer', 'sin_movimiento'].includes(est.clave) ? ` <span class="m-op-etapa e-${est.clave}" title="${escapar(est.detalle)}">${escapar(est.texto)}</span>` : '') + chipEnv;
     return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
       <span class="m-op-folio">${escapar(r.folio)}</span>
@@ -186,14 +186,16 @@ function abrirPieza(col, id) {
         <input type="text" id="pz-detalle" placeholder="Detalle (obligatorio si es otra causa)">
       </div>
     </div>
-    ${puedeEnvio ? `<details class="m-op-envio"${envio.guia || envio.tipo === 'nacional' ? ' open' : ''}><summary>${icono('truck', 14)} Envío por paquetería${envio.guia ? ' · ' + escapar(envio.paqueteria || '') + ' ' + escapar(envio.guia) + ' · ' + escapar(P.nombreEnvio(envio.estatus)) : ''}</summary>
+    ${puedeEnvio ? `<details class="m-op-envio"${envio.guia || envio.tipo === 'nacional' ? ' open' : ''}><summary>${icono('truck', 14)} Envío por paquetería${envio.guia ? ' · ' + escapar(envio.paqueteria || '') + ' ' + escapar(envio.guia) : ''}</summary>
+      ${envio.estatus || envio.guia ? semaforoHtml(r.raw) : ''}
       <div class="m-op-envio-form">
         <label>Tipo<select id="pz-env-tipo"><option value="local"${(envio.tipo || 'local') === 'local' ? ' selected' : ''}>Entrega local (CDMX / Edo. Méx.)</option><option value="nacional"${envio.tipo === 'nacional' ? ' selected' : ''}>Envío nacional (paquetería)</option></select></label>
         <label>Paquetería<input list="pz-paqueterias" id="pz-env-paq" value="${escapar(envio.paqueteria || '')}" placeholder="Paquete Express, Skydrops…"><datalist id="pz-paqueterias">${P.PAQUETERIAS.map(p => `<option value="${escapar(p)}">`).join('')}</datalist></label>
         <label>Guía<input type="text" id="pz-env-guia" value="${escapar(envio.guia || '')}" placeholder="Número de guía"></label>
-        <label>Estatus<select id="pz-env-est">${P.ESTATUS_ENVIO.map(e => `<option value="${e.id}"${(envio.estatus || 'sin_guia') === e.id ? ' selected' : ''}>${escapar(e.nombre)}</option>`).join('')}</select></label>
+        <label>Paso<select id="pz-env-est">${P.ESTATUS_ENVIO.map(e => `<option value="${e.id}"${P.estatusEnvio(envio.estatus || 'almacen') === e.id ? ' selected' : ''} title="${escapar(e.ayuda)}">${escapar(e.nombre)}</option>`).join('')}</select></label>
+        <label class="m-op-envio-obs">Observaciones<input type="text" id="pz-env-obs" value="${escapar(envio.observaciones || '')}" placeholder="Quién recibió, o qué pasó si hay incidencia"></label>
       </div>
-      <p class="m-op-nota">Con la guía la pieza pasa a En preparación; en tránsito, a En tránsito; recibido, a Entregada. El rastreo automático con la paquetería queda pendiente de su API.</p>
+      <p class="m-op-nota">En almacén → Recolectado → En movimiento → Entregado. Verde a tiempo; amarillo si se tarda (más de 1 día en almacén o recolección, 3 en movimiento); rojo si se atora (2 días, o 5 en movimiento) o si hay incidencia. Entregado marca la pieza como Entregada.</p>
     </details>` : ''}` : `<p class="m-op-nota">${f ? 'Ligada a la factura ' + escapar(f.serieFolio) + '. ' : ''}Las etapas Facturada y Pagada se actualizan solas desde Facturación y Cobranza.</p>`}`,
   puedeMover ? [{ texto: 'Guardar etapa', principal: true, accion: async () => {
     const nueva = $('#pz-etapa').value;
@@ -201,10 +203,9 @@ function abrirPieza(col, id) {
     // Envío: qué cambió en el bloque (se revisa antes para que guardar solo la guía también cuente)
     let nuevoEnvio = null;
     if (puedeEnvio && $('#pz-env-tipo')) {
-      const n = { tipo: $('#pz-env-tipo').value, paqueteria: $('#pz-env-paq').value.trim(), guia: $('#pz-env-guia').value.trim(), estatus: $('#pz-env-est').value };
-      if (n.guia && n.estatus === 'sin_guia') n.estatus = 'guia_generada';
-      const previo = { tipo: envio.tipo || 'local', paqueteria: envio.paqueteria || '', guia: envio.guia || '', estatus: envio.estatus || 'sin_guia' };
-      if (['tipo', 'paqueteria', 'guia', 'estatus'].some(k => previo[k] !== n[k])) nuevoEnvio = n;
+      const n = { tipo: $('#pz-env-tipo').value, paqueteria: $('#pz-env-paq').value.trim(), guia: $('#pz-env-guia').value.trim(), estatus: $('#pz-env-est').value, observaciones: ($('#pz-env-obs') ? $('#pz-env-obs').value.trim() : '') };
+      const previo = { tipo: envio.tipo || 'local', paqueteria: envio.paqueteria || '', guia: envio.guia || '', estatus: plazos().estatusEnvio(envio.estatus || 'almacen'), observaciones: envio.observaciones || '' };
+      if (['tipo', 'paqueteria', 'guia', 'estatus', 'observaciones'].some(k => previo[k] !== n[k])) nuevoEnvio = n;
     }
     if (nueva === et && !nota && !nuevoEnvio) return true;
     const ev = { etapa: nueva, fecha: Date.now(), por: yo() };
@@ -228,9 +229,13 @@ function abrirPieza(col, id) {
     let notaEnvio = '';
     {
       if (nuevoEnvio) {
-        if (['guia_generada', 'en_transito'].includes(nuevoEnvio.estatus) && !nuevoEnvio.guia) { aviso('Pon el número de guía', 'error'); return false; }
-        cambios.envio = Object.assign({}, envio, nuevoEnvio, { actualizado: Date.now(), por: yo(), fechaGuia: envio.fechaGuia || (nuevoEnvio.guia ? Date.now() : null), fechaEnvio: envio.fechaEnvio || (nuevoEnvio.estatus === 'en_transito' ? Date.now() : null), fechaEntrega: envio.fechaEntrega || (nuevoEnvio.estatus === 'recibido' ? Date.now() : null) });
-        const etapaEnvio = { guia_generada: 'preparacion', en_transito: 'transito', recibido: 'entregada' }[nuevoEnvio.estatus];
+        if (nuevoEnvio.tipo !== 'local' && ['recoleccion', 'transito'].includes(nuevoEnvio.estatus) && !nuevoEnvio.guia) { aviso('Pon el número de guía', 'error'); return false; }
+        if (nuevoEnvio.estatus === 'incidencia' && !nuevoEnvio.observaciones) { aviso('Escribe qué pasó (retenido, dirección incorrecta, dañado, devuelto…)', 'error'); return false; }
+        const ahoraEnv = Date.now();
+        const pasosEnv = Object.assign({}, envio.pasos || {});
+        if (plazos().estatusEnvio(envio.estatus || 'almacen') !== nuevoEnvio.estatus || !pasosEnv[nuevoEnvio.estatus]) pasosEnv[nuevoEnvio.estatus] = ahoraEnv;
+        cambios.envio = Object.assign({}, envio, nuevoEnvio, { pasos: pasosEnv, actualizado: ahoraEnv, por: yo(), fechaGuia: envio.fechaGuia || (nuevoEnvio.guia ? ahoraEnv : null), fechaEnvio: envio.fechaEnvio || (['recoleccion', 'transito'].includes(nuevoEnvio.estatus) ? ahoraEnv : null), fechaEntrega: envio.fechaEntrega || (nuevoEnvio.estatus === 'entregado' ? ahoraEnv : null) });
+        const etapaEnvio = { almacen: 'preparacion', recoleccion: 'transito', transito: 'transito', entregado: 'entregada' }[nuevoEnvio.estatus];
         const orden = ['registrada', 'preparacion', 'transito', 'entregada'];
         if (etapaEnvio && orden.indexOf(etapaEnvio) > orden.indexOf(cambios.etapa) && cambios.etapa !== 'cancelada') {
           cambios.etapa = etapaEnvio;
@@ -665,6 +670,19 @@ function pintarCobranza() {
     }).join('') : `<div class="m-op-vacio">${icono('wallet', 28)}<p>No hay facturas por cobrar. Las facturas que subas en Facturación aparecen aquí con su vencimiento.</p></div>`;
 }
 
+// Semáforo de paquetería: los 4 pasos (almacén, recolección, movimiento, entrega) con el color del paso actual
+function semaforoHtml(doc) {
+  const P = plazos();
+  if (!P || !doc || !doc.envio || !P.semaforoEnvio) return '';
+  const s = P.semaforoEnvio(doc, Date.now());
+  if (!s) return '';
+  const pasos = P.PASOS_ENVIO.map((p, i) => {
+    const hecho = s.paso != null && i < s.paso, actual = s.paso === i;
+    return `<i class="${hecho ? 'hecho' : ''}${actual ? ' actual s-' + s.color : ''}" title="${escapar(p.nombre)}"></i>`;
+  }).join('');
+  return `<span class="m-semaforo s-${s.color}" title="${escapar(s.texto)}"><span class="m-semaforo-pasos" aria-hidden="true">${pasos}</span><span class="m-semaforo-txt">${escapar(s.texto)}</span></span>`;
+}
+
 function registrarPago(id) {
   const f = facturas.find(x => x.id === id);
   if (!f) return;
@@ -996,16 +1014,20 @@ function pintarEnviosNotas() {
     caja.addEventListener('click', e => { const b = e.target.closest('[data-abrir]'); if (b) abrirPieza(b.dataset.col, b.dataset.abrir); });
   }
   const P = plazos();
-  const lista = registros().filter(r => r.raw.envio && !['recibido', 'cancelado'].includes(r.raw.envio.estatus) && !['entregada', 'facturada', 'pagada', 'cancelada'].includes(etapa(r)));
-  const conAlerta = r => P && P.alertaEnvio(r.raw, etapa(r), Date.now(), desdeFac());
-  lista.sort((a, b) => (conAlerta(b) ? 1 : 0) - (conAlerta(a) ? 1 : 0));
-  caja.innerHTML = `<h3>${icono('truck', 18)} Guías de las notas <small style="font:500 12.5px var(--m-f-texto);color:var(--m-texto-3)">${lista.length} en camino o por salir</small></h3>` +
+  const lista = registros().filter(r => r.raw.envio && !['entregado', 'cancelado'].includes(P ? P.estatusEnvio(r.raw.envio.estatus) : r.raw.envio.estatus) && !['entregada', 'facturada', 'pagada', 'cancelada'].includes(etapa(r)));
+  const color = r => { const s = P && P.semaforoEnvio(r.raw, Date.now()); return s ? s.color : 'verde'; };
+  const peso = r => ({ rojo: 0, amarillo: 10, verde: 20 }[color(r)] ?? 30) + (P && P.estatusEnvio(r.raw.envio.estatus) === 'incidencia' ? 0 : 1);
+  lista.sort((a, b) => peso(a) - peso(b));
+  const cuenta = c => lista.filter(r => color(r) === c).length;
+  caja.innerHTML = `<h3>${icono('truck', 18)} Semáforo de paquetería <small style="font:500 12.5px var(--m-f-texto);color:var(--m-texto-3)">${lista.length} en camino o por salir</small></h3>
+    ${lista.length ? `<p class="m-semaforo-resumen"><span class="s-rojo">${cuenta('rojo')} atorados o con incidencia</span><span class="s-amarillo">${cuenta('amarillo')} tardados</span><span class="s-verde">${cuenta('verde')} a tiempo</span></p>
+    <p class="m-op-nota" style="margin:-4px 0 10px">Bolitas: ${P ? P.PASOS_ENVIO.map(p => p.nombre).join(' → ') : ''}. El color es el del paso en que va.</p>` : ''}` +
     (lista.length ? `<div class="m-op-lista">${lista.slice(0, 40).map(r => {
-      const e = r.raw.envio, al = conAlerta(r);
+      const e = r.raw.envio;
       return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
         <span class="m-op-folio">${escapar(r.folio)}</span>
         <span class="m-op-info"><strong>${escapar(r.cliente || 'Sin cliente')}</strong><small>${escapar(e.paqueteria || 'Sin paquetería')}${e.guia ? ' · guía ' + escapar(e.guia) : ''} · ${escapar(r.piezas || '—')}</small></span>
-        <span class="m-op-etapa ${al ? 'e-por_vencer' : 'e-transito'}">${escapar(al ? al.texto : (P ? P.nombreEnvio(e.estatus) : e.estatus))}</span>
+        ${semaforoHtml(r.raw)}
       </button>`; }).join('')}</div>`
       : `<p class="m-op-nota">Ninguna nota va por paquetería ahora. La guía de cada nota se captura en Seguimiento de piezas (o díselo a Pepito); las ventas de Mercado Libre la traen sola. Abajo sigue el registro de envíos sueltos.</p>`);
 }

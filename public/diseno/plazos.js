@@ -62,33 +62,62 @@
   }
   // Envíos: lo que lleva cada nota cuando sale por paquetería (nota.envio = { tipo, paqueteria, guia, estatus, fechaEnvio, fechaEntrega, observaciones })
   const PAQUETERIAS = ['Paquete Express', 'Skydrops', 'Mercado Envíos', 'Estafeta', 'DHL', 'FedEx', 'Otra'];
+  // Semáforo de paquetería: el envío sigue el camino real del paquete. Cada paso tiene su tiempo: verde a tiempo,
+  // amarillo cuando ya se tardó, rojo cuando se atoró. Incidencia (retenido, dirección, devolución) siempre es rojo.
   const ESTATUS_ENVIO = [
-    { id: 'sin_guia', nombre: 'Sin guía' },
-    { id: 'guia_generada', nombre: 'Guía generada' },
-    { id: 'en_transito', nombre: 'En tránsito' },
-    { id: 'recibido', nombre: 'Recibido' },
-    { id: 'cancelado', nombre: 'Envío cancelado' }
+    { id: 'almacen', nombre: 'En almacén', paso: 0, ayuda: 'Empacando o esperando que pase la paquetería' },
+    { id: 'recoleccion', nombre: 'Recolectado', paso: 1, ayuda: 'La paquetería ya lo recogió o se dejó en sucursal' },
+    { id: 'transito', nombre: 'En movimiento', paso: 2, ayuda: 'Va en camino al cliente' },
+    { id: 'entregado', nombre: 'Entregado', paso: 3, ayuda: 'El cliente ya lo recibió' },
+    { id: 'incidencia', nombre: 'Incidencia', paso: null, ayuda: 'Retenido, dirección incorrecta, dañado o devuelto' },
+    { id: 'cancelado', nombre: 'Envío cancelado', paso: null, ayuda: '' }
   ];
-  const nombreEnvio = id => { const e = ESTATUS_ENVIO.find(x => x.id === id); return e ? e.nombre : String(id || ''); };
-  const DIAS_ENVIO_QUIETO = 3;
-  // Alerta de un envío: sin guía (nacional sin guía), quieto (guía generada o en tránsito sin cambio en 3 días) o null
+  const PASOS_ENVIO = ESTATUS_ENVIO.filter(e => e.paso != null);
+  // Días en cada paso antes de amarillo y de rojo
+  const LIMITES_ENVIO = { almacen: [1, 2], recoleccion: [1, 2], transito: [3, 5] };
+  // Los estatus de antes se leen como los nuevos
+  const ANTES = { sin_guia: 'almacen', guia_generada: 'almacen', en_transito: 'transito', recibido: 'entregado' };
+  const estatusEnvio = id => ANTES[id] || (ESTATUS_ENVIO.some(e => e.id === id) ? id : 'almacen');
+  const nombreEnvio = id => { const e = ESTATUS_ENVIO.find(x => x.id === estatusEnvio(id)); return e ? e.nombre : String(id || ''); };
+  const DIAS_ENVIO_QUIETO = LIMITES_ENVIO.transito[0];
+  // Desde cuándo está en su paso actual (envio.pasos guarda la hora de cada cambio; los envíos de antes, su última actualización)
+  function desdePaso(e, doc) {
+    const est = estatusEnvio(e.estatus);
+    return ms(e.pasos && e.pasos[est]) || ms(e.actualizado) || (est === 'transito' ? ms(e.fechaEnvio) : 0) || ms(e.fechaGuia) || ultimoMovimiento(doc);
+  }
+  // { color: verde|amarillo|rojo|gris, texto, paso (0-3 o null), estatus, dias }
+  function semaforoEnvio(doc, ahora) {
+    const e = doc && doc.envio;
+    if (!e) return null;
+    ahora = ahora || Date.now();
+    const est = estatusEnvio(e.estatus);
+    const info = ESTATUS_ENVIO.find(x => x.id === est);
+    const base = { estatus: est, paso: info.paso, dias: 0 };
+    if (est === 'cancelado') return Object.assign(base, { color: 'gris', texto: 'Envío cancelado' });
+    if (est === 'entregado') return Object.assign(base, { color: 'verde', texto: 'Entregado' });
+    if (est === 'incidencia') return Object.assign(base, { color: 'rojo', texto: 'Incidencia' + (e.observaciones ? ': ' + String(e.observaciones).slice(0, 60) : '') });
+    const d = Math.max(0, Math.floor((ahora - (desdePaso(e, doc) || ahora)) / DIA));
+    base.dias = d;
+    const [amarillo, rojo] = LIMITES_ENVIO[est];
+    if (e.tipo !== 'local' && !e.guia) return Object.assign(base, { color: d >= rojo ? 'rojo' : 'amarillo', texto: 'Falta la guía' + (d ? ' · ' + d + ' d' : ''), sinGuia: true });
+    if (d >= rojo) return Object.assign(base, { color: 'rojo', texto: info.nombre + ' ' + d + ' d · atorado' });
+    if (d >= amarillo) return Object.assign(base, { color: 'amarillo', texto: info.nombre + ' ' + d + ' d' });
+    return Object.assign(base, { color: 'verde', texto: info.nombre + (d ? ' · ' + d + ' d' : '') });
+  }
+  // Alerta para listas, resumen y Pepito: sin guía, quieto (amarillo o rojo) o incidencia; null si va bien
   function alertaEnvio(doc, etapa, ahora, desde) {
     const e = doc && doc.envio;
     if (!e || ['entregada', 'facturada', 'pagada', 'cancelada'].includes(etapa)) return null;
     if (esHistorica(doc, desde)) return null;
-    if (e.estatus === 'recibido' || e.estatus === 'cancelado') return null;
-    ahora = ahora || Date.now();
-    if (e.tipo === 'nacional' && (!e.guia || e.estatus === 'sin_guia')) return { clave: 'sin_guia', texto: 'Falta la guía', dias: 0 };
-    const ultimo = ms(e.actualizado) || ms(e.fechaEnvio) || ultimoMovimiento(doc);
-    const d = ultimo ? Math.floor((ahora - ultimo) / DIA) : 0;
-    if (['guia_generada', 'en_transito'].includes(e.estatus) && d >= DIAS_ENVIO_QUIETO) return { clave: 'quieto', texto: nombreEnvio(e.estatus) + ' ' + d + ' d sin cambio', dias: d };
-    return null;
+    const s = semaforoEnvio(doc, ahora);
+    if (!s || s.color === 'verde' || s.color === 'gris') return null;
+    return { clave: s.sinGuia ? 'sin_guia' : s.estatus === 'incidencia' ? 'incidencia' : 'quieto', texto: s.texto, dias: s.dias, color: s.color };
   }
 
   const ORDEN = ['vencida', 'lista', 'por_vencer', 'sin_movimiento', 'espera', 'en_entrega'];
   const NOMBRES = { vencida: 'Vencidas', lista: 'Listas para facturar', por_vencer: 'Por vencer', sin_movimiento: 'Sin movimiento', espera: 'En espera', en_entrega: 'En entrega' };
 
-  const api = { DESDE, creadaEn, esHistorica, DIA, DIAS_FACTURAR, DIAS_SIN_MOVIMIENTO, MOTIVOS_CANCELACION, nombreMotivo, diasFacturarDe, entregadaEn, ultimoMovimiento, estadoFacturacion, ORDEN, NOMBRES, PAQUETERIAS, ESTATUS_ENVIO, nombreEnvio, DIAS_ENVIO_QUIETO, alertaEnvio };
+  const api = { DESDE, creadaEn, esHistorica, DIA, DIAS_FACTURAR, DIAS_SIN_MOVIMIENTO, MOTIVOS_CANCELACION, nombreMotivo, diasFacturarDe, entregadaEn, ultimoMovimiento, estadoFacturacion, ORDEN, NOMBRES, PAQUETERIAS, ESTATUS_ENVIO, PASOS_ENVIO, LIMITES_ENVIO, estatusEnvio, nombreEnvio, DIAS_ENVIO_QUIETO, semaforoEnvio, alertaEnvio };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.mayaPlazos = api;
 })(typeof window !== 'undefined' ? window : globalThis);
