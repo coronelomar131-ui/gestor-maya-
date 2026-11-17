@@ -40,7 +40,7 @@ Revisado en producción el 17 nov (sin ver valores): WhatsApp (token, phone id, 
 - Con eso se agrega el rastreo al mismo tick de 5 minutos.
 
 ## 5. Meta / WhatsApp
-- Plantillas para que el bot escriba primero (fuera de 24 h): `aviso_equipo` y `reporte_diario` (ver docs/GUIA_API_WHATSAPP.md, sección 6). Luego poner sus nombres en Vercel: `WHATSAPP_PLANTILLA_AVISO`, `WHATSAPP_PLANTILLA_REPORTE`.
+- Plantillas para que el bot escriba primero (fuera de 24 h): `aviso_equipo` y `reporte_diario`, con los textos de docs/GUIA_API_WHATSAPP.md, sección 6 (no deben empezar ni terminar con la variable). Luego poner en Vercel `WHATSAPP_PLANTILLA_AVISO=aviso_equipo`, `WHATSAPP_PLANTILLA_REPORTE=reporte_diario` y `WHATSAPP_PLANTILLA_IDIOMA=es_MX`, y Redeploy.
 - Cuenta oficial verificada (OBA) para un grupo real de WhatsApp: Business Manager → verificar negocio (constancia fiscal, comprobante de domicilio) → WhatsApp Manager → número → "Cuenta oficial". Mientras, el grupo "Entregas y cobranza" funciona por medio de Pepito.
 
 ## Roles del equipo (al dar accesos)
