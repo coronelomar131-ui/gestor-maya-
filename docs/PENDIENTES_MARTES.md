@@ -3,6 +3,10 @@
 Todo lo de abajo ya está programado y publicado en gestor-maya.vercel.app. Solo faltan accesos y configuraciones que se hacen desde cuentas de la empresa.
 
 ## 1. Vercel (proyecto gestor-maya)
+Revisado en producción el 17 nov (sin ver valores): WhatsApp (token, phone id, verify token, app secret) y Claude (ANTHROPIC_API_KEY) **sí** están. **Faltan**:
+- `CRON_SECRET` (alarmas, resumen de la mañana, importación de Mercado Libre).
+- `GROQ_API_KEY` para que Pepito entienda **notas de voz** (gratis en console.groq.com → API Keys). Hoy contesta "todavía no puedo escuchar notas de voz".
+
 - `CRON_SECRET`: contraseña larga inventada (Production) + Redeploy. Sin esto no salen alarmas, resumen de la mañana ni la importación automática de Mercado Libre.
 - `ML_SECRET_KEY` ya debe estar (la usa Inventario). Si la importación de ventas de ML dice "no se puede renovar el token", falta esta variable.
 

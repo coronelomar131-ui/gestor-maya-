@@ -299,7 +299,7 @@ function pintarFacturacion() {
     const pesoEstado = cli => { const l = porCliente[cli]; return Math.max(...l.map(r => { const e = estados.get(r.col + ':' + r.id); return e ? P.ORDEN.length - P.ORDEN.indexOf(e.clave) : 0; })); };
     const puedeDias = factura();
     cuerpo.innerHTML = `<div class="m-fac-dos"><div class="m-fac-izq">` +
-      (P ? `<div class="m-fac-estados">${conteo.map(([k, n]) => `<span class="m-op-etapa e-${k}">${escapar(P.NOMBRES[k])} <b>${n}</b></span>`).join('')}<small>Geraldine Bot vigila las notas desde el ${escapar(desdeFac())}, según los días para facturar de cada cliente (${P.DIAS_FACTURAR} si no tiene).${pend.filter(r => P.esHistorica(r.raw, desdeFac())).length ? ' Las ' + pend.filter(r => P.esHistorica(r.raw, desdeFac())).length + ' de antes se facturaron en CONTPAQi sin subir su XML: no se alarman.' : ''}</small></div>` : '') +
+      (P ? `<div class="m-fac-estados">${conteo.map(([k, n]) => `<span class="m-op-etapa e-${k}">${escapar(P.NOMBRES[k])} <b>${n}</b></span>`).join('')}<small>Geraldine Bot vigila las notas desde el ${escapar(new Date(desdeFac() + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }))}, según los días para facturar de cada cliente (${P.DIAS_FACTURAR} si no tiene).${pend.filter(r => P.esHistorica(r.raw, desdeFac())).length ? ' Las ' + pend.filter(r => P.esHistorica(r.raw, desdeFac())).length + ' de antes se facturaron en CONTPAQi sin subir su XML: no se alarman.' : ''}</small></div>` : '') +
       (Object.keys(porCliente).length ? Object.entries(porCliente).sort((a, b) => (P ? pesoEstado(b[0]) - pesoEstado(a[0]) : 0) || b[1].length - a[1].length).map(([cli, lista]) => {
         const c = clientePorNombreORfc(cli);
         const dias = P ? P.diasFacturarDe(c) : null;
@@ -982,7 +982,35 @@ function dialogo(titulo, html, botones, alCerrar) {
   primero && primero.focus();
 }
 
-const PINTORES = { seguimiento: pintarSeguimiento, facturacion: pintarFacturacion, cobranza: pintarCobranza, oficina: pintarOficina };
+// ═══════════════════════ ENVÍOS: las guías capturadas en cada nota (Seguimiento / Pepito / Mercado Libre) ═══════════════════════
+function pintarEnviosNotas() {
+  const mod = $('#mod-envios');
+  if (!mod) return;
+  let caja = $('#env-notas', mod);
+  if (!caja) {
+    caja = document.createElement('section');
+    caja.id = 'env-notas';
+    caja.className = 'm-env-notas m-vidrio';
+    caja.style.padding = '16px';
+    mod.insertBefore(caja, mod.firstChild);
+    caja.addEventListener('click', e => { const b = e.target.closest('[data-abrir]'); if (b) abrirPieza(b.dataset.col, b.dataset.abrir); });
+  }
+  const P = plazos();
+  const lista = registros().filter(r => r.raw.envio && !['recibido', 'cancelado'].includes(r.raw.envio.estatus) && !['entregada', 'facturada', 'pagada', 'cancelada'].includes(etapa(r)));
+  const conAlerta = r => P && P.alertaEnvio(r.raw, etapa(r), Date.now(), desdeFac());
+  lista.sort((a, b) => (conAlerta(b) ? 1 : 0) - (conAlerta(a) ? 1 : 0));
+  caja.innerHTML = `<h3>${icono('truck', 18)} Guías de las notas <small style="font:500 12.5px var(--m-f-texto);color:var(--m-texto-3)">${lista.length} en camino o por salir</small></h3>` +
+    (lista.length ? `<div class="m-op-lista">${lista.slice(0, 40).map(r => {
+      const e = r.raw.envio, al = conAlerta(r);
+      return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
+        <span class="m-op-folio">${escapar(r.folio)}</span>
+        <span class="m-op-info"><strong>${escapar(r.cliente || 'Sin cliente')}</strong><small>${escapar(e.paqueteria || 'Sin paquetería')}${e.guia ? ' · guía ' + escapar(e.guia) : ''} · ${escapar(r.piezas || '—')}</small></span>
+        <span class="m-op-etapa ${al ? 'e-por_vencer' : 'e-transito'}">${escapar(al ? al.texto : (P ? P.nombreEnvio(e.estatus) : e.estatus))}</span>
+      </button>`; }).join('')}</div>`
+      : `<p class="m-op-nota">Ninguna nota va por paquetería ahora. La guía de cada nota se captura en Seguimiento de piezas (o díselo a Pepito); las ventas de Mercado Libre la traen sola. Abajo sigue el registro de envíos sueltos.</p>`);
+}
+
+const PINTORES = { seguimiento: pintarSeguimiento, facturacion: pintarFacturacion, cobranza: pintarCobranza, oficina: pintarOficina, envios: pintarEnviosNotas };
 function activo() { return Object.keys(PINTORES).find(id => { const m = document.getElementById('mod-' + id); return m && m.classList.contains('active'); }); }
 function pintarActivo() { const id = activo(); if (id) PINTORES[id](); }
 
