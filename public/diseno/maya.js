@@ -890,6 +890,12 @@ function vigilarApp() {
 
 const estado = $('.m-carga-estado');
 if (estado) estado.textContent = 'Revisando tu sesión…';
+// Si la conexión del celular está lenta, la pantalla de carga no se queda muda tapando todo: avisa y deja reintentar
+setTimeout(() => {
+  const carga = document.getElementById('loading');
+  if (!carga || getComputedStyle(carga).display === 'none' || carga.style.opacity === '0' || !estado) return;
+  estado.innerHTML = 'Tu conexión está lenta. Sigo intentando…<br><button type="button" class="btn btn-secondary btn-sm" style="margin-top:12px;width:auto" onclick="location.reload()">Reintentar</button>';
+}, 12000);
 // Logo transparente en lugar del JPG con fondo oscuro (carga, login y menú)
 $$('#loading-logo, .login-logo img, .sidebar-logo img').forEach(img => { img.src = '/diseno/logo-maya.png'; img.style.filter = ''; });
 ponerEsqueletos();

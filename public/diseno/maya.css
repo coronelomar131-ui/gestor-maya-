@@ -1840,3 +1840,6 @@ body.m-revelar #m-tabbar { animation: m-tabbar-entra 560ms 160ms var(--m-ease) b
 .m-semaforo-resumen { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 12px; font-size: 12.5px; font-weight: 600; }
 .m-semaforo-resumen span { padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.05); }
 .m-semaforo-resumen .s-rojo { color: #ff9a9c; } .m-semaforo-resumen .s-amarillo { color: #fbd88a; } .m-semaforo-resumen .s-verde { color: #8ee8b8; }
+
+/* iPhone (Safari): una capa sin cursor no recibe el toque; con esto el toque fuera del globo del recorrido siempre llega */
+.m-tour-bloqueo { cursor: pointer; -webkit-tap-highlight-color: transparent; }
