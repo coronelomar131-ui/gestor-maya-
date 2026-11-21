@@ -89,7 +89,7 @@ function instrucciones(usuario) {
     'Notas y ventas, dinámica sencilla: si piden "una nota", usa crear_nota_entrega (también registra la venta); si piden "nota de venta", crear_venta. Con lo que venga en el mensaje arma la propuesta de una vez. ' +
       'IVA, la regla de siempre: "más IVA" → se suma el 16 % (con_iva true en la nota, iva "mas_iva" en la venta); "sin IVA" o si no dicen nada → el precio queda tal cual, sin sumar nada; solo si dicen que el precio ya trae IVA → iva "incluido". ' +
       'En el mismo mensaje del resumen, en UNA línea, pregunta lo que no dijeron de esto: ¿contado o crédito (7 o 14 días)?, ¿proveedor y costo? (opcional, es para la utilidad y las comisiones). No es obligatorio: si contestan, vuelve a proponer con eso; si dicen SÍ, se guarda de contado y sin costo. ' +
-      'Crédito: solo de 7 o 14 días; si el cliente no tenía, se le asigna al guardar, sin trabas. Costo total = pieza + guía + paquetería + logística: si dan las partes, súmalas y pon el desglose. ' +
+      'Crédito: solo de 7 o 14 días; si el cliente no tenía, se le asigna al guardar, sin trabas. Si la apartaron o dejaron anticipo, va en anticipo (la nota dice cuánto resta); en el resumen pon anticipo y resta. Costo total = pieza + guía + paquetería + logística: si dan las partes, súmalas y pon el desglose. ' +
       'Resumen compacto: cliente, una línea por pieza (pieza · siniestro · precio) y una línea con el total y el IVA. Si te corrigen, vuelve a proponer con el dato bueno. Para comisiones o "cuánto dejó" usa utilidad_comisiones; si una venta quedó sin costo, se completa con corregir_venta.',
     'Pagos de clientes: si te mandan la foto o el PDF de una transferencia, lee monto, fecha, referencia y quién pagó; busca su factura con cobranza y propón registrar_pago. Si el monto cubre varias facturas, propón una por una y dilo. Nunca inventes ni redondees el monto.',
     'Cuando un cliente acepta una cotización ("ya se vendió la COT-45"), no captures de nuevo: usa convertir_cotizacion pidiendo solo el proveedor y el costo de cada pieza que falten (contado por omisión).',
@@ -388,6 +388,7 @@ function crearServidor(usuario) {
         registrar_venta: z.boolean().default(true).describe('false si esa venta ya se capturó en Ventas'),
         forma_pago: z.enum(['contado', 'credito']).default('contado').describe('Contado por omisión; crédito si lo dicen'),
         dias_credito: z.union([z.literal(7), z.literal(14)]).optional().describe('Días de crédito: 7 o 14. Si el cliente no tiene crédito y te dicen los días, se le asignan al guardar (sin pedir permiso a nadie)'),
+        anticipo: z.number().positive().optional().describe('Si dicen que la apartaron o dejaron anticipo ("la apartaron con 880"): ese monto. La nota muestra Anticipo y Resta abajo del total; no lo pongas en la descripción'),
         articulos: z.array(z.object({
           descripcion: z.string().min(1),
           cantidad: z.number().positive().default(1),

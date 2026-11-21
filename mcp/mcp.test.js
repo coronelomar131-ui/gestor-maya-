@@ -1991,3 +1991,22 @@ test('Reporte de ventas en PDF: cuadra con el resumen, quita las notas en $0 y P
     await h.cerrar();
   } finally { wa.cerrar(); }
 });
+
+test('crear_nota_entrega con anticipo: guarda anticipo y resta, y el PDF los muestra abajo del total', async () => {
+  const c = await conectar(ADMIN);
+  const mucho = await c.llamar('crear_nota_entrega', { cliente: 'Zeta Autopartes', anticipo: 9000, articulos: [{ descripcion: 'Quinta puerta Avanza', precio_unitario: 8800 }] });
+  assert.match(mucho.error, /anticipo .* mayor que el total/);
+  const r = await c.llamar('crear_nota_entrega', { cliente: 'Zeta Autopartes', anticipo: 880, articulos: [{ descripcion: 'Quinta puerta Avanza', precio_unitario: 8800 }] });
+  assert.equal(r.anticipo, 880);
+  assert.equal(r.resta, 7920);
+  const nota = [...db.cols.notasEntrega.values()].find(n => n.notaId === r.creada.folio);
+  assert.equal(nota.anticipo, 880);
+  assert.equal(nota.resta, 7920);
+  assert.equal([...db.cols.ventas.values()].find(v => v.notaEntregaId === r.creada.folio).resta, 7920);
+  const { datos: buf } = await require('./pdf').generar('nota_entrega', nota, { data: { clientes: [] } });
+  const texto = buf.toString('latin1');
+  assert.match(texto, /Anticipo/);
+  assert.match(texto, /RESTA/);
+  assert.match(texto, /7,920\.00/);
+  await c.cerrar();
+});
