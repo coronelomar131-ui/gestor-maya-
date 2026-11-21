@@ -9951,6 +9951,7 @@ window.initNotaEntrega = function() {
   document.getElementById('ne-fecha').value = (function() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
   document.getElementById('ne-vendedor').value = '';
   document.getElementById('ne-iva').checked = false;
+  if (document.getElementById('ne-anticipo')) document.getElementById('ne-anticipo').value = '';
   var chkVenta = document.getElementById('ne-registrar-venta');
   if (chkVenta) chkVenta.checked = true;
   document.getElementById('ne-items-body').innerHTML = '';
@@ -9994,6 +9995,13 @@ window.calcTotalesNE = function() {
   document.getElementById('ne-subtotal').textContent = '\$' + subtotal.toLocaleString('es-MX', {minimumFractionDigits:2});
   document.getElementById('ne-iva-monto').textContent = '\$' + ivaMonto.toLocaleString('es-MX', {minimumFractionDigits:2});
   document.getElementById('ne-total').textContent = '\$' + total.toLocaleString('es-MX', {minimumFractionDigits:2});
+  var antEl = document.getElementById('ne-anticipo'), filaResta = document.getElementById('ne-resta-fila');
+  var anticipo = antEl ? (parseFloat(antEl.value) || 0) : 0;
+  if (filaResta) {
+    filaResta.style.display = anticipo > 0 ? '' : 'none';
+    document.getElementById('ne-anticipo-monto').textContent = '\$' + anticipo.toLocaleString('es-MX', {minimumFractionDigits:2});
+    document.getElementById('ne-resta').textContent = '\$' + Math.max(total - anticipo, 0).toLocaleString('es-MX', {minimumFractionDigits:2});
+  }
 };
 
 window.saveNotaEntrega = async function() {
@@ -10019,6 +10027,8 @@ window.saveNotaEntrega = async function() {
     var subtotal = items.reduce(function(s, it) { return s + it.cantidad * it.precioUnit; }, 0);
     var ivaTotal = conIva ? subtotal * 0.16 : 0;
     var total = subtotal + ivaTotal;
+    var anticipo = Math.round((parseFloat((document.getElementById('ne-anticipo') || {}).value) || 0) * 100) / 100;
+    if (anticipo < 0 || anticipo > total + 0.005) { window.toast('El anticipo no puede ser mayor que el total', 'error'); return; }
     // auto-incremental NE-XXX
     var existentes = window.data.notasEntrega || [];
     var maxNum = 0;
@@ -10032,6 +10042,7 @@ window.saveNotaEntrega = async function() {
       vendedor: vendedor, items: items, subtotal: subtotal, ivaTotal: ivaTotal,
       total: total, createdAt: new Date().toISOString()
     };
+    if (anticipo > 0) { payload.anticipo = anticipo; payload.resta = Math.round((total - anticipo) * 100) / 100; }
     var ref = await window.addDoc(window.collection(window.db, 'notasEntrega'), payload);
     if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'notasEntrega', id: ref.id });
     window.toast('Nota de entrega guardada', 'success');
@@ -10213,7 +10224,8 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     }
     // caja totales (no va si el cliente pide la nota sin precio)
     if (!sinPrecioNE) {
-    var boxW=78; var boxX=pageW-mg-boxW; var boxH=32;
+    var anticipoNE = Number(nota.anticipo) || 0;
+    var boxW=78; var boxX=pageW-mg-boxW; var boxH=anticipoNE > 0 ? 48 : 32;
     doc.setFillColor(210,215,220);
     doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
     doc.setFillColor(255,255,255);
@@ -10236,6 +10248,18 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.setFontSize(10.5); doc.setFont(undefined,'bold');
     doc.text('TOTAL',boxX+5,y+29);
     doc.text('\$'+(nota.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
+    if (anticipoNE > 0) {
+      var restaNE = nota.resta != null ? Number(nota.resta) : Math.max((nota.total||0) - anticipoNE, 0);
+      doc.setFontSize(8.5); doc.setFont(undefined,'normal');
+      doc.setTextColor(gris[0],gris[1],gris[2]);
+      doc.text('Anticipo',boxX+5,y+38);
+      doc.setTextColor(negro[0],negro[1],negro[2]);
+      doc.text('- \$'+anticipoNE.toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+38,{align:'right'});
+      doc.setFontSize(10); doc.setFont(undefined,'bold');
+      doc.setTextColor(azul[0],azul[1],azul[2]);
+      doc.text('RESTA',boxX+5,y+45);
+      doc.text('\$'+restaNE.toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+45,{align:'right'});
+    }
     y += boxH + 14;
     } else { y += 6; }
     // caja de redes sociales (solo clientes marcados como "venta pública")
@@ -10388,6 +10412,11 @@ window.previewNotaEntregaPDFById = function(id) {
         <input type="checkbox" id="ne-iva" onchange="calcTotalesNE()">
         <label for="ne-iva" style="cursor:pointer;user-select:none">Incluye IVA 16%</label>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <label for="ne-anticipo" style="user-select:none">Anticipo / apartado $</label>
+        <input type="number" id="ne-anticipo" class="form-control" placeholder="0.00" min="0" step="0.01" style="width:110px" oninput="calcTotalesNE()">
+        <small style="color:#64748b">Opcional. En la nota sale lo que resta.</small>
+      </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <input type="checkbox" id="ne-registrar-venta" checked>
         <label for="ne-registrar-venta" style="cursor:pointer;user-select:none">💰 Registrar también como venta (desmarca si ya la registraste)</label>
@@ -10396,6 +10425,7 @@ window.previewNotaEntregaPDFById = function(id) {
         <div>Subtotal: <strong id="ne-subtotal">$0.00</strong></div>
         <div>IVA: <strong id="ne-iva-monto">$0.00</strong></div>
         <div style="font-size:16px;font-weight:700">Total: <span id="ne-total">$0.00</span></div>
+        <div id="ne-resta-fila" style="display:none">Anticipo: <strong id="ne-anticipo-monto">$0.00</strong> · Resta: <strong id="ne-resta">$0.00</strong></div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px">

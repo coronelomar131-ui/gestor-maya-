@@ -159,9 +159,13 @@ async function crearNotaEntrega(u, a, opciones = {}) {
   });
   const tv = sumar(itemsVenta);
   const u_ = utilidadDe(tv);
+  // Anticipo o apartado: la nota dice cuánto dejaron y cuánto resta
+  const anticipo = a.anticipo ? redondear2(a.anticipo) : 0;
+  if (anticipo > tv.total + 0.005) throw new ErrorUsuario('El anticipo (' + pesos2(anticipo) + ') es mayor que el total de la nota (' + pesos2(tv.total) + ').');
+  const conAnticipo = anticipo > 0 ? { anticipo, resta: redondear2(tv.total - anticipo) } : {};
   if (opciones.soloRevisar) {
     const alertas = await alertasDe({ clienteId: cliente.id, clienteNombre: cliente.nombre, items: itemsVenta, total: tv.total, utilidad: u_.utilidad }, await fb().leerColeccion('ventas'));
-    return { revision: true, alertas, cliente: cliente.nombre, dinero: resumenDinero(tv, u_), forma_pago: formaPago, dias_credito: credito.dias || undefined };
+    return Object.assign({ revision: true, alertas, cliente: cliente.nombre, dinero: resumenDinero(tv, u_), forma_pago: formaPago, dias_credito: credito.dias || undefined }, conAnticipo);
   }
   if (credito.asignar) await asignarCredito(u, cliente, credito.dias);
   const subtotal = items.reduce((s, it) => s + it.cantidad * it.precioUnit, 0);
@@ -173,7 +177,7 @@ async function crearNotaEntrega(u, a, opciones = {}) {
     siniestros: items.filter(it => it.siniestro).map(it => ({ num: it.siniestro, anio: it.anio })),
     vendedor, items, subtotal, ivaTotal, total: subtotal + ivaTotal, formaPago, diasCredito: credito.dias,
     createdAt: new Date().toISOString()
-  }, autor(u));
+  }, conAnticipo, autor(u));
   const id = await fb().agregar('notasEntrega', nota);
 
   let venta = null;
@@ -193,7 +197,7 @@ async function crearNotaEntrega(u, a, opciones = {}) {
       incluyeDatosFiscales: false, estado: 'pendiente', estatus: 'Entregado', facturaURL: '', tieneFactura: false,
       fuente: 'nota_entrega', notaEntregaId: notaId, notas: 'Generada automáticamente desde Nota de Entrega ' + notaId,
       createdAt: fb().marcaTiempo()
-    }, autor(u));
+    }, conAnticipo, autor(u));
     const ventaId = await fb().agregar('ventas', ventaDoc);
     venta = { id: ventaId, folio: 'NV #' + ventaNotaId };
   }
@@ -204,6 +208,7 @@ async function crearNotaEntrega(u, a, opciones = {}) {
     venta_registrada: venta,
     forma_pago: formaPago, dias_credito: credito.dias || undefined, credito_asignado_al_cliente: credito.asignar || undefined,
     iva_modo: a.con_iva ? 'más IVA (16 %)' : 'sin IVA',
+    anticipo: conAnticipo.anticipo, resta: conAnticipo.resta,
     utilidad: u_.costoTotal == null ? 'pendiente de costo (proveedor y costo se pueden mandar después)' : resumenDinero(tv, u_),
     pdf: 'Se descarga desde la app: Notas de Entrega → ' + notaId + ' → PDF'
   };
