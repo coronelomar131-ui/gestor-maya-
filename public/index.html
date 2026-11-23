@@ -9306,9 +9306,25 @@ function neFiltrosActuales() {
 
 // Más recientes primero: día de la nota, luego hora de registro y número de nota
 function neCompararNotas(a, b) {
-  return ((b.fecha ? b.fecha.getTime() : 0) - (a.fecha ? a.fecha.getTime() : 0)) ||
-    ((b.creada ? b.creada.getTime() : 0) - (a.creada ? a.creada.getTime() : 0)) ||
-    (b.numero - a.numero);
+  // Sin intercalar: primero las notas de entrega, luego las de venta; cada tipo de mayor a menor número
+  return (a.tipo === b.tipo ? 0 : (a.tipo === 'NE' ? -1 : 1)) ||
+    (b.numero - a.numero) ||
+    ((b.creada ? b.creada.getTime() : 0) - (a.creada ? a.creada.getTime() : 0));
+}
+
+// Números que faltan en la serie de cada tipo. Las ventas ocultas (creadas desde una nota de entrega o canceladas) cuentan como usadas.
+function neHuecos() {
+  var usados = { NE: {}, NV: {} };
+  (window.data.notasEntrega || []).forEach(function(n) { var k = neNumero(n.notaId); if (k) usados.NE[k] = true; });
+  (window.data.ventas || []).forEach(function(v) { var k = neNumero(v.notaId || v.notaNumero); if (k) usados.NV[k] = true; });
+  var texto = [];
+  ['NE', 'NV'].forEach(function(t) {
+    var ks = Object.keys(usados[t]).map(Number); if (!ks.length) return;
+    var max = Math.max.apply(null, ks), faltan = [];
+    for (var i = 1; i <= max; i++) if (!usados[t][i]) faltan.push(i);
+    if (faltan.length) texto.push((t === 'NE' ? 'Entrega' : 'Venta') + ': falta ' + faltan.slice(0, 12).map(function(n) { return '#' + n; }).join(', ') + (faltan.length > 12 ? ' y ' + (faltan.length - 12) + ' más' : ''));
+  });
+  return texto.join('  ·  ');
 }
 
 function neFiltrarNotas(f) {
@@ -9446,8 +9462,9 @@ function renderNotasEntregaFiltrado() {
   if (countEl) countEl.textContent = r.filas.length + ' de ' + cuantas + ' notas' + (r.entregas && r.ventas ? ' (' + r.entregas + ' NE · ' + r.ventas + ' NV)' : '') + '  ·  Total ' + neDinero(r.total);
   var avisoEl = document.getElementById('ne-filter-aviso');
   if (avisoEl) {
-    avisoEl.textContent = r.duplicados.length ? '⚠ ' + neAvisoDuplicados(r) : '';
-    avisoEl.style.display = r.duplicados.length ? 'block' : 'none';
+    var huecos = neHuecos();
+    avisoEl.textContent = (r.duplicados.length ? '⚠ ' + neAvisoDuplicados(r) : '') + (huecos ? (r.duplicados.length ? '   |   ' : '') + 'Números sin nota (eliminadas): ' + huecos : '');
+    avisoEl.style.display = (r.duplicados.length || huecos) ? 'block' : 'none';
   }
 
   if (!r.filas.length) {
@@ -10072,6 +10089,7 @@ window.saveNotaEntrega = async function() {
     if (anticipo < 0 || anticipo > total + 0.005) { window.toast('El anticipo no puede ser mayor que el total', 'error'); return; }
     // auto-incremental NE-XXX
     var existentes = window.data.notasEntrega || [];
+    try { var snapNE = await window.getDocs(window.collection(window.db, 'notasEntrega')); existentes = snapNE.docs.map(function(d) { return d.data(); }); } catch (eNE) {}
     var maxNum = 0;
     existentes.forEach(function(n) {
       var m = n.notaId ? parseInt(n.notaId.replace('NE-','')) : 0;
