@@ -2069,6 +2069,13 @@ tr:hover td { background: rgba(59,188,212,0.03); }
         </label>
       </div>
 
+      <div style="display:flex;align-items:center;gap:10px;margin:-8px 0 20px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+          <input type="checkbox" id="v-ocultar-precios-pdf">
+          <span style="font-size:0.95em">🙈 Que esta nota PDF salga sin precios (se guardan igual; los clientes marcados con 🙈 siempre salen así)</span>
+        </label>
+      </div>
+
       <!-- TABLA MULTI-LÍNEA -->
       <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #1E4F7A">
         <h4 style="margin:0 0 8px 0;color:#1E4F7A">📦 Piezas</h4>
@@ -2511,6 +2518,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-detalles-venta')">Cerrar</button>
       <button class="btn btn-secondary" onclick="corregirVentaGestor(document.getElementById('detalles-venta-id').value)" title="Por si alguien se equivocó: precio, costo, piezas, cliente…">✏️ Corregir</button>
+      <button class="btn btn-secondary" onclick="descargarNotaPorId(document.getElementById('detalles-venta-id').value,{sinPrecio:true})">🙈 Nota sin precios</button>
       <button class="btn btn-primary" onclick="descargarNotaPorId(document.getElementById('detalles-venta-id').value)">⬇️ Descargar Nota PDF</button>
     </div>
   </div>
@@ -3300,6 +3308,8 @@ window.inicializarFormularioVenta = function() {
   // Limpiar tabla
   document.getElementById('v-items-body').innerHTML = '';
   document.getElementById('v-incluyeDatosFiscales').checked = false;
+  const chkSinPrecio = document.getElementById('v-ocultar-precios-pdf');
+  if (chkSinPrecio) chkSinPrecio.checked = false;
 
   // Agregar una fila vacía para empezar
   agregarFilaPieza();
@@ -3521,6 +3531,7 @@ window.saveVentaMultiLinea = async function() {
   const estatusInicial = document.getElementById('v-estatus-inicial').value;
   const incluyeDatosFiscales = document.getElementById('v-incluyeDatosFiscales').checked;
   const conIva = window.mayaPrecioConIva();
+  const notaSinPrecio = !!document.getElementById('v-ocultar-precios-pdf')?.checked;
 
   // Parsear cliente (formato: "nombre|id")
   const clienteParts = clienteInput.split('|');
@@ -3649,7 +3660,7 @@ window.saveVentaMultiLinea = async function() {
     const docRef = await addDoc(collection(db, 'ventas'), venta);
     if (window.mayaAvisar) window.mayaAvisar('nota_nueva', { col: 'ventas', id: docRef.id });
     // Generar PDF de la nota
-    setTimeout(async () => { await window.generarNotaPDF(venta); }, 500);
+    setTimeout(async () => { await window.generarNotaPDF(venta, notaSinPrecio ? { sinPrecio: true } : undefined); }, 500);
     closeModal('modal-venta');
     if (typeof enviarNotificacion === "function") enviarNotificacion("Nueva venta registrada", (venta.clienteNombre || venta.clienteId || "Cliente") + " - Nota #" + notaId, "💰");
     toast(`✅ Venta ${notaId} registrada + Nota PDF generada`, 'success');
@@ -5688,6 +5699,7 @@ window.docAbrirPreview = async function(id) {
 
         <div style="display:flex;gap:10px;margin-top:20px">
           <button onclick="descargarNotaPorId('${id}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#3BBCD4;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">⬇️ Descargar</button>
+          <button onclick="descargarNotaPorId('${id}',{sinPrecio:true});this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#1E8FA5;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">🙈 Sin precios</button>
           <button onclick="abrirEditarNota('${id}','${nota.n}','${nota.cli.replace(/'/g,"\\'")}','${nota.st.replace(/'/g,"\\'")}','${nota.obs.replace(/'/g,"\\'").replace(/\n/g,"\\n")}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#8B5CF6;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">✏️ Editar</button>
           <button onclick="this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#555;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-size:13px">✕ Cerrar</button>
         </div>
@@ -8453,6 +8465,7 @@ window.renderNotasFacturas = async function(ventas) {
       <td style="font-weight:600;color:#3BBCD4">
         ${v.notaNumero}
         <button style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;padding:0;margin-left:6px" onclick="descargarNotaPorId('${v.id}')" title="Descargar nota">⬇️</button>
+        <button style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;padding:0;margin-left:6px" onclick="descargarNotaPorId('${v.id}',{sinPrecio:${!window.ventaSinPrecioPorDefecto(v)}})" title="${window.ventaSinPrecioPorDefecto(v) ? 'Descargar la nota CON precios' : 'Descargar la nota SIN precios'}">${window.ventaSinPrecioPorDefecto(v) ? '💲' : '🙈'}</button>
       </td>
       <td style="text-align:center">
         ${v.facturaURL ? `<button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="descargarFactura('${v.facturaURL}','${v.notaId || 'factura'}.pdf')">📄 Ver Factura</button>` : `<button class="btn btn-sm" style="background:#f39c12;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="abrirUploadFactura('${v.id}','${v.notaId || 'nota'}')">📎 Subir</button>`}
@@ -8542,8 +8555,10 @@ window.guardarDatosFiscales = async function() {
 
 
 
-window.generarNotaPDF = async function(venta) {
+// opciones.sinPrecio = true -> la nota sale sin precios ni totales (los datos se guardan igual con precio)
+window.generarNotaPDF = async function(venta, opciones) {
   try {
+    var opcionSinPrecio = (opciones && typeof opciones.sinPrecio === 'boolean') ? opciones.sinPrecio : null;
     var jsPDFLib = window.jspdf;
     var doc = new jsPDFLib.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     var pageW = doc.internal.pageSize.getWidth();
@@ -8624,6 +8639,8 @@ window.generarNotaPDF = async function(venta) {
     var mostrarRedes = !!(clienteObjNV && clienteObjNV.redesSociales);
     // Cliente que pide sus notas sin precio: la venta guarda los importes, pero la nota no los muestra
     var sinPrecioNV = !!(clienteObjNV && clienteObjNV.notaSinPrecio);
+    // opción explícita (botones / casilla) manda; si no hay, manda lo que pida el cliente
+    var sinPrecio = (opcionSinPrecio !== null) ? opcionSinPrecio : sinPrecioNV;
     // siniestro badge
     var sins = venta.siniestros || (venta.items ? venta.items.map(function(i){return i.numSiniestro||'';}).filter(function(s){return s;}).join(' | ') : '') || (venta.numSiniestro||'');
     if (sins) {
@@ -8644,31 +8661,35 @@ window.generarNotaPDF = async function(venta) {
     doc.setFontSize(8); doc.setFont(undefined,'bold');
     doc.text('DETALLE DE VENTA', mg+4, y+5);
     y += 10;
-    // tabla
+    // tabla (sin las columnas de dinero cuando la nota sale "sin precio")
     if (venta.items && venta.items.length > 0 && doc.autoTable) {
       var rows = venta.items.map(function(item,idx){
-        if (sinPrecioNV) return [String(idx+1), item.pedido||'-', item.numSiniestro||'-'];
-        return [String(idx+1), item.pedido||'-', item.numSiniestro||'-',
-          '\$'+(item.precio||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
-          '\$'+(item.iva||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
-          '-\$'+(item.ajuste||0).toLocaleString('es-MX',{minimumFractionDigits:2})];
+        var fila = [String(idx+1), item.pedido||'-', item.numSiniestro||'-'];
+        if (!sinPrecio) {
+          fila.push('\$'+(item.precio||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
+            '\$'+(item.iva||0).toLocaleString('es-MX',{minimumFractionDigits:2}),
+            '-\$'+(item.ajuste||0).toLocaleString('es-MX',{minimumFractionDigits:2}));
+        }
+        return fila;
       });
       doc.autoTable({
-        head:[sinPrecioNV ? ['#','DESCRIPCION','SINIESTRO'] : ['#','DESCRIPCION','SINIESTRO','PRECIO','IVA','AJUSTE']],
+        head:[sinPrecio ? ['#','DESCRIPCION','SINIESTRO'] : ['#','DESCRIPCION','SINIESTRO','PRECIO','IVA','AJUSTE']],
         body:rows, startY:y, margin:{left:mg,right:mg},
         styles:{font:'helvetica',fontSize:8,cellPadding:4},
         headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',halign:'center'},
         bodyStyles:{textColor:negro},
         alternateRowStyles:{fillColor:[245,248,252]},
-        columnStyles: sinPrecioNV ? {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:40}} : {0:{halign:'center',cellWidth:8},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
+        columnStyles: sinPrecio
+          ? {0:{halign:'center',cellWidth:12,cellPadding:{top:4,bottom:4,left:1,right:1}},2:{halign:'center',cellWidth:44}}
+          : {0:{halign:'center',cellWidth:12,cellPadding:{top:4,bottom:4,left:1,right:1}},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
       });
       y = doc.lastAutoTable.finalY + 8;
     } else if (venta.descripcion) {
-      doc.autoTable({head:[sinPrecioNV ? ['DESCRIPCION'] : ['DESCRIPCION','TOTAL']],body:[sinPrecioNV ? [venta.descripcion||'-'] : [venta.descripcion||'-','\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})]],startY:y,margin:{left:mg,right:mg},headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',fontSize:8},bodyStyles:{fontSize:8,textColor:negro,cellPadding:4}});
+      doc.autoTable({head:[sinPrecio ? ['DESCRIPCION'] : ['DESCRIPCION','TOTAL']],body:[sinPrecio ? [venta.descripcion||'-'] : [venta.descripcion||'-','\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})]],startY:y,margin:{left:mg,right:mg},headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',fontSize:8},bodyStyles:{fontSize:8,textColor:negro,cellPadding:4}});
       y = doc.lastAutoTable.finalY + 8;
     }
-    // caja totales (no va si el cliente pide la nota sin precio)
-    if (!sinPrecioNV) {
+    // caja totales (no se dibuja en la nota "sin precio")
+    if (!sinPrecio) {
     var boxW=78; var boxX=pageW-mg-boxW; var boxH=32;
     doc.setFillColor(210,215,220);
     doc.roundedRect(boxX+1,y+1,boxW,boxH,2,2,'F');
@@ -8697,7 +8718,9 @@ window.generarNotaPDF = async function(venta) {
     doc.text('TOTAL',boxX+5,y+29);
     doc.text('\$'+(venta.total||0).toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+29,{align:'right'});
     y += boxH + 14;
-    } else { y += 6; }
+    } else {
+      y += 6;
+    }
     // caja de redes sociales (solo clientes marcados como "venta pública")
     if (mostrarRedes) {
       var rbTop = y;
@@ -8770,7 +8793,7 @@ window.generarNotaPDF = async function(venta) {
     doc.text('maya-autopartes.myshopify.com',mg,pageH-6);
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México',pageW/2,pageH-6,{align:'center'});
-    doc.save((venta.notaId||'nota')+'.pdf');
+    doc.save((venta.notaId||'nota')+(sinPrecio ? '_sin_precio' : '')+'.pdf');
     window.toast('Nota PDF generada','success');
   } catch(err) {
     console.error('Error PDF:',err);
@@ -8778,7 +8801,7 @@ window.generarNotaPDF = async function(venta) {
   }
 };
 
-window.descargarNotaPorId = async function(ventaId) {
+window.descargarNotaPorId = async function(ventaId, opciones) {
   try {
     window.toast('⏳ Descargando nota...', 'info');
 
@@ -8794,7 +8817,7 @@ window.descargarNotaPorId = async function(ventaId) {
     venta.id = ventaId; // Agregar el ID
 
     // Generar y descargar la nota
-    await window.generarNotaPDF(venta);
+    await window.generarNotaPDF(venta, opciones);
   } catch(error) {
     console.error('Error descargando nota:', error);
     window.toast('❌ Error: ' + error.message, 'error');
@@ -9101,7 +9124,7 @@ window.generarCotizacionPDFById = function(id) {
         styles:{font:'helvetica',fontSize:8,cellPadding:4},
         headStyles:{fillColor:azul,textColor:blanco,fontStyle:'bold',halign:'center'},
         bodyStyles:{textColor:negro}, alternateRowStyles:{fillColor:[245,248,252]},
-        columnStyles:{0:{halign:'center',cellWidth:8},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
+        columnStyles:{0:{halign:'center',cellWidth:12,cellPadding:{top:4,bottom:4,left:1,right:1}},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:20},5:{halign:'right',cellWidth:24}}
       });
       y = doc.lastAutoTable.finalY + 8;
     }
@@ -9432,12 +9455,20 @@ function renderNotasEntregaFiltrado() {
   }
   var isAdmin = window.currentRole === 'admin';
   tbody.innerHTML = r.filas.map(function(x, i) {
+    // Botón de "la otra versión": si la nota sale sin precio por defecto ofrece la de con precio, y al revés
+    var notaDoc = x.tipo === 'NE'
+      ? (window.data.notasEntrega || []).find(function(n) { return n.id === x.id; })
+      : (window.data.ventas || []).find(function(v) { return v.id === x.id; });
+    var sinPrecioDef = notaDoc ? (x.tipo === 'NE' ? window.notaEntregaSinPrecioPorDefecto(notaDoc) : window.ventaSinPrecioPorDefecto(notaDoc)) : false;
+    var otraVersion = (sinPrecioDef ? '💲 Con precio' : '🙈 Sin precio');
     var acciones = x.tipo === 'NE'
       ? '<button class="btn btn-secondary btn-sm" onclick="window.previewNotaEntregaPDFById(\'' + x.id + '\')">👁 Ver</button>' +
         ' <button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + x.id + '\')">📄 PDF</button>' +
+        ' <button class="btn btn-secondary btn-sm" title="Descargar la otra versión del PDF" onclick="window.generarNotaEntregaPDFById(\'' + x.id + '\',' + (!sinPrecioDef) + ')">' + otraVersion + '</button>' +
         (isAdmin ? ' <button class="btn btn-danger btn-sm" onclick="eliminarNotaEntrega(\'' + x.id + '\')">🗑</button>' : '')
       : '<button class="btn btn-secondary btn-sm" onclick="window.abrirDetallesVenta(\'' + x.id + '\')">👁 Ver</button>' +
-        ' <button class="btn btn-secondary btn-sm" onclick="window.descargarNotaPorId(\'' + x.id + '\')">📄 PDF</button>';
+        ' <button class="btn btn-secondary btn-sm" onclick="window.descargarNotaPorId(\'' + x.id + '\')">📄 PDF</button>' +
+        ' <button class="btn btn-secondary btn-sm" title="Descargar la otra versión del PDF" onclick="window.descargarNotaPorId(\'' + x.id + '\',{sinPrecio:' + (!sinPrecioDef) + '})">' + otraVersion + '</button>';
     return '<tr>' +
       '<td>' + (i + 1) + '</td>' +
       '<td><strong>' + neEsc(x.folio) + '</strong></td>' +
@@ -9954,6 +9985,8 @@ window.initNotaEntrega = function() {
   if (document.getElementById('ne-anticipo')) document.getElementById('ne-anticipo').value = '';
   var chkVenta = document.getElementById('ne-registrar-venta');
   if (chkVenta) chkVenta.checked = true;
+  var chkOcultar = document.getElementById('ne-ocultar-precios');
+  if (chkOcultar) chkOcultar.checked = false;
   document.getElementById('ne-items-body').innerHTML = '';
   var dl = document.getElementById('ne-clientes-list');
   if (dl) {
@@ -10039,6 +10072,7 @@ window.saveNotaEntrega = async function() {
     var notaId = 'NE-' + String(maxNum + 1).padStart(3, '0');
     var payload = {
       notaId: notaId, fecha: fecha, cliente: cliente, siniestro: siniestro, siniestros: siniestrosArr,
+      ocultarPrecios: !!(document.getElementById('ne-ocultar-precios') && document.getElementById('ne-ocultar-precios').checked),
       vendedor: vendedor, items: items, subtotal: subtotal, ivaTotal: ivaTotal,
       total: total, createdAt: new Date().toISOString()
     };
@@ -10115,8 +10149,11 @@ window.saveNotaEntrega = async function() {
   } catch(e) { window.toast('Error: ' + e.message, 'error'); }
 };
 
-window.generarNotaEntregaPDF = function(nota, previewOnly) {
+// opciones.sinPrecio (true/false) fuerza la versión; si no se indica, se usa lo que se eligió al crear la nota.
+// Los precios siempre se guardan; "sin precio" solo quita columna de precios y totales del PDF.
+window.generarNotaEntregaPDF = function(nota, previewOnly, opciones) {
   try {
+    var opcionSinPrecioNE = (opciones && typeof opciones.sinPrecio === 'boolean') ? opciones.sinPrecio : null;
     var jsPDFLib = window.jspdf;
     var doc = new jsPDFLib.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     var pageW = doc.internal.pageSize.getWidth();
@@ -10192,6 +10229,8 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     });
     var mostrarRedesNE = !!(clienteObjNE && clienteObjNE.redesSociales);
     var sinPrecioNE = !!(clienteObjNE && clienteObjNE.notaSinPrecio);
+    // opción explícita manda; si no hay, manda lo elegido al crear la nota o lo que pida el cliente
+    var sinPrecio = (opcionSinPrecioNE !== null) ? opcionSinPrecioNE : (!!nota.ocultarPrecios || sinPrecioNE);
     y += 34;
     // badge detalle
     doc.setFillColor(azul[0], azul[1], azul[2]);
@@ -10203,27 +10242,31 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     // tabla items
     if (nota.items && nota.items.length && doc.autoTable) {
       var rows = nota.items.map(function(it, idx) {
-        return [
+        var fila = [
           String(idx+1),
           it.descripcion || '-',
           it.siniestro || '-',
           it.anio || '-',
           String(it.cantidad || 1)
-        ].concat(sinPrecioNE ? [] : ['\$' + (it.precioUnit || 0).toLocaleString('es-MX', {minimumFractionDigits:2})]);
+        ];
+        if (!sinPrecio) fila.push('\$' + (it.precioUnit || 0).toLocaleString('es-MX', {minimumFractionDigits:2}));
+        return fila;
       });
       doc.autoTable({
-        head: [['#','DESCRIPCIÓN','SINIESTRO','AÑO','CANT.'].concat(sinPrecioNE ? [] : ['PRECIO UNIT.'])],
+        head: [sinPrecio ? ['#','DESCRIPCIÓN','SINIESTRO','AÑO','CANT.'] : ['#','DESCRIPCIÓN','SINIESTRO','AÑO','CANT.','PRECIO UNIT.']],
         body: rows, startY: y, margin: {left:mg, right:mg},
         styles: {font:'helvetica', fontSize:8, cellPadding:4},
         headStyles: {fillColor:azul, textColor:blanco, fontStyle:'bold', halign:'center'},
         bodyStyles: {textColor:negro},
         alternateRowStyles: {fillColor:[245,248,252]},
-        columnStyles: {0:{halign:'center',cellWidth:8},2:{halign:'center',cellWidth:28},3:{halign:'center',cellWidth:16},4:{halign:'center',cellWidth:14},5:{halign:'right',cellWidth:26}}
+        columnStyles: sinPrecio
+          ? {0:{halign:'center',cellWidth:12,cellPadding:{top:4,bottom:4,left:1,right:1}},2:{halign:'center',cellWidth:34},3:{halign:'center',cellWidth:18},4:{halign:'center',cellWidth:18}}
+          : {0:{halign:'center',cellWidth:12,cellPadding:{top:4,bottom:4,left:1,right:1}},2:{halign:'center',cellWidth:28},3:{halign:'center',cellWidth:16},4:{halign:'center',cellWidth:14},5:{halign:'right',cellWidth:26}}
       });
       y = doc.lastAutoTable.finalY + 8;
     }
-    // caja totales (no va si el cliente pide la nota sin precio)
-    if (!sinPrecioNE) {
+    // caja totales (no va si la nota sale sin precio)
+    if (!sinPrecio) {
     var anticipoNE = Number(nota.anticipo) || 0;
     var boxW=78; var boxX=pageW-mg-boxW; var boxH=anticipoNE > 0 ? 48 : 32;
     doc.setFillColor(210,215,220);
@@ -10261,7 +10304,9 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
       doc.text('\$'+restaNE.toLocaleString('es-MX',{minimumFractionDigits:2}),boxX+boxW-5,y+45,{align:'right'});
     }
     y += boxH + 14;
-    } else { y += 6; }
+    } else {
+      y += 6;
+    }
     // caja de redes sociales (solo clientes marcados como "venta pública")
     if (mostrarRedesNE) {
       var rbTop = y;
@@ -10335,7 +10380,7 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México', pageW/2, pageH-6, {align:'center'});
     if (previewOnly) return doc;
-    doc.save('nota-entrega-' + (nota.notaId || 'NE') + '.pdf');
+    doc.save('nota-entrega-' + (nota.notaId || 'NE') + (sinPrecio ? '_sin_precio' : '') + '.pdf');
     window.toast('PDF generado', 'success');
   } catch(err) {
     console.error('Error PDF nota entrega:', err);
@@ -10343,25 +10388,59 @@ window.generarNotaEntregaPDF = function(nota, previewOnly) {
   }
 };
 
-window.generarNotaEntregaPDFById = function(id) {
-  var notas = window.data.notasEntrega || [];
-  var nota = notas.find(function(n) { return n.id === id; });
-  if (!nota) { window.toast('Nota no encontrada', 'error'); return; }
-  window.generarNotaEntregaPDF(nota);
+// ¿Esta nota sale sin precio "por defecto"? Sí si se marcó la casilla al crearla o si el cliente pide sus notas sin precio
+function neClienteSinPrecio(nombre, id) {
+  var c = ((window.data && window.data.clientes) || []).find(function(c) {
+    return (id && c.id === id) || (c.razonSocial || c.nombre) === nombre;
+  });
+  return !!(c && c.notaSinPrecio);
+}
+window.notaEntregaSinPrecioPorDefecto = function(nota) {
+  return !!(nota.ocultarPrecios || neClienteSinPrecio(nota.cliente, nota.clienteId));
+};
+window.ventaSinPrecioPorDefecto = function(venta) {
+  return neClienteSinPrecio(venta.clienteNombre || venta.cliente, venta.clienteId);
 };
 
-window.previewNotaEntregaPDFById = function(id) {
+// sinPrecio (true/false) fuerza la versión; sin indicarlo se usa lo elegido al crear la nota o lo que pida el cliente
+window.generarNotaEntregaPDFById = function(id, sinPrecio) {
   var notas = window.data.notasEntrega || [];
   var nota = notas.find(function(n) { return n.id === id; });
   if (!nota) { window.toast('Nota no encontrada', 'error'); return; }
-  var doc = window.generarNotaEntregaPDF(nota, true);
+  window.generarNotaEntregaPDF(nota, false, typeof sinPrecio === 'boolean' ? { sinPrecio: sinPrecio } : undefined);
+};
+
+// ¿El navegador puede mostrar un PDF dentro de la página? (celulares no)
+window.pdfInlineSoportado = function() {
+  var ua = navigator.userAgent || '';
+  var movil = /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  return !movil && navigator.pdfViewerEnabled !== false;
+};
+
+window._nePreview = { id: null };
+window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
+  var notas = window.data.notasEntrega || [];
+  var nota = notas.find(function(n) { return n.id === id; });
+  if (!nota) { window.toast('Nota no encontrada', 'error'); return; }
+  if (typeof sinPrecio !== 'boolean') sinPrecio = window.notaEntregaSinPrecioPorDefecto(nota);
+  var doc = window.generarNotaEntregaPDF(nota, true, { sinPrecio: sinPrecio });
   if (!doc) return;
+  var nombre = 'NE-' + (nota.notaId || nota.id) + (sinPrecio ? '_sin_precio' : '') + '.pdf';
   var url = doc.output('bloburl');
-  var iframe = document.getElementById('ne-preview-iframe');
-  var dlBtn = document.getElementById('ne-preview-dl');
-  iframe.src = url;
-  dlBtn.onclick = function() { doc.save('NE-' + (nota.notaId || nota.id) + '.pdf'); };
-  openModal('modal-ne-preview');
+
+  // En celular el PDF no se ve dentro de la página: se abre en otra pestaña (o se descarga)
+  if (!window.pdfInlineSoportado()) {
+    var w = window.open(url, '_blank');
+    if (!w) doc.save(nombre);
+    return;
+  }
+
+  window._nePreview.id = id;
+  document.getElementById('ne-preview-iframe').src = url;
+  document.getElementById('ne-preview-dl').onclick = function() { doc.save(nombre); };
+  var chk = document.getElementById('ne-preview-precios');
+  if (chk) chk.checked = !sinPrecio;
+  if (!soloActualizar) openModal('modal-ne-preview');
 };
 
 </script>
@@ -10421,6 +10500,10 @@ window.previewNotaEntregaPDFById = function(id) {
         <input type="checkbox" id="ne-registrar-venta" checked>
         <label for="ne-registrar-venta" style="cursor:pointer;user-select:none">💰 Registrar también como venta (desmarca si ya la registraste)</label>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <input type="checkbox" id="ne-ocultar-precios">
+        <label for="ne-ocultar-precios" style="cursor:pointer;user-select:none">🙈 Que esta nota PDF salga sin precios (se guardan igual; los clientes marcados con 🙈 siempre salen así)</label>
+      </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:14px">
         <div>Subtotal: <strong id="ne-subtotal">$0.00</strong></div>
         <div>IVA: <strong id="ne-iva-monto">$0.00</strong></div>
@@ -10445,7 +10528,10 @@ window.previewNotaEntregaPDFById = function(id) {
     <div style="flex:1;overflow:hidden;padding:0">
       <iframe id="ne-preview-iframe" style="width:100%;height:100%;border:none"></iframe>
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 20px">
+    <div style="display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 20px">
+      <label style="display:flex;align-items:center;gap:6px;margin-right:auto;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="ne-preview-precios" checked onchange="previewNotaEntregaPDFById(window._nePreview.id, !this.checked, true)"> Mostrar precios
+      </label>
       <button class="btn btn-secondary" onclick="closeModal('modal-ne-preview')">Cerrar</button>
       <button class="btn btn-primary" id="ne-preview-dl">📄 Descargar PDF</button>
     </div>
