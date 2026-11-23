@@ -897,6 +897,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 </style>
 <!-- Capa de diseño (vidrio, menú personalizable, animaciones): public/diseno/ -->
 <link rel="stylesheet" href="/diseno/maya.css">
+<link rel="stylesheet" href="/diseno/ajustes-pantalla.css">
 <script defer src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
@@ -1419,10 +1420,10 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           <div style="overflow-x:auto">
             <table id="ne-table">
               <thead><tr>
-                <th>#</th><th>Nota</th><th>Fecha</th><th>Hora</th><th>Cliente</th><th>Siniestro</th><th>Vendedor</th><th>Total</th><th>Acciones</th>
+                <th>Nota</th><th>Fecha</th><th>Cliente</th><th>Siniestros</th><th>Total</th><th>Acciones</th>
               </tr></thead>
               <tbody id="ne-body">
-                <tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>
+                <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">Sin notas de entrega</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -1440,21 +1441,21 @@ tr:hover td { background: rgba(59,188,212,0.03); }
             </div>
           </div>
           <div class="vt-filter" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 22px;border-bottom:1px solid var(--border)">
-            <div>
+            <div class="form-group" style="margin:0">
               <label>Buscar</label>
               <input class="search-box" id="vt-search" placeholder="🔍 Taller, dirección, contacto..." oninput="renderVisitasTalleres()">
             </div>
-            <div>
+            <div class="form-group" style="margin:0">
               <label>Colaborador</label>
-              <select class="search-box" id="vt-filtro-colab" onchange="renderVisitasTalleres()"><option value="">Todos</option></select>
+              <select id="vt-filtro-colab" onchange="renderVisitasTalleres()"><option value="">Todos</option></select>
             </div>
-            <div>
+            <div class="form-group" style="margin:0">
               <label>Desde</label>
-              <input class="search-box" type="date" id="vt-desde" onchange="renderVisitasTalleres()">
+              <input type="date" id="vt-desde" onchange="renderVisitasTalleres()">
             </div>
-            <div>
+            <div class="form-group" style="margin:0">
               <label>Hasta</label>
-              <input class="search-box" type="date" id="vt-hasta" onchange="renderVisitasTalleres()">
+              <input type="date" id="vt-hasta" onchange="renderVisitasTalleres()">
             </div>
             <button class="btn btn-secondary btn-sm" onclick="limpiarFiltrosVisitasTalleres()">Limpiar</button>
             <span id="vt-contador" style="color:var(--gray);font-size:12px;margin-left:auto"></span>
@@ -2084,7 +2085,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
           El precio ya incluye IVA (desglosarlo). Si no, se usa el % de IVA de cada pieza: 16 = más IVA, 0 = sin IVA.
         </label>
         <div style="overflow-x:auto;margin-bottom:10px">
-          <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+          <table class="tabla-captura" style="width:100%;border-collapse:collapse;font-size:0.9em">
             <thead>
               <tr style="background:#1E4F7A;color:white">
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4">Pedido (Descripción)</th>
@@ -2288,7 +2289,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
       <div style="background:#f0f4f8;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #1E4F7A">
         <h4 style="margin:0 0 15px 0;color:#1E4F7A">📦 Piezas a Cotizar</h4>
         <div style="overflow-x:auto;margin-bottom:10px">
-          <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+          <table class="tabla-captura" style="width:100%;border-collapse:collapse;font-size:0.9em">
             <thead>
               <tr style="background:#1E4F7A;color:white">
                 <th style="padding:8px;text-align:left;border:1px solid #3BBCD4">Pedido (Descripción)</th>
@@ -9450,7 +9451,7 @@ function renderNotasEntregaFiltrado() {
   }
 
   if (!r.filas.length) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (cuantas ? 'Sin resultados con esos filtros' : 'Sin notas') + '</div></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (cuantas ? 'Sin resultados con esos filtros' : 'Sin notas') + '</div></div></td></tr>';
     return;
   }
   var isAdmin = window.currentRole === 'admin';
@@ -9460,25 +9461,32 @@ function renderNotasEntregaFiltrado() {
       ? (window.data.notasEntrega || []).find(function(n) { return n.id === x.id; })
       : (window.data.ventas || []).find(function(v) { return v.id === x.id; });
     var sinPrecioDef = notaDoc ? (x.tipo === 'NE' ? window.notaEntregaSinPrecioPorDefecto(notaDoc) : window.ventaSinPrecioPorDefecto(notaDoc)) : false;
-    var otraVersion = (sinPrecioDef ? '💲 Con precio' : '🙈 Sin precio');
+    var otraIcono = sinPrecioDef ? '💲' : '🙈';
+    var otraTexto = sinPrecioDef ? 'Con precio' : 'Sin precio';
+    var btn = function(onclick, icono, texto, titulo, clase) {
+      return '<button class="btn ' + (clase || 'btn-secondary') + ' btn-sm" title="' + titulo + '" onclick="' + onclick + '">' + icono + '<span class="ne-txt"> ' + texto + '</span></button>';
+    };
     var acciones = x.tipo === 'NE'
-      ? '<button class="btn btn-secondary btn-sm" onclick="window.previewNotaEntregaPDFById(\'' + x.id + '\')">👁 Ver</button>' +
-        ' <button class="btn btn-secondary btn-sm" onclick="window.generarNotaEntregaPDFById(\'' + x.id + '\')">📄 PDF</button>' +
-        ' <button class="btn btn-secondary btn-sm" title="Descargar la otra versión del PDF" onclick="window.generarNotaEntregaPDFById(\'' + x.id + '\',' + (!sinPrecioDef) + ')">' + otraVersion + '</button>' +
-        (isAdmin ? ' <button class="btn btn-danger btn-sm" onclick="eliminarNotaEntrega(\'' + x.id + '\')">🗑</button>' : '')
-      : '<button class="btn btn-secondary btn-sm" onclick="window.abrirDetallesVenta(\'' + x.id + '\')">👁 Ver</button>' +
-        ' <button class="btn btn-secondary btn-sm" onclick="window.descargarNotaPorId(\'' + x.id + '\')">📄 PDF</button>' +
-        ' <button class="btn btn-secondary btn-sm" title="Descargar la otra versión del PDF" onclick="window.descargarNotaPorId(\'' + x.id + '\',{sinPrecio:' + (!sinPrecioDef) + '})">' + otraVersion + '</button>';
+      ? btn("window.previewNotaEntregaPDFById('" + x.id + "')", '👁', 'Ver', 'Ver la nota') +
+        btn("window.generarNotaEntregaPDFById('" + x.id + "')", '📄', 'PDF', 'Descargar PDF') +
+        btn("window.generarNotaEntregaPDFById('" + x.id + "'," + (!sinPrecioDef) + ")", otraIcono, otraTexto, 'Descargar la versión ' + otraTexto.toLowerCase()) +
+        (isAdmin ? btn("eliminarNotaEntrega('" + x.id + "')", '🗑', 'Eliminar', 'Eliminar nota', 'btn-danger') : '')
+      : btn("window.abrirDetallesVenta('" + x.id + "')", '👁', 'Ver', 'Ver la nota') +
+        btn("window.descargarNotaPorId('" + x.id + "')", '📄', 'PDF', 'Descargar PDF') +
+        btn("window.descargarNotaPorId('" + x.id + "',{sinPrecio:" + (!sinPrecioDef) + "})", otraIcono, otraTexto, 'Descargar la versión ' + otraTexto.toLowerCase());
+    // Siniestros como etiquetas (máx. 3 a la vista)
+    var sins = String(x.siniestro || '').split('|').map(function(s) { return s.trim(); }).filter(Boolean);
+    var sinsHtml = sins.length
+      ? sins.slice(0, 3).map(function(s) { return '<span class="ne-sin">' + neEsc(s) + '</span>'; }).join('') + (sins.length > 3 ? '<span class="ne-sin" title="' + neEsc(sins.slice(3).join(' | ')) + '">+' + (sins.length - 3) + '</span>' : '')
+      : '<span class="ne-sub">—</span>';
+    var hora = neHora(x);
     return '<tr>' +
-      '<td>' + (i + 1) + '</td>' +
-      '<td><strong>' + neEsc(x.folio) + '</strong></td>' +
-      '<td>' + neFmtFecha(x.fecha) + '</td>' +
-      '<td>' + neHora(x) + '</td>' +
-      '<td>' + neEsc(x.cliente || '-') + '</td>' +
-      '<td>' + neEsc(x.siniestro || '-') + '</td>' +
-      '<td>' + neEsc(x.vendedor || '-') + '</td>' +
-      '<td>' + neDinero(x.total) + '</td>' +
-      '<td style="white-space:nowrap">' + acciones + '</td>' +
+      '<td><span class="ne-folio"><span class="ne-tipo ' + (x.tipo === 'NE' ? 'ne' : 'nv') + '">' + x.tipo + '</span>' + neEsc(String(x.folio).replace(/^(NV|NE)[s-]*/, '')) + '</span></td>' +
+      '<td><span class="ne-fecha">' + neFmtFecha(x.fecha) + '</span>' + (hora && hora !== '-' ? '<span class="ne-sub">' + hora + '</span>' : '') + '</td>' +
+      '<td><span class="ne-cliente">' + neEsc(x.cliente || '-') + '</span>' + (x.vendedor ? '<span class="ne-sub">Vendedor: ' + neEsc(x.vendedor) + '</span>' : '') + '</td>' +
+      '<td><div class="ne-sins">' + sinsHtml + '</div></td>' +
+      '<td><span class="ne-total">' + neDinero(x.total) + '</span></td>' +
+      '<td><div class="ne-acc">' + acciones + '</div></td>' +
     '</tr>';
   }).join('');
 }
@@ -10474,7 +10482,7 @@ window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
           <button type="button" class="btn btn-secondary btn-sm" onclick="agregarItemNE()">+ Agregar item</button>
         </div>
         <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse">
+          <table class="tabla-captura" style="width:100%;border-collapse:collapse">
             <thead><tr style="background:var(--bg-secondary,#f1f5f9);font-size:12px">
               <th style="padding:6px 8px;text-align:left">Descripción</th>
               <th style="padding:6px 8px;text-align:left">Siniestro</th>

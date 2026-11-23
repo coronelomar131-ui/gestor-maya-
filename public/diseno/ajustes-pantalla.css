@@ -1,0 +1,95 @@
+/* Ajustes de pantalla para celular y PC. Se carga después de maya.css. */
+
+/* ── 1. Al tacto: botones y campos cómodos de tocar ── */
+@media (pointer: coarse), (max-width: 640px) {
+  .btn, .btn-sm, .tab-btn, .m-btn { min-height: 42px; }
+  .btn-sm { padding-top: 9px; padding-bottom: 9px; }
+  td .btn-danger, .btn.m-solo-icono { min-width: 42px; }
+  select, textarea,
+  input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]):not([type=range]) { min-height: 44px; }
+  .modal-close { min-width: 44px; min-height: 44px; }
+  input[type=checkbox], input[type=radio] { width: 22px; height: 22px; flex: none; }
+}
+
+/* ── 2. Ventanas emergentes: las columnas nunca se salen de la ventana ── */
+.modal [style*="grid-template-columns"] > * { min-width: 0; }
+.modal input, .modal select, .modal textarea { max-width: 100%; }
+@media (max-width: 480px) {
+  .modal [style*="grid-template-columns:1fr 1fr"],
+  .modal [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
+
+/* ── 3. Captura de piezas en celular: cada renglón es una tarjeta con sus campos etiquetados ── */
+@media (max-width: 640px) {
+  .tabla-captura thead { display: none; }
+  .tabla-captura, .tabla-captura tbody { display: block; width: 100%; }
+  .tabla-captura tbody tr {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; margin: 0 0 12px;
+    border: 1px solid rgba(59, 188, 212, 0.28); border-radius: 14px; background: rgba(255, 255, 255, 0.04);
+  }
+  .tabla-captura td { display: block; padding: 0 !important; border: 0 !important; text-align: left !important; min-width: 0; }
+  .tabla-captura td::before {
+    display: block; margin-bottom: 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--m-texto-3, #7b8ea5);
+  }
+  .tabla-captura td:first-child { grid-column: 1 / -1; }
+  .tabla-captura td:last-child { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+  .tabla-captura td:last-child::before { display: none; }
+  .tabla-captura input { width: 100% !important; min-width: 0 !important; padding: 10px !important; font-size: 16px !important; text-align: left !important; }
+
+  /* etiquetas por tabla (el orden de columnas es fijo) */
+  #v-items-body td:nth-child(1)::before { content: "Pedido (descripción)"; }
+  #v-items-body td:nth-child(2)::before { content: "# Siniestro"; }
+  #v-items-body td:nth-child(3)::before { content: "Precio venta ($)"; }
+  #v-items-body td:nth-child(4)::before { content: "% IVA"; }
+  #v-items-body td:nth-child(5)::before { content: "Ajuste ($)"; }
+  #v-items-body td:nth-child(6)::before { content: "Proveedor"; }
+  #v-items-body td:nth-child(7)::before { content: "Costo total ($)"; }
+  #cot-items-body td:nth-child(1)::before { content: "Pedido (descripción)"; }
+  #cot-items-body td:nth-child(2)::before { content: "# Siniestro"; }
+  #cot-items-body td:nth-child(3)::before { content: "Precio ($)"; }
+  #cot-items-body td:nth-child(4)::before { content: "% IVA"; }
+  #cot-items-body td:nth-child(5)::before { content: "Ajuste ($)"; }
+  #ne-items-body td:nth-child(1)::before { content: "Descripción"; }
+  #ne-items-body td:nth-child(2)::before { content: "Siniestro"; }
+  #ne-items-body td:nth-child(3)::before { content: "Año del auto"; }
+  #ne-items-body td:nth-child(4)::before { content: "Cantidad"; }
+  #ne-items-body td:nth-child(5)::before { content: "Precio unitario"; }
+}
+
+/* ── 4. Listado de notas (Notas de entrega y de venta) ── */
+#ne-table { border-collapse: separate; border-spacing: 0; }
+#ne-table thead th { position: sticky; top: 0; z-index: 2; background: var(--m-marino, #0e2035); }
+#ne-table tbody tr { transition: background var(--m-rapido, 140ms); }
+#ne-table tbody tr:hover { background: rgba(59, 188, 212, 0.07); }
+#ne-table tbody td { vertical-align: middle; }
+.ne-folio { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-weight: 700; color: var(--m-niebla, #e8f0f8); }
+.ne-tipo { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+.ne-tipo.ne { background: rgba(59, 188, 212, 0.16); color: #7ad8ea; border: 1px solid rgba(59, 188, 212, 0.35); }
+.ne-tipo.nv { background: rgba(245, 185, 66, 0.14); color: #f5b942; border: 1px solid rgba(245, 185, 66, 0.35); }
+.ne-fecha { font-weight: 600; white-space: nowrap; }
+.ne-sub { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--m-texto-3, #7b8ea5); }
+.ne-cliente { font-weight: 600; color: var(--m-niebla, #e8f0f8); }
+.ne-sins { display: flex; flex-wrap: wrap; gap: 4px; max-width: 260px; }
+.ne-sin { padding: 2px 7px; border-radius: 6px; font-size: 11.5px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--m-texto-2, #a9bacd); white-space: nowrap; }
+.ne-total { font-weight: 700; color: var(--m-verde, #3dd68c); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; display: block; }
+.ne-acc { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.ne-acc .btn { width: auto; margin: 0; }
+@media (min-width: 641px) {
+  .ne-acc .ne-txt { display: none; }          /* en PC solo iconos (con su descripción al pasar el cursor) */
+  .ne-acc { display: grid; grid-template-columns: repeat(4, 38px); justify-content: end; }
+  .ne-acc .btn { padding: 7px 0; justify-content: center; }
+}
+@media (max-width: 640px) {
+  .ne-acc { justify-content: flex-start; }
+  .ne-acc .btn { flex: 1 1 auto; justify-content: center; }
+  .ne-sins { max-width: none; }
+}
+/* filtros ordenados en cuadrícula y resumen como "chips" */
+#ne-filters { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px !important; align-items: end; }
+#ne-filters input, #ne-filters select { width: 100% !important; box-sizing: border-box; }
+#ne-filters > button { width: 100%; justify-content: center; }
+#ne-filter-count {
+  grid-column: 1 / -1; justify-self: start; align-self: center !important; padding: 5px 12px; border-radius: 999px;
+  background: rgba(59, 188, 212, 0.1); border: 1px solid rgba(59, 188, 212, 0.25); color: var(--m-faro-claro, #7ad8ea) !important; font-weight: 600;
+}
