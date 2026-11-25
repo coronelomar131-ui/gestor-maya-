@@ -2665,11 +2665,14 @@ onAuthStateChanged(auth, async (user) => {
       await signOut(auth);
       return;
     }
+    restaurarBotonEntrar();
+    document.getElementById('login-pass').value = '';
     showApp();
     startListeners();
     hideLoading();
   } else {
     currentUser = null;
+    restaurarBotonEntrar();
     if (typeof window.comprasCerrar === 'function') window.comprasCerrar();
     hideLoading();
     document.getElementById('login-screen').style.display = 'flex';
@@ -2754,6 +2757,11 @@ window.resetPasswordUsuario = async function(email) {
   }
 };
 
+function restaurarBotonEntrar() {
+  const btn = document.getElementById('login-btn');
+  if (btn) { btn.textContent = 'Entrar'; btn.disabled = false; }
+}
+
 window.doLogin = async function() {
   const email = document.getElementById('login-email').value.trim();
   const pass = document.getElementById('login-pass').value;
@@ -2767,8 +2775,9 @@ window.doLogin = async function() {
   } catch(e) {
     errEl.textContent = '⚠️ Correo o contraseña incorrectos.';
     errEl.style.display = 'block';
-    btn.textContent = 'INGRESAR AL SISTEMA';
-    btn.disabled = false;
+    if (e.code === 'auth/network-request-failed') errEl.textContent = '⚠️ No hay conexión. Revisa tu internet.';
+    if (e.code === 'auth/too-many-requests') errEl.textContent = '⚠️ Demasiados intentos. Espera unos minutos.';
+    restaurarBotonEntrar();
   }
 };
 
@@ -2786,7 +2795,7 @@ function showApp() {
 function startListeners() {
   listenCollection('ventas', 'ventas-body', () => { renderVentas(); renderNotasEntrega(); });
   listenCollection('productos', 'inv-body', renderProductos);
-  listenCollection('clientes', 'cli-body', renderClientes);
+  listenCollection('clientes', 'cli-body', () => { renderClientes(); renderEntregas(); });
   listenCollection('cotizaciones', 'cot-body', renderCotizaciones);
   listenCollection('proveedores', 'prov-body', renderProveedores);
   listenCollection('notasEntrega', 'ne-body', renderNotasEntrega, true);
@@ -2794,7 +2803,23 @@ function startListeners() {
   listenCollection('visitasTalleres', 'vt-body', renderVisitasTalleres);
   listenCollection('usuarios', 'users-body', renderUsuarios);
   // startEnviosListener(); // Comentado - usa cargarEnvios() en su lugar
-  // startFinanzasListeners(); // Comentado - usar getDocs() en su lugar
+  escucharFinanzas();
+}
+
+// Préstamos y pagos en vivo (solo quien tiene el módulo de Finanzas)
+function escucharFinanzas() {
+  const rol = window.currentRole || 'vendedor';
+  if (!(window.mayaRoles ? window.mayaRoles.puedeModulo(rol, 'finanzas') : rol === 'admin')) return;
+  const escuchar = (col, pintar) => unsubs.push(onSnapshot(query(collection(db, col), orderBy('createdAt', 'desc')),
+    snap => pintar(snap.docs.map(d => ({ ...d.data(), id: d.id }))),
+    err => console.warn('Finanzas:', col, err.message)));
+  escuchar('finanzas_prestamos', lista => {
+    window.renderPrestamos?.(lista);
+    const total = lista.filter(p => !/pagad|liquidad/i.test(p.estatus || '')).reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    const el = document.getElementById('fin-total-prestamos');
+    if (el) el.textContent = '$' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+  });
+  escuchar('finanzas_pagos', lista => { window.renderPagos?.(lista); window.actualizarResumenFinanzas?.(lista); });
 }
 
 function listenCollection(colName, bodyId, renderFn, sinOrden) {
@@ -2980,7 +3005,7 @@ function renderCotizaciones() {
   }
   body.innerHTML = data.cotizaciones.map(c => {
     const piezasCount = c.items ? c.items.length : (c.descripcion ? 1 : 0);
-    const fechaStr = c.fecha ? new Date(c.fecha).toLocaleDateString('es-MX') : '—';
+    const fechaStr = c.fecha ? window.mayaFecha(c.fecha) : '—';
     const cJson = encodeURIComponent(JSON.stringify(c));
     return `
     <tr>
@@ -3002,7 +3027,7 @@ function renderCotizaciones() {
   if (notasBody) {
     notasBody.innerHTML = data.cotizaciones.map(c => {
       const siniestros = c.siniestros || (c.items ? c.items.map(i=>i.numSiniestro||'').filter(s=>s).join(' | ') : '');
-      const fechaStr = c.fecha ? new Date(c.fecha).toLocaleDateString('es-MX') : '—';
+      const fechaStr = c.fecha ? window.mayaFecha(c.fecha) : '—';
       return `<tr>
         <td><code style="color:#3BBCD4;font-size:12px">COT-${c.notaId || folio('',c.id)}</code></td>
         <td>${c.clienteNombre || c.cliente || '—'}</td>
@@ -3034,6 +3059,7 @@ function renderProveedores() {
 }
 
 function renderEntregas() {
+  data.entregas.forEach(e => { e.cliente = nombreDeCliente(e.cliente); });
   const body = document.getElementById('ent-body');
   const rol = window.currentRole || 'vendedor';
   if (!data.entregas.length) {
@@ -3162,8 +3188,17 @@ function updateClienteSelects() {
   }).join('');
   ['v-cliente', 'cot-cliente', 'e-cliente'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.innerHTML = opts;
+    if (!el) return;
+    const elegido = el.value;
+    el.innerHTML = opts;
+    if (el.tagName === 'SELECT') el.value = elegido;
   });
+}
+
+// Las entregas viejas guardaron el id del cliente: se muestra su nombre
+function nombreDeCliente(id) {
+  const c = data.clientes.find(x => x.id === id);
+  return c ? (c.razonSocial || c.nombre || id) : id;
 }
 
 // ── SAVE FUNCTIONS ──
@@ -3270,7 +3305,7 @@ window.inicializarFormularioVenta = function() {
   if (btn) btn.textContent = 'Guardar Venta';
   if (conIva) conIva.checked = false;
   // Establecer fecha a hoy
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = new Date().toLocaleDateString('en-CA');
   document.getElementById('v-fecha').value = hoy;
 
   // Cargar clientes en datalist (autocomplete)
@@ -4529,7 +4564,7 @@ window.exportarVisitasTalleresExcel = async function() {
 // ══ VISITA DE TALLERES — FIN ══
 
 window.inicializarFormularioCotizacion = function() {
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = new Date().toLocaleDateString('en-CA');
   document.getElementById('cot-fecha').value = hoy;
   const clienteInput = document.getElementById('cot-cliente');
   const clientesList = document.getElementById('cot-clientes-list');
@@ -4693,8 +4728,9 @@ window.saveProveedor = async function() {
 
 window.saveEntrega = async function() {
   const obj = {
-    cliente: document.getElementById('e-cliente').value,
-    direccion: document.getElementById('e-dir').value,
+    clienteId: document.getElementById('e-cliente').value,
+    cliente: nombreDeCliente(document.getElementById('e-cliente').value),
+    direccion: document.getElementById('e-dir').value.trim(),
     monto: parseFloat(document.getElementById('e-monto').value) || 0,
     metodoPago: document.getElementById('e-pago').value,
     estatus: document.getElementById('e-estatus').value,
@@ -4702,8 +4738,11 @@ window.saveEntrega = async function() {
     creadoPor: currentUser.uid,
     createdAt: serverTimestamp()
   };
+  if (!obj.clienteId) return toast('Elige el cliente', 'error');
+  if (!obj.direccion) return toast('Escribe la dirección de entrega', 'error');
   try {
     await addDoc(collection(db, 'entregas'), obj);
+    ['e-cliente', 'e-dir', 'e-monto', 'e-notas'].forEach(id => { document.getElementById(id).value = ''; });
     closeModal('modal-entrega');
     toast('Entrega registrada ✅', 'success');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -4790,7 +4829,7 @@ window.cotToVenta = async function(id) {
       total: cot.total || 0,
       incluyeDatosFiscales: false,
       estado: "pendiente",
-      estatus: "pending",
+      estatus: "Pendiente",
       facturaURL: "",
       tieneFactura: false,
       notas: "Convertida de cotizacion COT-" + (cot.notaId || id),
@@ -4945,6 +4984,12 @@ window.filterTable = function(tableId, q) {
   rows.forEach(row => {
     row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
   });
+};
+
+// Fecha guardada de una venta o cotización, sin que se recorra un día por la zona horaria
+window.mayaFecha = function(valor, opciones) {
+  const dia = window.mayaDiaVenta ? window.mayaDiaVenta(valor) : '';
+  return new Date(dia ? dia + 'T12:00:00' : valor).toLocaleDateString('es-MX', opciones);
 };
 
 window.toast = function(msg, type = 'info') {
@@ -5577,7 +5622,7 @@ window.cargarDocumentos = async function() {
         fact: v.facturaURL || '',
         obs: v.observaciones || '',
         items: v.items || [],
-        fecha: v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : new Date().toLocaleDateString('es-MX')
+        fecha: v.fecha ? window.mayaFecha(v.fecha) : new Date().toLocaleDateString('es-MX')
       };
     });
 
@@ -5852,7 +5897,7 @@ window.abrirDetallesVenta = async function(ventaId) {
 
     const v = ventaSnap.data();
     // Mismo día con el que se capturó (las del gestor se guardan a medianoche UTC; en CDMX eso es el día anterior)
-    const fecha = v.fecha && window.mayaDiaVenta ? window.mayaDiaVenta(v.fecha).split('-').reverse().join('/') : (v.fecha ? new Date(v.fecha).toLocaleDateString('es-MX') : '—');
+    const fecha = v.fecha && window.mayaDiaVenta ? window.mayaDiaVenta(v.fecha).split('-').reverse().join('/') : (v.fecha ? window.mayaFecha(v.fecha) : '—');
 
     // Generar HTML de detalles
     let html = `
@@ -8125,7 +8170,7 @@ function envios_abrirForm() {
   envios_editando = null;
   envios_puertas = [];
   document.getElementById('envios-modal-title').textContent = 'Nuevo Envío';
-  document.getElementById('envios-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('envios-fecha').value = new Date().toLocaleDateString('en-CA');
   document.getElementById('envios-vendedor').value = '';
   document.getElementById('envios-destinatario').value = '';
   document.getElementById('envios-guia').value = '';
@@ -8174,16 +8219,14 @@ async function envios_guardar() {
   try {
     const data = {
       fecha, vendedor, destinatario, guia, paqueteria,
-      costo, notas, puertas: envios_puertas,
-      estado: 'PENDIENTE',
-      createdAt: new Date()
+      costo, notas, puertas: envios_puertas
     };
 
     if (envios_editando) {
       await updateDoc(doc(db, 'envios', envios_editando), data);
       window.toast('✅ Envío actualizado', 'success');
     } else {
-      await addDoc(collection(db, 'envios'), data);
+      await addDoc(collection(db, 'envios'), { ...data, estado: 'PENDIENTE', createdAt: new Date() });
       window.toast('✅ Envío creado', 'success');
     }
 
@@ -8195,20 +8238,22 @@ async function envios_guardar() {
 }
 
 // Eliminar envío
-function envios_eliminar() {
+async function envios_eliminar() {
   if (!envios_editando) return;
-  envios_eliminarDirect(envios_editando);
-  closeModal('modal-envios-form');
+  if (await envios_eliminarDirect(envios_editando)) closeModal('modal-envios-form');
 }
 
 // Eliminar directo (sin modal)
 async function envios_eliminarDirect(id) {
+  if (!confirm('¿Eliminar este envío? No se puede deshacer.')) return false;
   try {
     await deleteDoc(doc(db, 'envios', id));
     window.toast('✅ Envío eliminado', 'success');
     envios_cargar();
+    return true;
   } catch(e) {
     window.toast('Error: ' + e.message, 'error');
+    return false;
   }
 }
 
@@ -8256,7 +8301,7 @@ window.savePrestamo = async function() {
     await addDoc(collection(db, 'finanzas_prestamos'), {
       nombre, monto, fecha, plazo, estatus,
       createdAt: serverTimestamp(),
-      usuario: currentUser?.uid || 'admin'
+      usuario: window.auth.currentUser?.uid || 'admin'
     });
     window.toast('✅ Préstamo guardado', 'success');
     closeModal('modal-prestamo');
@@ -8284,7 +8329,7 @@ window.savePago = async function() {
     await addDoc(collection(db, 'finanzas_pagos'), {
       concepto, monto, tipo, fecha,
       createdAt: serverTimestamp(),
-      usuario: currentUser?.uid || 'admin'
+      usuario: window.auth.currentUser?.uid || 'admin'
     });
     window.toast('✅ Pago guardado', 'success');
     closeModal('modal-pago');
@@ -8477,7 +8522,7 @@ window.renderNotasFacturas = async function(ventas) {
       <td style="text-align:center">${v.tipoEntrega === 'local' ? '🏠 Local' : v.tipoEntrega === 'paqueteria' ? '📦 Envío' : '🏪 Recolección'}</td>
       <td>${fmtDate(v.createdAt)}</td>
       <td style="text-align:center">
-        ${v.tieneFactura ? '<span class="badge badge-g" style="background:#27AE60;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">✓ Facturada</span>' : '<span class="badge badge-o" style="background:#f39c12;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">Pendiente</span>'}
+        ${(v.tieneFactura || v.facturaId || v.facturaURL) ? '<span class="badge badge-g" style="background:#27AE60;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">✓ Facturada</span>' : '<span class="badge badge-o" style="background:#f39c12;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">Pendiente</span>'}
       </td>
     </tr>
   `;
@@ -8602,7 +8647,7 @@ window.generarNotaPDF = async function(venta, opciones) {
     doc.setFontSize(8); doc.setFont(undefined, 'normal');
     doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg + 38, 27);
     // fecha y numero
-    var fechaStr = venta.fecha ? new Date(venta.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    var fechaStr = venta.fecha ? window.mayaFecha(venta.fecha,{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: ' + fechaStr, pageW - mg - 44, 18);
@@ -8864,7 +8909,7 @@ window.descargarNota = async function(venta) {
     doc.setFont(undefined, 'normal');
     doc.setTextColor(0, 0, 0);
 
-    const fecha = new Date(venta.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+    const fecha = window.mayaFecha(venta.fecha, { day: '2-digit', month: 'long', year: 'numeric' });
     const col2 = W / 2 + 5;
 
     doc.text(`Nota #: ${venta.notaId}`, M, y);
@@ -9075,7 +9120,7 @@ window.generarCotizacionPDFById = function(id) {
     doc.setTextColor(tealCl[0],tealCl[1],tealCl[2]);
     doc.setFontSize(8); doc.setFont(undefined,'normal');
     doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg+38, 27);
-    var fechaStr = cot.fecha ? new Date(cot.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    var fechaStr = cot.fecha ? window.mayaFecha(cot.fecha,{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: '+fechaStr, pageW-mg-44, 18);
@@ -10572,5 +10617,6 @@ window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
 <script type="module" src="/diseno/avisos.js"></script>
 <script type="module" src="/diseno/presencia.js"></script>
 <script type="module" src="/diseno/compras.js"></script>
+<script type="module" src="/diseno/interaccion.js"></script>
 </body>
 </html>
