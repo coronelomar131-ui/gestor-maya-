@@ -1,0 +1,23 @@
+/* Corregir registros (edicion.js) y pagos en Cobranza (operacion.js) */
+.ed-aviso { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; font-size: 13px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); color: var(--m-niebla, #e8f0f8); }
+.ed-btn { width: auto; }
+/* en el listado de notas cabe el quinto botón */
+@media (min-width: 641px) {
+  .ne-acc:has(.ed-btn) { grid-template-columns: repeat(5, 38px); }
+}
+
+/* Cobranza: botones de cada factura y lista de pagos */
+.m-op-botones { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+/* maya.css deja 5 columnas a las filas con etiqueta: en Cobranza son 4 y el saldo quedaba aplastado */
+#mod-cobranza .m-op-check.estatica { grid-template-columns: 90px minmax(0, 1fr) auto auto; }
+.m-pagos-fila { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--m-linea); }
+.m-pagos-fila div { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.m-pagos-fila small { color: var(--m-texto-3); }
+.m-pagos-fila .btn { width: auto; flex: none; }
+.m-pagos-fila.anulado strong { text-decoration: line-through; color: var(--m-texto-3); }
+.m-pagadas summary { cursor: pointer; padding: 12px 4px; font-weight: 600; color: var(--m-texto-2); }
+@media (max-width: 640px) {
+  #mod-cobranza .m-op-check.estatica { grid-template-columns: minmax(0, 1fr); }
+  #mod-cobranza .m-op-check.estatica > * { grid-column: 1 / -1; }
+  #mod-cobranza .m-op-check.estatica .m-op-botones { justify-content: flex-start; }
+}

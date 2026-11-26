@@ -898,6 +898,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <!-- Capa de diseño (vidrio, menú personalizable, animaciones): public/diseno/ -->
 <link rel="stylesheet" href="/diseno/maya.css">
 <link rel="stylesheet" href="/diseno/ajustes-pantalla.css">
+<link rel="stylesheet" href="/diseno/inventario.css">
+<link rel="stylesheet" href="/diseno/edicion.css">
 <script defer src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
@@ -907,6 +909,19 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <script src="/diseno/roles.js"></script>
 <script src="/diseno/sat.js"></script>
 <script src="/diseno/alertas.js"></script>
+<script>
+// Texto capturado por usuarios: se escapa antes de ponerlo como HTML
+function escHTML(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; });
+}
+// Copia de un registro con todos sus textos escapados. Solo para pintar HTML: nunca para guardar ni comparar
+function escCopia(v) {
+  if (typeof v === 'string') return escHTML(v);
+  if (Array.isArray(v)) return v.map(function(x) { return escCopia(x); });
+  if (v && Object.getPrototypeOf(v) === Object.prototype) { var o = {}; for (var k in v) o[k] = escCopia(v[k]); return o; }
+  return v;
+}
+</script>
 </head>
 <body>
 <script>
@@ -2702,6 +2717,7 @@ async function loadUserProfile(uid) {
         const admins = await getDocs(query(collection(db, 'usuarios'), where('rol', '==', 'admin')));
         if (!admins.empty) return 'sin-perfil';
       }
+      await currentUser.getIdToken(true); // una cuenta dada de baja no puede recrear su perfil de admin
       await addDoc(collection(db, 'usuarios'), { uid, nombre: currentUser.email, email: currentUser.email, rol: 'admin', createdAt: serverTimestamp() });
       currentRole = 'admin';
       document.getElementById('user-name-display').textContent = currentUser.email;
@@ -2746,7 +2762,8 @@ window.olvidePassword = async function() {
 };
 
 // Admin: enviar link de restablecimiento a un usuario
-window.resetPasswordUsuario = async function(email) {
+window.resetPasswordUsuario = async function(id) {
+  const email = (data.usuarios.find(x => x.id === id) || {}).email;
   if (!email) { toast('Este usuario no tiene correo registrado', 'error'); return; }
   if (!confirm('¿Enviar link de recuperación de contraseña a ' + email + '?')) return;
   try {
@@ -2904,7 +2921,7 @@ function renderVentas() {
     body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">💰</div><div class="empty-title">Sin ventas registradas</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.ventas.map(v => {
+  body.innerHTML = data.ventas.map(escCopia).map(v => {
     const estatus = v.estatus || 'Pendiente';
     return `
     <tr>
@@ -2943,6 +2960,8 @@ window.cambiarEstatusVenta = async function(ventaId, nuevoEstatus) {
 };
 
 function renderProductos() {
+  // La vista nueva la dibuja /diseno/inventario.js; la tabla vieja solo queda de respaldo
+  if (window.mayaInventario) return window.mayaInventario.refrescar();
   const body = document.getElementById('inv-body');
   const rol = window.currentRole || 'vendedor';
   if (!data.productos.length) {
@@ -2951,15 +2970,15 @@ function renderProductos() {
   }
   body.innerHTML = data.productos.map(p => `
     <tr>
-      <td><code style="color:#3BBCD4;font-size:12px">${p.codigo || '—'}</code></td>
-      <td>${p.descripcion || '—'}</td>
-      <td>${p.marca || '—'}</td>
+      <td><code style="color:#3BBCD4;font-size:12px">${vtEsc(p.codigo) || '—'}</code></td>
+      <td>${vtEsc(p.descripcion) || '—'}</td>
+      <td>${vtEsc(p.marca) || '—'}</td>
       <td style="color:#4ade80;font-weight:600">${fmtMoney(p.precio)}</td>
       <td>
         <span style="color:${parseInt(p.stock) <= parseInt(p.stockMin||0) ? '#ff6b6b' : '#f0f4f8'};font-weight:600">${p.stock || 0}</span>
         ${parseInt(p.stock) <= parseInt(p.stockMin||0) ? '<span style="color:#ff6b6b;font-size:10px;margin-left:4px">⚠️ BAJO</span>' : ''}
       </td>
-      <td><span class="badge badge-${(p.clase||'B').toLowerCase()}">${p.clase || 'B'}</span></td>
+      <td><span class="badge badge-${vtEsc(String(p.clase||'B').toLowerCase())}">${vtEsc(p.clase || 'B')}</span></td>
       <td>${['admin', 'almacen'].includes(rol) ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('productos','${p.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
@@ -2972,7 +2991,7 @@ function renderClientes() {
     body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin clientes aún</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.clientes.map(c => `
+  body.innerHTML = data.clientes.map(escCopia).map(c => `
     <tr>
       <td style="font-weight:600;color:#3BBCD4">${c.codigoCliente || c.codigo || '—'}</td>
       <td style="font-weight:600">${c.razonSocial || c.nombre || '—'}</td>
@@ -3003,7 +3022,7 @@ function renderCotizaciones() {
     if (notasBody) notasBody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Sin notas de cotización</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.cotizaciones.map(c => {
+  body.innerHTML = data.cotizaciones.map(escCopia).map(c => {
     const piezasCount = c.items ? c.items.length : (c.descripcion ? 1 : 0);
     const fechaStr = c.fecha ? window.mayaFecha(c.fecha) : '—';
     const cJson = encodeURIComponent(JSON.stringify(c));
@@ -3025,7 +3044,7 @@ function renderCotizaciones() {
   }).join('');
 
   if (notasBody) {
-    notasBody.innerHTML = data.cotizaciones.map(c => {
+    notasBody.innerHTML = data.cotizaciones.map(escCopia).map(c => {
       const siniestros = c.siniestros || (c.items ? c.items.map(i=>i.numSiniestro||'').filter(s=>s).join(' | ') : '');
       const fechaStr = c.fecha ? window.mayaFecha(c.fecha) : '—';
       return `<tr>
@@ -3047,7 +3066,7 @@ function renderProveedores() {
     body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-title">Sin proveedores</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.proveedores.map(p => `
+  body.innerHTML = data.proveedores.map(escCopia).map(p => `
     <tr>
       <td style="font-weight:600;color:#f0f4f8">${p.nombre || '—'}</td>
       <td>${p.contacto || '—'}</td>
@@ -3066,7 +3085,7 @@ function renderEntregas() {
     body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🚚</div><div class="empty-title">Sin entregas registradas</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.entregas.map(e => `
+  body.innerHTML = data.entregas.map(escCopia).map(e => `
     <tr>
       <td><code style="color:#3BBCD4;font-size:12px">${folio('E-', e.id)}</code></td>
       <td>${e.cliente || '—'}</td>
@@ -3093,14 +3112,14 @@ function renderUsuarios() {
     body.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">⚙️</div><div class="empty-title">Sin usuarios adicionales</div></div></td></tr>';
     return;
   }
-  body.innerHTML = data.usuarios.map(u => `
+  body.innerHTML = data.usuarios.map(escCopia).map(u => `
     <tr>
       <td style="font-weight:600">${u.nombre || '—'}</td>
       <td>${u.email || '—'}</td>
       <td>${rol === 'admin' && window.mayaRoles
         ? `<select class="m-rol-sel" onchange="cambiarRolUsuario('${u.id}', this.value, this)" title="${(window.mayaRoles.ROLES[u.rol] || {}).descripcion || ''}">${window.mayaRoles.LISTA.map(r => `<option value="${r}"${r === u.rol ? ' selected' : ''}>${window.mayaRoles.ROLES[r].nombre}</option>`).join('')}</select>`
         : `<span class="badge badge-b">${(window.mayaRoles && window.mayaRoles.ROLES[u.rol] ? window.mayaRoles.ROLES[u.rol].nombre : u.rol) || '—'}</span>`}</td>
-      <td style="white-space:nowrap">${rol === 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="resetPasswordUsuario('${u.email || ''}')" title="Enviar link para restablecer contraseña">🔑</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
+      <td style="white-space:nowrap">${rol === 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="resetPasswordUsuario('${u.id}')" title="Enviar link para restablecer contraseña">🔑</button> <button class="btn btn-danger btn-sm" onclick="deleteItem('usuarios','${u.id}')">🗑</button>` : ''}</td>
     </tr>
   `).join('');
   if (window.mayaPintarPresencia) window.mayaPintarPresencia();
@@ -3129,7 +3148,7 @@ function updateDashboard(envios = []) {
   });
   const totalMes = monthVentas.reduce((s, v) => s + (parseFloat(v.total) || 0), 0);
   document.getElementById('dash-ventas').textContent = fmtMoney(totalMes);
-  document.getElementById('dash-productos').textContent = data.productos.length;
+  document.getElementById('dash-productos').textContent = data.productos.filter(p => !p.archivado).length;
   document.getElementById('dash-clientes').textContent = data.clientes.length;
   document.getElementById('dash-entregas').textContent = data.entregas.filter(e => e.estatus === 'pending').length;
 
@@ -3137,7 +3156,7 @@ function updateDashboard(envios = []) {
   const vEl = document.getElementById('dash-ventas-list');
   const last5 = data.ventas.slice(0, 5);
   if (last5.length) {
-    vEl.innerHTML = `<table style="width:100%"><tbody>${last5.map(v => `
+    vEl.innerHTML = `<table style="width:100%"><tbody>${last5.map(escCopia).map(v => `
       <tr>
         <td style="padding:10px 16px;font-size:13px;color:#c5d0dd">${v.cliente || v.clienteNombre || '—'}</td>
         <td style="padding:10px 16px;font-size:13px;color:#4ade80;font-weight:600;text-align:right">${fmtMoney(v.total)}</td>
@@ -3152,7 +3171,7 @@ function updateDashboard(envios = []) {
     return d.toDateString() === now.toDateString();
   });
   if (todayEnt.length) {
-    eEl.innerHTML = `<table style="width:100%"><tbody>${todayEnt.map(e => `
+    eEl.innerHTML = `<table style="width:100%"><tbody>${todayEnt.map(escCopia).map(e => `
       <tr>
         <td style="padding:10px 16px;font-size:13px;color:#c5d0dd">${e.cliente || '—'}</td>
         <td style="padding:10px 16px;font-size:13px;text-align:right"><span class="badge badge-${e.estatus}">${e.estatus === 'pending' ? 'Pendiente' : e.estatus === 'delivered' ? 'Entregado' : 'Cancelado'}</span></td>
@@ -3184,7 +3203,7 @@ function updateClienteSelects() {
     // Intentar múltiples nombres de campo (robustez)
     const nombre = c.razonSocial || c.nombre || c.razón_social || c.razon_social || 'Sin nombre';
     const codigo = c.codigoCliente || c.codigo || '?';
-    return `<option value="${c.id}">${codigo} - ${nombre}</option>`;
+    return `<option value="${c.id}">${escHTML(codigo)} - ${escHTML(nombre)}</option>`;
   }).join('');
   ['v-cliente', 'cot-cliente', 'e-cliente'].forEach(id => {
     const el = document.getElementById(id);
@@ -4997,7 +5016,8 @@ window.toast = function(msg, type = 'info') {
   const t = document.createElement('div');
   t.className = 'toast ' + type;
   const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-  t.innerHTML = `<span>${icons[type]||''}</span><span>${msg}</span>`;
+  t.innerHTML = `<span>${icons[type]||''}</span><span></span>`;
+  t.lastChild.textContent = msg == null ? '' : msg;
   c.appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 3000);
 };
@@ -5150,7 +5170,7 @@ window.cargarProductosML = async function() {
       }
 
       if (data.error) {
-        container.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
+        container.innerHTML = `<p style="color:var(--red)">${escHTML(data.error)}</p>`;
         return;
       }
 
@@ -5191,7 +5211,14 @@ window.renderProductosMLGrid = function(items, syncInfo) {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:20px">
     `;
 
-  listaFinal.forEach(p => {
+  window._mlProductosVistos = listaFinal;
+  listaFinal.forEach(original => {
+      // Textos escapados; id y link se limpian porque van dentro de un onclick
+      const link = String(original.permalink || '');
+      const p = Object.assign(escCopia(Object.assign({}, original)), {
+        id: String(original.id || '').replace(/[^\w-]/g, ''),
+        permalink: /^https?:\/\/[^\s'"\\<>]+$/.test(link) ? escHTML(link) : ''
+      });
       const statusColor = p.status === 'active' ? (p.available_quantity > 0 ? '#3BBCD4' : '#ef4444') : (p.status === 'paused' ? '#f59e0b' : '#f87171');
       const statusText = p.status === 'active' ? (p.available_quantity > 0 ? 'Activo' : 'Sin stock') : (p.status === 'paused' ? 'Pausado' : p.status || 'Inactivo');
 
@@ -5220,7 +5247,7 @@ window.renderProductosMLGrid = function(items, syncInfo) {
 
           <div style="padding:15px">
             <div style="color:#1E4F7A;font-weight:700;font-size:1.1em;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:color 0.2s" onclick="abrirEnML('${p.permalink || '#'}')" onmouseover="this.style.color='#3BBCD4'" onmouseout="this.style.color='#1E4F7A'" title="Click para abrir en Mercado Libre">
-              ${p.title}
+              ${String(p.title || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
             </div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;padding:10px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">
@@ -5246,7 +5273,7 @@ window.renderProductosMLGrid = function(items, syncInfo) {
               font-weight:600;
               cursor:pointer;
               transition:background 0.2s;
-            " onmouseover="this.style.background='#1E4F7A'" onmouseout="this.style.background='#3BBCD4'" onclick="abrirSyncML('${p.id}','${p.title}',${p.price},${p.available_quantity})">
+            " onmouseover="this.style.background='#1E4F7A'" onmouseout="this.style.background='#3BBCD4'" onclick="abrirSyncML('${p.id}')">
               ⚙️ Sincronizar
             </button>
           </div>
@@ -5374,7 +5401,10 @@ window.abrirEnML = function(permalink) {
   window.open(permalink, '_blank');
 };
 
-window.abrirSyncML = function(itemId, title, price, quantity) {
+window.abrirSyncML = function(itemId) {
+  const p = (window._mlProductosVistos || []).find(x => x.id === itemId);
+  if (!p) return;
+  const title = p.title, price = p.price, quantity = p.available_quantity;
   const nuevoPrice = prompt(`Nuevo precio para "${title}":`, price);
   if (nuevoPrice === null) return;
 
@@ -5493,7 +5523,7 @@ window.cargarOrdenesML = async function() {
     document.getElementById('ml-ordenes-enviadas').textContent = enviadas;
     document.getElementById('ml-monto-total').textContent = '$' + montoTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
-    tbody.innerHTML = data.results.map(o => {
+    tbody.innerHTML = data.results.map(escCopia).map(o => {
       // Obtener color y icono según estado
       let statusColor = '#3BBCD4', statusIcon = '⏳', statusText = o.status || 'pending';
 
@@ -5630,7 +5660,7 @@ window.cargarDocumentos = async function() {
     mostrarNotasDocumentos(notasData);
   } catch (e) {
     console.error('❌ Error:', e);
-    box.innerHTML = '<div style="text-align:center;padding:40px;color:#ff6b6b">❌ Error: ' + e.message + '</div>';
+    box.innerHTML = '<div style="text-align:center;padding:40px;color:#ff6b6b">❌ Error: ' + escHTML(e.message) + '</div>';
   }
 };
 
@@ -5642,7 +5672,7 @@ function mostrarNotasDocumentos(lista) {
     return;
   }
 
-  box.innerHTML = lista.map(n => `
+  box.innerHTML = lista.map(escCopia).map(n => `
     <div onclick="docAbrirPreview('${n.id}')" style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2);cursor:pointer;transition:all 0.2s">
       <div style="color:#3BBCD4;font-weight:700;font-size:15px;margin-bottom:8px">
         📄 ${n.cli} — Nota ${n.n}
@@ -5656,7 +5686,7 @@ function mostrarNotasDocumentos(lista) {
 }
 
 window.docAbrirPreview = async function(id) {
-  const nota = notasData.find(n => n.id === id);
+  const nota = escCopia(notasData.find(n => n.id === id)); // solo para pintar
   if (!nota) return;
 
   // Generar tabla de piezas/items
@@ -5746,7 +5776,7 @@ window.docAbrirPreview = async function(id) {
         <div style="display:flex;gap:10px;margin-top:20px">
           <button onclick="descargarNotaPorId('${id}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#3BBCD4;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">⬇️ Descargar</button>
           <button onclick="descargarNotaPorId('${id}',{sinPrecio:true});this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#1E8FA5;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">🙈 Sin precios</button>
-          <button onclick="abrirEditarNota('${id}','${nota.n}','${nota.cli.replace(/'/g,"\\'")}','${nota.st.replace(/'/g,"\\'")}','${nota.obs.replace(/'/g,"\\'").replace(/\n/g,"\\n")}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#8B5CF6;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">✏️ Editar</button>
+          <button onclick="abrirEditarNota('${id}');this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#8B5CF6;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">✏️ Editar</button>
           <button onclick="this.closest('div').parentElement.parentElement.remove()" style="flex:1;background:#555;color:white;border:none;padding:10px;border-radius:6px;cursor:pointer;font-size:13px">✕ Cerrar</button>
         </div>
       </div>
@@ -5827,7 +5857,7 @@ window.mostrarResultadosBusqueda = function(resultados) {
     <div style="background:rgba(59,188,212,0.1);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--blue);font-weight:600">
       ✅ Se encontraron ${resultados.length} venta${resultados.length !== 1 ? 's' : ''}
     </div>
-  ` + resultados.map(venta => {
+  ` + resultados.map(escCopia).map(venta => {
     // Generar HTML de los items
     let itemsHTML = '';
     if (venta.items && venta.items.length > 0) {
@@ -5895,7 +5925,7 @@ window.abrirDetallesVenta = async function(ventaId) {
       return;
     }
 
-    const v = ventaSnap.data();
+    const v = escCopia(ventaSnap.data()); // solo para pintar
     // Mismo día con el que se capturó (las del gestor se guardan a medianoche UTC; en CDMX eso es el día anterior)
     const fecha = v.fecha && window.mayaDiaVenta ? window.mayaDiaVenta(v.fecha).split('-').reverse().join('/') : (v.fecha ? window.mayaFecha(v.fecha) : '—');
 
@@ -5984,7 +6014,7 @@ window.abrirDetallesVenta = async function(ventaId) {
 
       ${(() => {
         // Registro de venta: proveedor, costo total (pieza + guía + paquetería + logística) y utilidad para comisiones
-        const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const esc = t => String(t == null ? '' : t); // v ya viene escapado
         const $ = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const its = (v.items || []).filter(it => it.costo != null || it.proveedor);
         const extra = (v.contacto ? '<div><span style="color:#999">Contacto:</span> ' + esc(v.contacto) + '</div>' : '') +
@@ -5993,7 +6023,7 @@ window.abrirDetallesVenta = async function(ventaId) {
         const corr = Array.isArray(v.correcciones) ? v.correcciones : [];
         const historial = corr.length ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(59,188,212,0.3)"><div style="color:#999;margin-bottom:6px">✏️ Correcciones</div>' +
           corr.slice(-5).reverse().map(c => '<div style="padding:3px 0"><span style="color:#999">' + esc(new Date(c.cuando).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'short', timeStyle: 'short' })) + ' · ' + esc(c.por) + ':</span> ' + esc((c.cambios || []).join(' · ')) + '</div>').join('') +
-          (window.mayaNoCorregible && !window.mayaNoCorregible(v) ? '<button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="deshacerCorreccionVenta(\'' + ventaId + '\')">↩️ Deshacer la última corrección</button>' : '') + '</div>' : '';
+          (window.mayaNoCorregible && !window.mayaNoCorregible(ventaSnap.data()) ? '<button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="deshacerCorreccionVenta(\'' + ventaId + '\')">↩️ Deshacer la última corrección</button>' : '') + '</div>' : '';
         if (v.utilidad == null && !its.length) {
           return '<div style="background:var(--surface2);padding:12px 15px;border-radius:8px;margin-bottom:20px;font-size:12px;color:#F59E0B">' + extra +
             '⚠️ Esta venta no tiene costo capturado: no se puede calcular su utilidad para comisiones. Usa ✏️ Corregir para agregarlo.' + historial + '</div>';
@@ -6099,7 +6129,10 @@ window.abrirDetallesVenta = async function(ventaId) {
 };
 
 // Abrir modal para editar nota
-window.abrirEditarNota = function(ventaId, nota, cliente, estatus, observaciones) {
+window.abrirEditarNota = function(ventaId) {
+  const n = notasData.find(x => x.id === ventaId);
+  if (!n) return;
+  const cliente = n.cli, estatus = n.st, observaciones = n.obs;
   document.getElementById('editar-nota-id').value = ventaId;
   document.getElementById('editar-nota-cliente').value = cliente;
   document.getElementById('editar-nota-observaciones').value = observaciones || '';
@@ -6451,7 +6484,7 @@ async function sincronizarInventarioMLInterno(silent) {
     const data = await response.json();
 
     if (data.error) {
-      if (!silent && statusDiv) statusDiv.innerHTML = `❌ Error: ${data.error}`;
+      if (!silent && statusDiv) statusDiv.innerHTML = `❌ Error: ${escHTML(data.error)}`;
       return;
     }
 
@@ -6578,7 +6611,7 @@ async function sincronizarInventarioMLInterno(silent) {
     console.error('Error sync ML:', error);
     if (!silent) {
       window.toast('❌ Error: ' + error.message, 'error');
-      if (statusDiv) statusDiv.innerHTML = `❌ Error: ${error.message}`;
+      if (statusDiv) statusDiv.innerHTML = `❌ Error: ${escHTML(error.message)}`;
     }
   }
 }
@@ -6707,7 +6740,7 @@ function updateReportes() {
       repCli.innerHTML = topCli.map(([nombre,d],i) => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
           <span style="width:22px;height:22px;background:${i<3?"#1a3a54":"#374151"};color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
-          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nombre}</div><div style="font-size:11px;color:var(--gray)">${d.ventas} venta${d.ventas!==1?"s":""}</div></div>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHTML(nombre)}</div><div style="font-size:11px;color:var(--gray)">${d.ventas} venta${d.ventas!==1?"s":""}</div></div>
           <span style="font-size:13px;font-weight:700;color:#10b981">${d.total.toLocaleString("es-MX",{style:"currency",currency:"MXN"})}</span>
         </div>`).join("");
     }
@@ -6729,7 +6762,7 @@ function updateReportes() {
       repVend.innerHTML = topVend.map(([nombre,d],i) => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
           <span style="width:22px;height:22px;background:${i===0?"#d97706":i===1?"#9ca3af":i===2?"#92400e":"#374151"};color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
-          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${nombre}</div><div style="font-size:11px;color:var(--gray)">${d.ventas} venta${d.ventas!==1?"s":""}</div></div>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${escHTML(nombre)}</div><div style="font-size:11px;color:var(--gray)">${d.ventas} venta${d.ventas!==1?"s":""}</div></div>
           <span style="font-size:13px;font-weight:700;color:#3b82f6">${d.total.toLocaleString("es-MX",{style:"currency",currency:"MXN"})}</span>
         </div>`).join("");
     }
@@ -6760,7 +6793,7 @@ function updateReportes() {
       repPiezas.innerHTML = topPiezas.map(([pieza,d],i) => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
           <span style="width:22px;height:22px;background:#1e3a5f;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
-          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pieza}</div><div style="font-size:11px;color:var(--gray)">${d.qty} vez${d.qty!==1?"es":""}</div></div>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHTML(pieza)}</div><div style="font-size:11px;color:var(--gray)">${d.qty} vez${d.qty!==1?"es":""}</div></div>
           <span style="font-size:13px;font-weight:700;color:#8b5cf6">${d.total.toLocaleString("es-MX",{style:"currency",currency:"MXN"})}</span>
         </div>`).join("");
     }
@@ -6916,7 +6949,7 @@ window.filtrarVentasVendedor = function() {
   const fmtMXN = n => n.toLocaleString("es-MX", { style:"currency", currency:"MXN" });
   const fmtD   = v => { const d = parseFecha(v); return d.toLocaleDateString("es-MX"); };
 
-  const rows = ventas.map((v, i) => {
+  const rows = ventas.map(escCopia).map((v, i) => {
     const piezas   = v.items ? v.items.map(it => it.pedido || it.descripcion || "").filter(Boolean).join(", ") : (v.descripcion || "-");
     const siniestro = v.siniestros || (v.items ? v.items.map(it => it.numSiniestro||"").filter(Boolean).join(" | ") : "") || v.numSiniestro || "-";
     const subtotal  = v.subtotal != null ? fmtMXN(v.subtotal)  : "-";
@@ -6960,7 +6993,7 @@ window.filtrarVentasVendedor = function() {
         <tbody>${rows}</tbody>
         <tfoot>
           <tr style="background:rgba(26,58,84,0.5);font-weight:700">
-            <td colspan="10" style="padding:10px;font-size:13px">${ventas.length} venta${ventas.length!==1?"s":""} ${vendedor?"de "+vendedor:"(todos los vendedores)"}</td>
+            <td colspan="10" style="padding:10px;font-size:13px">${ventas.length} venta${ventas.length!==1?"s":""} ${vendedor?"de "+escHTML(vendedor):"(todos los vendedores)"}</td>
             <td style="padding:10px;text-align:right;color:#10b981;font-size:14px">${fmtMXN(totalMonto)}</td>
           </tr>
         </tfoot>
@@ -7602,7 +7635,8 @@ window.showImportPreview = async function(clientes, totalInFile) {
           <tbody>
   `;
 
-  clientes.slice(0, 5).forEach(c => {
+  window._clientesPorImportar = clientes;
+  clientes.slice(0, 5).map(escCopia).forEach(c => {
     previewHTML += `
       <tr style="border-bottom:1px solid #ddd">
         <td style="padding:8px">${c.codigoCliente}</td>
@@ -7619,7 +7653,7 @@ window.showImportPreview = async function(clientes, totalInFile) {
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
         <button class="btn btn-secondary btn-sm" onclick="this.closest('div').parentElement.parentElement.remove()">❌ Cancelar</button>
-        <button class="btn btn-primary btn-sm" onclick="confirmImportClientes(${JSON.stringify(clientes).replace(/"/g, '&quot;')}, this.closest('div').parentElement.parentElement)">✅ Confirmar</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmImportClientes(window._clientesPorImportar, this.closest('div').parentElement.parentElement)">✅ Confirmar</button>
       </div>
     </div>
   `;
@@ -8080,7 +8114,7 @@ function envios_renderizar() {
     body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray)">📦 Sin envíos aún</td></tr>';
     return;
   }
-  body.innerHTML = envios_all.map(e => `
+  body.innerHTML = envios_all.map(escCopia).map(e => `
     <tr style="border-bottom:1px solid rgba(59,188,212,0.1)">
       <td style="padding:12px">${e.fecha || '—'}</td>
       <td style="padding:12px">${e.vendedor || '—'}</td>
@@ -8111,7 +8145,7 @@ function envios_renderizarPuertas() {
     tabla.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:15px;color:var(--gray)">Sin puertas agregadas</td></tr>';
     return;
   }
-  tabla.innerHTML = envios_puertas.map((p, i) => {
+  tabla.innerHTML = envios_puertas.map(escCopia).map((p, i) => {
     const lado = p.lado === 'Izquierda' ? '👈 Izquierda' : p.lado === 'Derecha' ? 'Derecha 👉' : '—';
     const posicion = p.posicion === 'Delantera' ? '🚗 Delantera' : p.posicion === 'Trasera' ? '🚗 Trasera' : '—';
     return `<tr style="border-bottom:1px solid rgba(59,188,212,0.1)"><td style="padding:8px">${p.marca || '—'}</td><td style="padding:8px">${p.modelo || '—'}</td><td style="padding:8px;text-align:center">${p.año || '—'}</td><td style="padding:8px;text-align:center;font-weight:600">${lado}</td><td style="padding:8px;text-align:center">${posicion}</td><td style="padding:8px;text-align:center"><button onclick="envios_eliminarPuerta(${i})" style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1em">🗑</button></td></tr>`;
@@ -8381,7 +8415,7 @@ function renderPrestamos(prestamos) {
     body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin préstamos registrados</div></div></td></tr>';
     return;
   }
-  body.innerHTML = prestamos.map(p => `
+  body.innerHTML = prestamos.map(escCopia).map(p => `
     <tr>
       <td>${p.nombre || '—'}</td>
       <td>$${(p.monto || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
@@ -8400,7 +8434,7 @@ function renderPagos(pagos) {
     body.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Sin pagos registrados</div></div></td></tr>';
     return;
   }
-  body.innerHTML = pagos.map(p => `
+  body.innerHTML = pagos.map(escCopia).map(p => `
     <tr>
       <td>${p.concepto || '—'}</td>
       <td>$${(p.monto || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
@@ -8509,15 +8543,15 @@ window.renderNotasFacturas = async function(ventas) {
     return `
     <tr>
       <td style="font-weight:600;color:#3BBCD4">
-        ${v.notaNumero}
+        ${escHTML(v.notaNumero)}
         <button style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;padding:0;margin-left:6px" onclick="descargarNotaPorId('${v.id}')" title="Descargar nota">⬇️</button>
         <button style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;padding:0;margin-left:6px" onclick="descargarNotaPorId('${v.id}',{sinPrecio:${!window.ventaSinPrecioPorDefecto(v)}})" title="${window.ventaSinPrecioPorDefecto(v) ? 'Descargar la nota CON precios' : 'Descargar la nota SIN precios'}">${window.ventaSinPrecioPorDefecto(v) ? '💲' : '🙈'}</button>
       </td>
       <td style="text-align:center">
-        ${v.facturaURL ? `<button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="descargarFactura('${v.facturaURL}','${v.notaId || 'factura'}.pdf')">📄 Ver Factura</button>` : `<button class="btn btn-sm" style="background:#f39c12;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="abrirUploadFactura('${v.id}','${v.notaId || 'nota'}')">📎 Subir</button>`}
+        ${v.facturaURL ? `<button class="btn btn-sm" style="background:#27AE60;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="descargarFacturaVenta('${v.id}')">📄 Ver Factura</button>` : `<button class="btn btn-sm" style="background:#f39c12;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.85em" onclick="abrirUploadFactura('${v.id}')">📎 Subir</button>`}
       </td>
-      <td>${v.clienteNombre || v.cliente || '—'}</td>
-      <td>${siniestro || '—'}</td>
+      <td>${escHTML(v.clienteNombre || v.cliente || '—')}</td>
+      <td>${escHTML(siniestro || '—')}</td>
       <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
       <td style="text-align:center">${v.tipoEntrega === 'local' ? '🏠 Local' : v.tipoEntrega === 'paqueteria' ? '📦 Envío' : '🏪 Recolección'}</td>
       <td>${fmtDate(v.createdAt)}</td>
@@ -8528,6 +8562,11 @@ window.renderNotasFacturas = async function(ventas) {
   `;
   }).join('');
 }
+
+window.descargarFacturaVenta = function(id) {
+  const v = notasFacturasActuales.find(x => x.id === id);
+  if (v) window.descargarFactura(v.facturaURL, (v.notaId || 'factura') + '.pdf');
+};
 
 window.filterNotasFacturas = function(tipo) {
   // Los filtros se actualizarán con renderNotasFacturas
@@ -8647,7 +8686,7 @@ window.generarNotaPDF = async function(venta, opciones) {
     doc.setFontSize(8); doc.setFont(undefined, 'normal');
     doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg + 38, 27);
     // fecha y numero
-    var fechaStr = venta.fecha ? window.mayaFecha(venta.fecha,{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    var fechaStr = venta.fecha ? (window.mayaFecha ? window.mayaFecha(venta.fecha,{day:'numeric',month:'long',year:'numeric'}) : new Date(venta.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0], blanco[1], blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: ' + fechaStr, pageW - mg - 44, 18);
@@ -9120,7 +9159,7 @@ window.generarCotizacionPDFById = function(id) {
     doc.setTextColor(tealCl[0],tealCl[1],tealCl[2]);
     doc.setFontSize(8); doc.setFont(undefined,'normal');
     doc.text('maya-autopartes.myshopify.com  •  CDMX, México', mg+38, 27);
-    var fechaStr = cot.fecha ? window.mayaFecha(cot.fecha,{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+    var fechaStr = cot.fecha ? (window.mayaFecha ? window.mayaFecha(cot.fecha,{day:'numeric',month:'long',year:'numeric'}) : new Date(cot.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})) : new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.setFontSize(9); doc.setFont(undefined,'normal');
     doc.text('Fecha: '+fechaStr, pageW-mg-44, 18);
@@ -10609,6 +10648,7 @@ window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
   </div>
 </div>
 
+<script type="module" src="/diseno/seguridad.js"></script>
 <script type="module" src="/diseno/maya.js"></script>
 <script type="module" src="/diseno/buzon.js"></script>
 <script type="module" src="/diseno/pepito-chat.js"></script>
@@ -10617,6 +10657,8 @@ window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
 <script type="module" src="/diseno/avisos.js"></script>
 <script type="module" src="/diseno/presencia.js"></script>
 <script type="module" src="/diseno/compras.js"></script>
+<script type="module" src="/diseno/edicion.js"></script>
 <script type="module" src="/diseno/interaccion.js"></script>
+<script type="module" src="/diseno/inventario.js"></script>
 </body>
 </html>

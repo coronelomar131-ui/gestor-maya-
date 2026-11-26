@@ -1,5 +1,7 @@
 const axios = require('axios');
 const admin = require('firebase-admin');
+const acceso = require('../mcp/acceso');
+const roles = require('../public/diseno/roles.js');
 
 const ML_APP_ID = process.env.ML_APP_ID || '6541042886481524';
 const ML_SECRET_KEY = process.env.ML_SECRET_KEY;
@@ -87,6 +89,34 @@ function tokenErrorResponse(res, error) {
   return res.status(500).json({ error: error.response?.data?.message || error.message });
 }
 
+// Qué rol puede cada acción (roles.js). El inventario lo consulta todo el equipo: cada sesión ayuda a refrescar la
+// caché compartida ml_productos. Órdenes y cambios son solo de quien tiene el módulo Mercado Libre.
+const conModuloML = rol => roles.puedeModulo(rol, 'mercadolibre');
+const PERMISOS = {
+  inventory: rol => roles.PERMISOS_MCP.inventario_consulta.includes(rol),
+  ordenes: conModuloML,
+  productos: conModuloML,
+  sync: conModuloML
+};
+
+// Solo se mandan a ML los campos recibidos: cantidad entera >= 0 y precio > 0
+function validarCambio(quantity, price) {
+  const numero = v => (typeof v === 'number' || (typeof v === 'string' && v.trim()) ? Number(v) : NaN);
+  const cambios = {};
+  if (quantity !== undefined) {
+    const n = numero(quantity);
+    if (!Number.isInteger(n) || n < 0) return { error: 'La cantidad debe ser un número entero, de 0 en adelante' };
+    cambios.available_quantity = n;
+  }
+  if (price !== undefined) {
+    const n = numero(price);
+    if (!Number.isFinite(n) || n <= 0) return { error: 'El precio debe ser un número mayor a cero' };
+    cambios.price = n;
+  }
+  if (!Object.keys(cambios).length) return { error: 'No hay ningún cambio que enviar' };
+  return { cambios };
+}
+
 module.exports = async function handler(req, res) {
   try {
     // Notificaciones de Mercado Libre (URL de callbacks de la app, tema orders_v2): hay que contestar 200 rápido
@@ -139,6 +169,15 @@ module.exports = async function handler(req, res) {
         });
       }
     }
+
+    // ── De aquí en adelante se necesita sesión del gestor y un rol con permiso ──
+    const usuario = await acceso.porToken(req);
+    if (!usuario) return res.status(401).json({ error: 'Inicia sesión de nuevo' });
+    if (Object.prototype.hasOwnProperty.call(PERMISOS, action) && !PERMISOS[action](usuario.rol)) {
+      return res.status(403).json({ error: 'Tu rol no tiene permiso para esto en Mercado Libre' });
+    }
+    // Van dentro de direcciones de ML y de Firestore: solo con su formato
+    if (mlUserId && !/^\d{1,20}$/.test(String(mlUserId))) return res.status(400).json({ error: 'Usuario de Mercado Libre no válido' });
 
     // ── Full inventory with pagination (activos + pausados = todos los vendibles) ──
     if (action === 'inventory' && mlUserId) {
@@ -230,17 +269,26 @@ module.exports = async function handler(req, res) {
 
     // ── Sync product quantity/price to ML ──
     if (action === 'sync' && mlUserId && itemId) {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST' });
+      if (!/^[A-Za-z]{3}\d{1,20}$/.test(String(itemId))) return res.status(400).json({ error: 'Publicación no válida' });
+      const { cambios, error: invalido } = validarCambio(quantity, price);
+      if (invalido) return res.status(400).json({ error: invalido });
       try {
         const accessToken = await getValidMLToken(mlUserId);
         const response = await axios.put(
           `https://api.mercadolibre.com/items/${itemId}`,
-          { available_quantity: parseInt(quantity), price: parseFloat(price) },
+          cambios,
           { headers: { 'Authorization': `Bearer ${accessToken}` } }
         );
+        console.log('ML sync:', itemId, JSON.stringify(cambios), 'por', usuario.email);
         return res.status(200).json({ success: true, data: response.data });
       } catch (error) {
         console.error('Sync error:', error.response?.data || error.message);
-        return res.status(500).json({ error: 'Sync failed: ' + (error.response?.data?.message || error.message) });
+        if (error.response?.status === 401 || ['No ML token found', 'Failed to refresh ML token'].includes(error.message)) {
+          return res.status(401).json({ error: 'token_expired', message: 'La conexión con Mercado Libre venció, vuelve a conectarla' });
+        }
+        const detalle = error.response?.data?.cause?.[0]?.message || error.response?.data?.message || error.message;
+        return res.status(500).json({ error: 'Mercado Libre no aceptó el cambio: ' + detalle });
       }
     }
 

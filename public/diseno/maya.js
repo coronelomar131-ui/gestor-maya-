@@ -407,7 +407,7 @@ function datoDe(id) {
     case 'ventas': k = n(d.ventas, v => !/^cancel/i.test(v.estatus || '') && delMes(v.fecha || v.createdAt)); return k ? `${k} este mes` : '';
     case 'notas-entrega': k = n(d.notasEntrega, x => delMes(x.fecha || x.createdAt)); return k ? `${k} este mes` : '';
     case 'clientes': k = (d.clientes || []).length; return k ? `${k} registrados` : '';
-    case 'inventario': k = n(d.productos, p => (Number(p.stock) || 0) <= (Number(p.stockMin) || 0)); return k ? `${k} con poco stock` : '';
+    case 'inventario': k = n(d.productos, p => !p.archivado && p.tipo !== 'bajo_pedido' && Number(p.stockMin) > 0 && (Number(p.stock) || 0) <= Number(p.stockMin)); return k ? `${k} con poco stock` : '';
     case 'entregas': k = n(d.entregas, e => (e.estatus || 'pending') === 'pending'); return k ? `${k} pendientes` : '';
     case 'cotizaciones': k = n(d.cotizaciones, c => (c.estatus || 'vigente') === 'vigente'); return k ? `${k} vigentes` : '';
     default: return '';
@@ -604,7 +604,7 @@ function envolverFunciones() {
     const t = crear('div', 'toast ' + tipo);
     t.setAttribute('role', tipo === 'error' ? 'alert' : 'status');
     t.innerHTML = icono({ success: 'circle-check', error: 'circle-x' }[tipo] || 'info', 18) + '<span></span>';
-    t.lastChild.innerHTML = String(mensaje == null ? '' : mensaje).replace(RE_EMOJI, '');
+    t.lastChild.textContent = String(mensaje == null ? '' : mensaje).replace(RE_EMOJI, ''); // como texto: puede traer datos capturados
     caja.appendChild(t);
     setTimeout(() => {
       if (movimientoReducido() || !t.animate) { t.remove(); return; }

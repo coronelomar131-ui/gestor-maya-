@@ -493,24 +493,47 @@ async function guardarProducto(u, a) {
     if (!existente) throw new ErrorUsuario('No existe un producto con id ' + a.id);
     existente = Object.assign({ id: a.id }, existente);
   } else if (cambios.codigo) {
-    existente = (await fb().leerColeccion('productos')).find(p => datos.norm(p.codigo) === datos.norm(cambios.codigo)) || null;
+    // Si hay una pieza activa y otra archivada con el mismo código, gana la activa
+    const iguales = (await fb().leerColeccion('productos')).filter(p => datos.norm(p.codigo) === datos.norm(cambios.codigo));
+    existente = iguales.find(p => !p.archivado) || iguales[0] || null;
   }
+  const NEGATIVO = 'Las existencias no pueden quedar en negativo';
+  if (cambios.stock < 0) throw new ErrorUsuario(NEGATIVO);
 
   if (existente) {
     if (cambios.stock !== undefined && a.ajuste_stock) throw new ErrorUsuario('Manda stock (nuevo total) o ajuste_stock (sumar/restar), no los dos');
+    const antes = Number(existente.stock) || 0;
+    if (a.ajuste_stock < 0 && antes + a.ajuste_stock < 0) throw new ErrorUsuario(NEGATIVO + ': solo hay ' + antes);
     // Si se encontró por código, ese código es la búsqueda y no cambia; con id sí se puede cambiar el código
     if (!a.id) delete cambios.codigo;
-    if (Object.keys(cambios).length) await fb().actualizar('productos', existente.id, cambios);
+    if (Object.keys(cambios).length || a.ajuste_stock) await fb().actualizar('productos', existente.id, Object.assign(cambios, { updatedAt: fb().marcaTiempo(), updatedBy: u.uid || '' }));
     if (a.ajuste_stock) await fb().incrementar('productos', existente.id, 'stock', a.ajuste_stock);
     const despues = await fb().obtener('productos', existente.id);
-    return { actualizado: existente.id, codigo: despues.codigo || null, descripcion: despues.descripcion, stock_anterior: Number(existente.stock) || 0, stock: Number(despues.stock) || 0, precio: despues.precio };
+    await anotarMovimiento(u, despues, existente.id, 'ajuste', antes, Number(despues.stock) || 0);
+    const r = { actualizado: existente.id, codigo: despues.codigo || null, descripcion: despues.descripcion, stock_anterior: antes, stock: Number(despues.stock) || 0, precio: despues.precio };
+    if (despues.archivado) r.aviso = 'Esta pieza está archivada: no sale en el inventario hasta que se restaure en la app.';
+    return r;
   }
 
   if (!cambios.descripcion) throw new ErrorUsuario('Para dar de alta un producto se necesita su descripción');
   const producto = Object.assign({ codigo: '', descripcion: '', marca: '', compatibilidad: '', precio: 0, stock: 0, stockMin: 0, clase: 'B' }, cambios);
   if (a.ajuste_stock) producto.stock += a.ajuste_stock;
+  if (producto.stock < 0) throw new ErrorUsuario(NEGATIVO);
   const id = await fb().agregar('productos', Object.assign(producto, { createdAt: fb().marcaTiempo(), origen: ORIGEN }));
+  await anotarMovimiento(u, producto, id, 'alta', 0, producto.stock);
   return { creado: id, codigo: producto.codigo, descripcion: producto.descripcion, stock: producto.stock, precio: producto.precio };
+}
+
+// Historial de existencias que muestra la ficha del Inventario; si falla, el cambio ya quedó guardado
+async function anotarMovimiento(u, p, productoId, tipo, antes, despues) {
+  if (antes === despues) return;
+  try {
+    await fb().agregar('movimientos', {
+      productoId, codigo: p.codigo || '', descripcion: p.descripcion || '', tipo, cantidad: despues - antes, stockAntes: antes, stockDespues: despues,
+      motivo: tipo === 'alta' ? 'Alta de la pieza' : 'Cambio desde Pepito', nota: '', por: u.uid || '', porNombre: u.nombre || u.email || '',
+      createdAt: fb().marcaTiempo(), origen: ORIGEN
+    });
+  } catch (e) { console.warn('No se pudo anotar el movimiento:', e.message); }
 }
 
 const ESTATUS_ENTREGA = { pendiente: 'pending', entregado: 'delivered', cancelado: 'cancelled' };

@@ -636,7 +636,11 @@ function pintarCobranza() {
       if (p) return registrarPago(p.dataset.pagar);
       const d = e.target.closest('[data-dias]');
       if (d) return cambiarDias(d.dataset.dias);
+      const v = e.target.closest('[data-pagos]');
+      if (v) return verPagos(v.dataset.pagos);
     });
+    // Que la lista de pagadas siga abierta al repintar
+    $('#cob-cuerpo', mod).addEventListener('toggle', e => { if (e.target.classList.contains('m-pagadas')) verPagadas = e.target.open; }, true);
   }
   const lista = porCobrar();
   const h = hoy0();
@@ -663,11 +667,81 @@ function pintarCobranza() {
             <span class="m-op-folio">${escapar(f.serieFolio)}</span>
             <span class="m-op-info"><strong>Saldo ${pesos(f.saldo)} de ${pesos(f.total)}</strong><small>${fechaCorta(ms(f.fecha))} · vence ${fechaCorta(f.vencimiento)}${(f.pagos || []).length ? ' · ' + f.pagos.length + ' pago(s)' : ''}</small></span>
             ${estado}
-            ${factura() ? `<button type="button" class="btn btn-secondary btn-sm" data-pagar="${escapar(f.id)}">${icono('wallet', 14)}<span>Registrar pago</span></button>` : ''}
+            <span class="m-op-botones">${botonPagos(f)}${factura() ? `<button type="button" class="btn btn-secondary btn-sm" data-pagar="${escapar(f.id)}">${icono('wallet', 14)}<span>Registrar pago</span></button>` : ''}</span>
           </div>`;
         }).join('')}
       </section>`;
     }).join('') : `<div class="m-op-vacio">${icono('wallet', 28)}<p>No hay facturas por cobrar. Las facturas que subas en Facturación aparecen aquí con su vencimiento.</p></div>`;
+  $('#cob-cuerpo', mod).insertAdjacentHTML('beforeend', listaPagadas());
+}
+
+// ── Pagos mal capturados: verlos y anularlos (quedan guardados en pagosAnulados) ──
+let verPagadas = false;
+const botonPagos = f => ((f.pagos || []).length || (f.pagosAnulados || []).length
+  ? `<button type="button" class="btn btn-secondary btn-sm" data-pagos="${escapar(f.id)}">${icono('eye', 14)}<span>Ver pagos</span></button>` : '');
+// Las pagadas salen de la lista por cobrar: aquí se pueden revisar por si un pago se capturó mal
+function listaPagadas() {
+  const ultimo = f => Math.max(0, ...(f.pagos || []).map(p => ms(p.fecha)));
+  const lista = facturas.filter(f => f.estatus === 'pagada' && botonPagos(f)).sort((a, b) => ultimo(b) - ultimo(a));
+  if (!lista.length) return '';
+  return `<details class="m-pagadas"${verPagadas ? ' open' : ''}><summary>Facturas pagadas (${lista.length})</summary><section class="m-op-grupo m-vidrio">
+    ${lista.slice(0, 60).map(f => `<div class="m-op-check estatica">
+      <span class="m-op-folio">${escapar(f.serieFolio)}</span>
+      <span class="m-op-info"><strong>${escapar(f.clienteNombre || f.receptorNombre)}</strong><small>${pesos(f.total)} · último pago ${fechaCorta(ultimo(f))}</small></span>
+      <span class="m-op-etapa e-pagada">Pagada</span>
+      <span class="m-op-botones">${botonPagos(f)}</span>
+    </div>`).join('')}
+    ${lista.length > 60 ? `<p class="m-op-nota">Se muestran las 60 con pagos más recientes.</p>` : ''}
+  </section></details>`;
+}
+
+function verPagos(id) {
+  const f = facturas.find(x => x.id === id);
+  if (!f) return;
+  const puede = factura() && f.estatus !== 'cancelada';
+  const detalle = p => `${fechaCorta(ms(p.fecha))} · ${escapar(p.forma || '—')}${p.por ? ' · ' + escapar(p.por) : ''}${p.nota ? ' · ' + escapar(p.nota) : ''}`;
+  const anulados = f.pagosAnulados || [];
+  dialogo('Pagos de ' + f.serieFolio, `
+    <p class="m-op-sub">${escapar(f.clienteNombre || f.receptorNombre)} · total ${pesos(f.total)} · saldo ${pesos(f.saldo)}</p>
+    ${(f.pagos || []).length ? f.pagos.map((p, i) => `<div class="m-pagos-fila"><div><strong>${pesos(p.monto)}</strong><small>${detalle(p)}</small></div>
+      ${puede ? `<button type="button" class="btn btn-secondary btn-sm" data-anular="${i}">Anular</button>` : ''}</div>`).join('') : '<p class="m-op-nota">Sin pagos vigentes.</p>'}
+    ${anulados.length ? `<h4 class="m-cf-titulo">Anulados</h4>${anulados.map(p => `<div class="m-pagos-fila anulado"><div><strong>${pesos(p.monto)}</strong><small>${detalle(p)}</small>
+      <small>Anuló ${escapar(p.anuladoPor || '')} el ${fechaCorta(ms(p.anuladoEn))}: ${escapar(p.motivoAnulacion || '')}</small></div></div>`).join('')}` : ''}`, []);
+  const fondo = $$('.m-op-dialogo').pop();
+  fondo.addEventListener('click', e => {
+    const b = e.target.closest('[data-anular]');
+    if (!b) return;
+    const pago = f.pagos[Number(b.dataset.anular)];
+    $('[data-cerrar]', fondo).click();
+    anularPago(f, pago);
+  });
+}
+
+function anularPago(f, pago) {
+  if (!factura()) return aviso('Solo quien factura puede anular pagos', 'error');
+  const mismo = p => p.monto === pago.monto && ms(p.fecha) === ms(pago.fecha) && p.por === pago.por && p.forma === pago.forma && p.nota === pago.nota;
+  dialogo('Anular pago de ' + f.serieFolio, `
+    <p class="m-op-sub">${pesos(pago.monto)} del ${fechaCorta(ms(pago.fecha))}. El saldo de la factura vuelve a subir y el pago queda guardado como anulado.</p>
+    <div class="m-op-form"><label>Motivo (obligatorio)<input type="text" id="pg-motivo" maxlength="300" placeholder="Ej. era de otra factura, monto equivocado"></label></div>`,
+  [{ texto: 'Sí, anular pago', principal: true, accion: async () => {
+    const motivo = $('#pg-motivo').value.trim();
+    if (!motivo) { aviso('Escribe el motivo', 'error'); return false; }
+    // Se lee de nuevo por si alguien registró o anuló algo mientras tanto
+    const ref = window.doc(window.db, 'facturas', f.id);
+    const snap = await window.getDoc(ref);
+    const actual = snap.exists() ? snap.data() : null;
+    if (!actual || actual.estatus === 'cancelada') { aviso('La factura ya no admite cambios (está cancelada o no existe)', 'error'); return true; }
+    const pagos = (actual.pagos || []).slice();
+    const i = pagos.findIndex(mismo);
+    if (i < 0) { aviso('Ese pago ya no está en la factura', 'error'); return true; }
+    const [quitado] = pagos.splice(i, 1);
+    let saldo = Math.round(((Number(actual.saldo) || 0) + (Number(quitado.monto) || 0)) * 100) / 100;
+    if (Number(actual.total) > 0) saldo = Math.min(saldo, Number(actual.total));
+    const anulado = Object.assign({}, quitado, { anuladoPor: yo(), anuladoUid: (window.auth && window.auth.currentUser && window.auth.currentUser.uid) || '', anuladoEn: Date.now(), motivoAnulacion: motivo });
+    await window.updateDoc(ref, { pagos, pagosAnulados: (actual.pagosAnulados || []).concat(anulado), saldo, estatus: saldo <= 0.009 ? 'pagada' : 'por_cobrar' });
+    aviso('Pago anulado; saldo de ' + f.serieFolio + ': ' + pesos(saldo));
+    return true;
+  } }]);
 }
 
 // Semáforo de paquetería: los 4 pasos (almacén, recolección, movimiento, entrega) con el color del paso actual

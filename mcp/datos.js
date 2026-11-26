@@ -329,11 +329,12 @@ async function productos(texto, soloBajoStock, limite) {
         precio: pesos(centavos(p.precio)),
         stock,
         stock_minimo: minimo,
-        bajo_stock: stock <= minimo,
+        archivado: !!p.archivado,
+        bajo_stock: p.tipo !== 'bajo_pedido' && minimo > 0 && stock <= minimo,
         clase: p.clase || null
       };
     })
-    .filter(p => (!soloBajoStock || p.bajo_stock) && (!q || norm([p.codigo, p.descripcion, p.marca, p.compatibilidad].join(' ')).includes(q)))
+    .filter(p => !p.archivado && (!soloBajoStock || p.bajo_stock) && (!q || norm([p.codigo, p.descripcion, p.marca, p.compatibilidad].join(' ')).includes(q)))
     .sort((a, b) => (soloBajoStock ? a.stock - a.stock_minimo - (b.stock - b.stock_minimo) : a.descripcion.localeCompare(b.descripcion, 'es')));
   return { encontrados: lista.length, mostrando: Math.min(limite, lista.length), productos: lista.slice(0, limite) };
 }
