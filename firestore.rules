@@ -1,0 +1,75 @@
+// Maya Autopartes · Reglas de Firestore · NIVEL 1 (se puede pegar sin migrar nada)
+// Cómo pegarlas, probarlas y regresar atrás: docs/PERMISOS_FIREBASE.md (ahí están también las de Nivel 2, por rol).
+// Las funciones del servidor (api/ y mcp/) usan firebase-admin y no pasan por estas reglas.
+//
+// Qué hacen: exigen sesión, cierran al navegador los tokens y datos del servidor, y nadie puede cambiarse su rol.
+// Lo que NO pueden hacer todavía: distinguir quién es administrador (para eso es el Nivel 2).
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function sesion() {
+      return request.auth != null;
+    }
+    // Campos que cambia esta escritura
+    function cambios() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ── Todo lo demás: cualquier persona con sesión, como hasta ahora ──
+    // Lo que está en la lista se rige solo por su propio bloque de abajo (o queda cerrado si no tiene).
+    match /{coleccion}/{resto=**} {
+      allow read, write: if sesion() && !(coleccion in [
+        'usuarios', 'roles', 'config',
+        'ml_tokens', 'mcp_codigos', 'mcp_refresh', 'mcp_tokens',
+        'papelera', 'pepito_conversacion', 'pepito_uso', 'ordenes', 'recordatorios',
+        'whatsapp_vistos', 'whatsapp_enviados', 'whatsapp_pendientes'
+      ]);
+    }
+
+    // ── Datos que escribe el servidor: se leen (la pantalla de Respaldos los descarga), no se cambian ──
+    match /{delServidor}/{id} {
+      allow read: if sesion() && delServidor in [
+        'papelera', 'pepito_conversacion', 'pepito_uso', 'ordenes', 'recordatorios',
+        'whatsapp_vistos', 'whatsapp_enviados', 'whatsapp_pendientes'
+      ];
+    }
+
+    // ── Usuarios ──
+    match /usuarios/{id} {
+      allow read: if sesion();
+      // Las altas las hace el servidor. La app solo crea el perfil propio de una cuenta antigua que no lo tenía.
+      // Quien ya tiene su copia en roles/{uid} ya tiene perfil: no puede crearse otro.
+      // Para cerrar también esto (ver la guía antes): cambiar toda la condición por  if false
+      allow create: if sesion()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && !exists(/databases/$(database)/documents/roles/$(request.auth.uid));
+      // Nadie cambia a qué cuenta pertenece un perfil, ni la marca de baja, ni su propio rol
+      allow update: if sesion()
+        && !cambios().hasAny(['uid', 'bajaEn'])
+        && (resource.data.get('uid', '') != request.auth.uid || !cambios().hasAny(['rol']));
+      // Las bajas las hace el servidor
+      allow delete: if false;
+    }
+
+    // Copia del rol para el Nivel 2: solo la escribe el servidor
+    match /roles/{uid} {
+      allow read: if sesion() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ── Configuración: la pantalla solo cambia estos documentos ──
+    match /config/{id} {
+      allow read: if sesion();
+      allow write: if sesion() && id in ['ml_global', 'ml_firmas', 'ml_ultima_sync', 'datos_fiscales', 'respaldo'];
+    }
+
+    // Copias de lo borrado: la app solo agrega, nadie las cambia
+    match /papelera/{id} {
+      allow create: if sesion();
+    }
+
+    // ml_tokens y mcp_* no tienen ningún permiso: cerrados al navegador
+  }
+}

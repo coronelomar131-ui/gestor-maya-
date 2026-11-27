@@ -1,5 +1,6 @@
 // Interacción: candado contra doble envío, no perder lo capturado, búsquedas que se mantienen,
 // errores en español y cancelaciones con motivo. Se carga al final para envolver las funciones ya definidas.
+import { estaCancelada, esAnulada, cancelar, reactivar, borrarDefinitivo } from './cancelar.js';
 
 // Las funciones que se envuelven las define el script principal: se espera a que existan
 for (let i = 0; i < 200 && !(window.saveVentaMultiLinea && window.cambiarEstatusVenta); i++) await new Promise(r => setTimeout(r, 50));
@@ -110,51 +111,25 @@ if (typeof toastOriginal === 'function') {
   };
 }
 
-// ── 5. Cancelar una venta pide motivo (igual que en Seguimiento) ──
-function pedirMotivo(titulo) {
-  const motivos = (window.mayaPlazos && window.mayaPlazos.MOTIVOS_CANCELACION) || [{ id: 'otra', nombre: 'Otra causa (especificar)' }];
-  return new Promise(resolver => {
-    const v = document.createElement('div');
-    v.className = 'modal-overlay open';
-    v.style.zIndex = 400;
-    v.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="max-width:440px"><div class="modal-head"><h3>' + esc(titulo) + '</h3></div>' +
-      '<div class="modal-body"><div class="form-group"><label>Motivo de la cancelación</label><select data-cv-motivo><option value="">Elige un motivo…</option>' +
-      motivos.map(m => '<option value="' + esc(m.id) + '">' + esc(m.nombre) + '</option>').join('') + '</select></div>' +
-      '<div class="form-group"><label>Detalle (obligatorio si es otra causa)</label><textarea data-cv-detalle maxlength="300"></textarea></div></div>' +
-      '<div class="modal-footer"><button type="button" class="btn btn-secondary" data-cv-no>No cancelar</button><button type="button" class="btn btn-danger" data-cv-si>Cancelar la venta</button></div></div>';
-    const fin = r => { v.remove(); resolver(r); };
-    v.querySelector('[data-cv-no]').onclick = e => { e.stopPropagation(); fin(null); };
-    v.querySelector('[data-cv-si]').onclick = () => {
-      const motivo = v.querySelector('[data-cv-motivo]').value, detalle = v.querySelector('[data-cv-detalle]').value.trim();
-      if (!motivo) return window.toast('Elige el motivo', 'error');
-      if (motivo === 'otra' && !detalle) return window.toast('Escribe cuál es la otra causa', 'error');
-      fin({ motivo, detalle });
-    };
-    document.body.appendChild(v);
-  });
-}
+// ── 5. Cancelar en vez de eliminar (las reglas y el diálogo del motivo están en cancelar.js) ──
 const ventaPorId = id => ((window.data && window.data.ventas) || []).find(v => v.id === id);
-const estaCancelada = v => !!v && (/^cancel/i.test(v.estatus || '') || v.etapa === 'cancelada');
-function datosCancelacion(venta, m) {
-  const por = (window.auth && window.auth.currentUser && window.auth.currentUser.email) || '';
-  const cancelacion = { motivo: m.motivo, detalle: m.detalle, por, fecha: Date.now() };
-  return { estatus: 'Cancelado', etapa: 'cancelada', cancelacion, seguimiento: ((venta && venta.seguimiento) || []).concat([{ etapa: 'cancelada', fecha: cancelacion.fecha, por, nota: m.detalle || m.motivo }]) };
+
+// Cambiar a "Cancelado" pide motivo; salir de "Cancelado" reactiva (con su nota de entrega). false = no seguir.
+async function pasarPorCancelacion(venta, nuevo) {
+  if (!venta) return true;
+  if (nuevo === 'Cancelado') return estaCancelada(venta) || cancelar('ventas', venta.id);
+  // Reactivar pregunta antes: puede revivir también la nota de entrega
+  return !esAnulada('ventas', venta.id) || reactivar('ventas', venta.id, { etapa: null });
 }
-const guardarVenta = (id, cambios) => window.updateDoc(window.doc(window.db, 'ventas', id), cambios);
 
 const estatusOriginal = window.cambiarEstatusVenta;
 window.cambiarEstatusVenta = async function (id, nuevo) {
   const venta = ventaPorId(id);
   const repintar = () => { if (typeof window.renderVentas === 'function') window.renderVentas(); };
   try {
-    if (nuevo === 'Cancelado' && !estaCancelada(venta)) {
-      if (venta && venta.facturaId) { window.toast('Esa venta ya está facturada. Cancela primero la factura.', 'error'); return repintar(); }
-      const m = await pedirMotivo('Cancelar venta ' + ((venta && venta.notaId) || ''));
-      if (!m) return repintar();
-      await guardarVenta(id, datosCancelacion(venta, m));
-      return window.toast('Venta cancelada', 'success');
-    }
-    if (nuevo !== 'Cancelado' && estaCancelada(venta)) await guardarVenta(id, { etapa: null, cancelacion: null });
+    // Al cancelar, cancelar.js ya guarda el estatus
+    const cancelaAhora = nuevo === 'Cancelado' && venta && !estaCancelada(venta);
+    if (!(await pasarPorCancelacion(venta, nuevo)) || cancelaAhora) return repintar();
     return await estatusOriginal.call(this, id, nuevo);
   } catch (e) {
     window.toast('No se pudo cambiar el estatus: ' + e.message, 'error');
@@ -162,42 +137,69 @@ window.cambiarEstatusVenta = async function (id, nuevo) {
   }
 };
 
+// La ventana de editar abre con el estatus guardado hoy (la lista de Documentos puede estar atrasada)
+const abrirNotaOriginal = window.abrirEditarNota;
+if (typeof abrirNotaOriginal === 'function') {
+  window.abrirEditarNota = function (id) {
+    const r = abrirNotaOriginal.apply(this, arguments);
+    const modal = document.getElementById('modal-editar-nota');
+    const sel = document.getElementById('editar-nota-estatus');
+    const venta = ventaPorId(id);
+    if (modal && sel && modal.dataset.ventaId === id) {
+      if (venta) sel.value = estaCancelada(venta) ? 'Cancelado' : (venta.estatus || 'Pendiente');
+      modal.dataset.estatusAlAbrir = sel.value;
+    }
+    return r;
+  };
+}
+
 const notaOriginal = window.guardarCambiosNota;
 if (typeof notaOriginal === 'function') {
   window.guardarCambiosNota = async function () {
     const modal = document.getElementById('modal-editar-nota');
     const id = modal && modal.dataset.ventaId;
-    const nuevo = document.getElementById('editar-nota-estatus').value;
-    const venta = ventaPorId(id);
-    let extra = null;
-    if (nuevo === 'Cancelado' && !estaCancelada(venta)) {
-      if (venta && venta.facturaId) return window.toast('Esa venta ya está facturada. Cancela primero la factura.', 'error');
-      const m = await pedirMotivo('Cancelar venta ' + ((venta && venta.notaId) || ''));
-      if (!m) return;
-      extra = datosCancelacion(venta, m);
-    } else if (nuevo !== 'Cancelado' && estaCancelada(venta)) extra = { etapa: null, cancelacion: null };
+    const sel = document.getElementById('editar-nota-estatus');
+    const nuevo = sel.value;
     try {
-      if (extra) await guardarVenta(id, extra);
+      const venta = ventaPorId(id);
+      // Solo cambiar observaciones no cancela ni reactiva nada
+      if (modal && nuevo === modal.dataset.estatusAlAbrir) {
+        if (venta && estaCancelada(venta)) sel.value = 'Cancelado';
+      } else if (!(await pasarPorCancelacion(venta, nuevo))) return;
       return await notaOriginal.apply(this, arguments);
     } catch (e) { window.toast('No se pudo guardar: ' + e.message, 'error'); }
   };
 }
 
-// ── 6. Eliminar una nota de entrega avisa de la venta que se creó con ella ──
-window.eliminarNotaEntrega = async function (id) {
-  const nota = ((window.data && window.data.notasEntrega) || []).find(n => n.id === id);
-  if (!nota) return;
-  const ligadas = ((window.data && window.data.ventas) || []).filter(v => v.notaEntregaId === nota.notaId && v.clienteNombre === nota.cliente && !estaCancelada(v));
-  if (nota.facturaId || ligadas.some(v => v.facturaId)) return window.toast('Esa nota ya está facturada. Cancela primero la factura.', 'error');
-  const aviso = ligadas.length ? '\n\nSe creó la venta ' + ligadas.map(v => 'NV #' + v.notaId).join(', ') + ' con esta nota.' : '';
-  if (!window.confirm('¿Eliminar la nota ' + nota.notaId + ' de ' + (nota.cliente || 'sin cliente') + '?' + aviso)) return;
-  try {
-    const cancelar = ligadas.length && window.confirm('¿Cancelar también esa venta para que no se cuente?\n\nAceptar: se marca cancelada.\nCancelar: la venta se queda como está.');
-    await window.deleteDoc(window.doc(window.db, 'notasEntrega', id));
-    if (cancelar) for (const v of ligadas) await guardarVenta(v.id, datosCancelacion(v, { motivo: 'otra', detalle: 'Se eliminó la nota de entrega ' + nota.notaId }));
-    window.toast('Nota eliminada' + (cancelar ? ' y venta cancelada' : ''), 'success');
-  } catch (e) { window.toast('Error: ' + e.message, 'error'); }
+// ── 6. Los botones de antes (🗑) ahora cancelan; sobre algo ya cancelado, Dirección puede borrarlo definitivamente ──
+const cancelarOBorrar = (col, id) => (esAnulada(col, id) ? borrarDefinitivo(col, id) : cancelar(col, id));
+window.eliminarNotaEntrega = id => cancelarOBorrar('notasEntrega', id);
+const borrarOriginal = window.deleteItem;
+window.deleteItem = function (col, id) {
+  if (col === 'ventas' || col === 'cotizaciones') return cancelarOBorrar(col, id);
+  return borrarOriginal && borrarOriginal.apply(this, arguments);
 };
+
+// Lo cancelado no se convierte en venta ni recibe factura
+function noSiCancelada(nombre, col, mensaje) {
+  const original = window[nombre];
+  if (typeof original !== 'function') return;
+  window[nombre] = function (id, ...resto) {
+    if (esAnulada(col, id)) return window.toast(mensaje, 'error');
+    return original.call(this, id, ...resto);
+  };
+}
 
 ['saveVentaMultiLinea', 'saveCotizacionMultiLinea', 'saveCotizacion', 'saveNotaEntrega', 'saveEntrega', 'saveCliente', 'saveProveedor', 'saveProducto',
   'savePrestamo', 'savePago', 'saveUsuario', 'envios_guardar', 'cotToVenta'].forEach(conCandado);
+// El formulario de venta no cancela: así no se salta el motivo ni la revisión de factura y pagos
+const guardarVentaOriginal = window.saveVentaMultiLinea;
+if (typeof guardarVentaOriginal === 'function') {
+  window.saveVentaMultiLinea = function (...args) {
+    const s = document.getElementById('v-estatus-inicial');
+    if (s && s.value === 'Cancelado') return window.toast('Para cancelar una venta usa el botón o el estatus de la lista: pide el motivo. Elige otro estatus.', 'error');
+    return guardarVentaOriginal.apply(this, args);
+  };
+}
+noSiCancelada('cotToVenta', 'cotizaciones', 'Esa cotización está cancelada. Reactívala primero.');
+noSiCancelada('abrirUploadFactura', 'ventas', 'Esa venta está cancelada; no lleva factura.');

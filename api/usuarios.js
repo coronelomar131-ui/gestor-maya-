@@ -3,6 +3,11 @@
 // Así el registro público de Firebase Auth se puede apagar en la consola y nadie se da de alta solo.
 //   Alta: POST { nombre, email, pass, rol }  (si el correo es de una cuenta dada de baja, la reactiva)
 //   Baja: POST { accion: 'baja', id }        (id del documento en "usuarios")
+// Permisos de Firebase (docs/PERMISOS_FIREBASE.md): roles/{uid} es la copia del rol que leen las reglas y solo la escribe
+// el servidor. La fuente sigue siendo "usuarios".
+//   Mi copia:  POST { accion: 'mi-rol' }                          (cualquier sesión; solo la suya)
+//   Revisar:   POST { accion: 'revisar' }                         (admin; no cambia nada)
+//   Copiar:    POST { accion: 'sincronizar', crearPerfiles }      (admin)
 const admin = require('firebase-admin');
 
 const ROLES = require('../public/diseno/roles.js').LISTA;
@@ -10,6 +15,8 @@ const ROLES = require('../public/diseno/roles.js').LISTA;
 const ACCESOS_MCP = ['mcp_codigos', 'mcp_refresh', 'mcp_tokens'];
 // Una baja a medias deja de contar como "en curso" pasado este tiempo
 const BAJA_EN_CURSO = 5 * 60 * 1000;
+// Igual que CORTE_CUENTAS de public/index.html: cuentas anteriores sin perfil entraban como admin
+const CORTE_CUENTAS = Date.parse('2026-11-04T06:00:00Z');
 
 function app() {
   if (!admin.apps.length) {
@@ -31,6 +38,124 @@ function cuerpo(req) {
 }
 
 const falla = (status, mensaje) => Object.assign(new Error(mensaje), { status });
+
+// ── Copia del rol para las reglas: roles/{uid} ──
+// Mismo criterio que la app: manda el primer perfil (por id) y sin rol es vendedor
+const rolDe = datos => String(datos.rol || 'vendedor');
+const copiaRol = (rol, usuarioId) => ({ rol, usuarioId, actualizado: new Date().toISOString() });
+
+// Si falla no se detiene el alta: la copia se crea cuando esa persona entra al gestor
+async function copiarRol(uid, rol, usuarioId) {
+  try {
+    await app().firestore().collection('roles').doc(uid).set(copiaRol(rol, usuarioId));
+  } catch (e) {
+    console.error('usuarios: no se copió el rol:', e);
+  }
+}
+
+// Solo copia lo que diga "usuarios" para quien pregunta; nunca crea perfiles ni da accesos
+async function miRol(quien) {
+  const db = app().firestore();
+  const ref = db.collection('roles').doc(quien.uid);
+  return db.runTransaction(async t => {
+    const perfiles = await t.get(db.collection('usuarios').where('uid', '==', quien.uid).limit(1));
+    const actual = await t.get(ref);
+    if (perfiles.empty) {
+      if (actual.exists) t.delete(ref);
+      return { ok: true, rol: null, cambio: actual.exists };
+    }
+    const doc = perfiles.docs[0];
+    const rol = rolDe(doc.data());
+    const cambio = !actual.exists || actual.data().rol !== rol;
+    if (cambio) t.set(ref, copiaRol(rol, doc.id));
+    return { ok: true, rol, cambio };
+  });
+}
+
+async function cuentas() {
+  const lista = [];
+  let pagina;
+  do {
+    const r = await app().auth().listUsers(1000, pagina);
+    lista.push(...r.users);
+    pagina = r.pageToken;
+  } while (pagina);
+  return lista;
+}
+
+// Compara cuentas, perfiles y copias. Con aplicar = true escribe las copias (y, si se pide, los perfiles que faltan)
+async function sincronizar(quien, aplicar, crearPerfiles) {
+  const db = app().firestore();
+  // Las copias se leen antes que las cuentas: así un alta que ocurra en medio no se toma por copia sobrante
+  const roles = await db.collection('roles').get();
+  const todas = await cuentas();
+  const [usuarios, ml] = await Promise.all([db.collection('usuarios').get(), db.collection('config').doc('ml_global').get()]);
+  const perfiles = new Map(); // uid -> sus perfiles; el primero por id es el que vale
+  usuarios.docs.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).forEach(x => {
+    const uid = String(x.data().uid || '');
+    if (uid) perfiles.set(uid, (perfiles.get(uid) || []).concat(x));
+  });
+  const copias = new Map(roles.docs.map(x => [x.id, x.data()]));
+  const informe = { cuentas: 0, listos: 0, pendientes: [], sinPerfil: [], sinPerfilNuevas: [], repetidos: [], rolNoValido: [], perfilesSinCuenta: [], perfilesCreados: [], escritas: 0, borradas: 0 };
+  const escrituras = [];
+  const validas = new Set();
+  let admins = 0;
+
+  for (const c of todas) {
+    if (c.disabled) continue;
+    informe.cuentas++;
+    const correo = c.email || c.uid;
+    const mios = perfiles.get(c.uid) || [];
+    let rol = mios.length ? rolDe(mios[0].data()) : '';
+    let usuarioId = mios.length ? mios[0].id : '';
+    if (!mios.length) {
+      const creada = Date.parse((c.metadata && c.metadata.creationTime) || '') || 0;
+      // Cuenta nueva sin perfil: hoy tampoco entra
+      if (!(creada && creada < CORTE_CUENTAS)) { informe.sinPerfilNuevas.push(correo); continue; }
+      if (!(aplicar && crearPerfiles)) { informe.sinPerfil.push(correo); continue; }
+      // El mismo perfil que la app le crearía al entrar
+      const ref = db.collection('usuarios').doc();
+      await ref.set({ uid: c.uid, nombre: c.displayName || c.email || '', email: c.email || '', rol: 'admin', creadoPor: quien.uid, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+      informe.perfilesCreados.push(correo);
+      rol = 'admin';
+      usuarioId = ref.id;
+    }
+    if (mios.length > 1) informe.repetidos.push({ cuenta: correo, roles: mios.map(x => rolDe(x.data())) });
+    if (!ROLES.includes(rol)) informe.rolNoValido.push({ cuenta: correo, rol });
+    if (rol === 'admin') admins++;
+    validas.add(c.uid);
+    const copia = copias.get(c.uid);
+    if (copia && copia.rol === rol) informe.listos++;
+    else {
+      escrituras.push({ ref: db.collection('roles').doc(c.uid), datos: copiaRol(rol, usuarioId) });
+      if (!aplicar) informe.pendientes.push(correo);
+    }
+  }
+  const conCuenta = new Set(todas.map(c => c.uid));
+  usuarios.docs.forEach(x => {
+    const d = x.data();
+    if (!d.uid || !conCuenta.has(d.uid)) informe.perfilesSinCuenta.push(d.email || d.nombre || x.id);
+  });
+
+  if (aplicar) {
+    // Sobran las copias de cuentas deshabilitadas, borradas o sin perfil
+    const sobran = [...copias.keys()].filter(uid => !validas.has(uid));
+    const cambios = escrituras.concat(sobran.map(uid => ({ ref: db.collection('roles').doc(uid) })));
+    for (let i = 0; i < cambios.length; i += 400) {
+      const lote = db.batch();
+      cambios.slice(i, i + 400).forEach(c => (c.datos ? lote.set(c.ref, c.datos) : lote.delete(c.ref)));
+      await lote.commit();
+    }
+    informe.escritas = escrituras.length;
+    informe.borradas = sobran.length;
+    informe.listos += escrituras.length;
+  }
+  const mlGlobal = ml.exists ? ml.data() : null;
+  informe.mercadoLibre = !!(mlGlobal && mlGlobal.activo && mlGlobal.mlUserId);
+  informe.admins = admins;
+  informe.listo = admins > 0 && !informe.pendientes.length && !informe.sinPerfil.length && !informe.rolNoValido.length;
+  return Object.assign({ ok: true }, informe);
+}
 
 async function alta(quien, d) {
   const email = String(d.email || '').trim().toLowerCase();
@@ -64,9 +189,11 @@ async function alta(quien, d) {
       await ref.delete();
       throw error;
     }
+    await copiarRol(anterior.uid, rol, ref.id);
     return { ok: true, uid: anterior.uid, reactivado: true };
   }
-  await app().firestore().collection('usuarios').add(datos(nuevo.uid));
+  const ref = await app().firestore().collection('usuarios').add(datos(nuevo.uid));
+  await copiarRol(nuevo.uid, rol, ref.id);
   return { ok: true, uid: nuevo.uid };
 }
 
@@ -138,6 +265,8 @@ async function baja(quien, quienPerfil, d) {
         });
         t.delete(x.ref);
       });
+      // Sin la copia del rol las reglas le cierran la base aunque su sesión siga abierta
+      if (uid) t.delete(db.collection('roles').doc(uid));
     });
   } catch (e) {
     await Promise.all([...refs.values()].map(ref => ref.update({ bajaEn: admin.firestore.FieldValue.delete() }).catch(() => {})));
@@ -149,15 +278,19 @@ async function baja(quien, quienPerfil, d) {
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST' });
   let esBaja = false;
+  let accion = '';
   try {
     const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
     if (!m) return res.status(401).json({ error: 'Inicia sesión de nuevo' });
     // Dentro del try: un cuerpo mal formado puede fallar al leerse
     const d = cuerpo(req) || {};
     esBaja = d.accion === 'baja';
+    accion = ['mi-rol', 'revisar', 'sincronizar'].includes(d.accion) ? d.accion : '';
     const quien = await app().auth().verifyIdToken(m[1], true);
+    if (accion === 'mi-rol') return res.status(200).json(await miRol(quien));
     const p = await perfil(quien.uid);
-    if (!p || p.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede ' + (esBaja ? 'dar de baja' : 'crear') + ' usuarios' });
+    if (!p || p.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede ' + (accion ? 'revisar los permisos' : (esBaja ? 'dar de baja' : 'crear') + ' usuarios') });
+    if (accion) return res.status(200).json(await sincronizar(quien, accion === 'sincronizar', d.crearPerfiles === true));
     if (d.accion && !esBaja) return res.status(400).json({ error: 'Acción no válida' });
 
     return res.status(200).json(esBaja ? await baja(quien, p, d) : await alta(quien, d));
@@ -167,6 +300,7 @@ module.exports = async (req, res) => {
     if (codigo === 'auth/email-already-exists') return res.status(409).json({ error: 'Ese correo ya tiene cuenta' });
     if (codigo.startsWith('auth/id-token') || codigo === 'auth/argument-error' || codigo === 'auth/user-disabled') return res.status(401).json({ error: 'Inicia sesión de nuevo' });
     console.error('usuarios:', e);
+    if (accion) return res.status(500).json({ error: 'No se pudieron revisar los permisos. Inténtalo de nuevo.' });
     return res.status(500).json({ error: esBaja ? 'No se pudo dar de baja. Inténtalo de nuevo.' : 'No se pudo crear el usuario' });
   }
 };

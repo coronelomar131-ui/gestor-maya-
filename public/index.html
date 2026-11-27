@@ -900,6 +900,8 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <link rel="stylesheet" href="/diseno/ajustes-pantalla.css">
 <link rel="stylesheet" href="/diseno/inventario.css">
 <link rel="stylesheet" href="/diseno/edicion.css">
+<link rel="stylesheet" href="/diseno/respaldos.css">
+<link rel="stylesheet" href="/diseno/cancelar.css">
 <script defer src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
@@ -2714,7 +2716,9 @@ async function loadUserProfile(uid) {
       // solo entra si todavía no existe ningún admin (primer arranque); si no, un admin la tiene que dar de alta.
       const creada = Date.parse((currentUser.metadata && currentUser.metadata.creationTime) || '') || 0;
       if (!(creada && creada < CORTE_CUENTAS)) {
-        const admins = await getDocs(query(collection(db, 'usuarios'), where('rol', '==', 'admin')));
+        // Con las reglas por rol, una cuenta sin perfil no puede leer la lista: también es 'sin-perfil'
+        const admins = await getDocs(query(collection(db, 'usuarios'), where('rol', '==', 'admin')))
+          .catch(e => { if (e.code === 'permission-denied') return { empty: false }; throw e; });
         if (!admins.empty) return 'sin-perfil';
       }
       await currentUser.getIdToken(true); // una cuenta dada de baja no puede recrear su perfil de admin
@@ -2815,7 +2819,8 @@ function startListeners() {
   listenCollection('clientes', 'cli-body', () => { renderClientes(); renderEntregas(); });
   listenCollection('cotizaciones', 'cot-body', renderCotizaciones);
   listenCollection('proveedores', 'prov-body', renderProveedores);
-  listenCollection('notasEntrega', 'ne-body', renderNotasEntrega, true);
+  // La tabla de Ventas marca las canceladas según su nota: se repinta cuando cambian las notas
+  listenCollection('notasEntrega', 'ne-body', () => { renderNotasEntrega(); if (data.ventas.length) renderVentas(); }, true);
   listenCollection('entregas', 'ent-body', renderEntregas);
   listenCollection('visitasTalleres', 'vt-body', renderVisitasTalleres);
   listenCollection('usuarios', 'users-body', renderUsuarios);
@@ -2924,10 +2929,10 @@ function renderVentas() {
   body.innerHTML = data.ventas.map(escCopia).map(v => {
     const estatus = v.estatus || 'Pendiente';
     return `
-    <tr>
+    <tr class="${window.mayaCancelar ? window.mayaCancelar.clase('ventas', v.id) : ''}">
       <td><code style="color:#3BBCD4;font-size:12px">${v.notaId ? 'NV #' + v.notaId : (v.notaNumero || folio('V-', v.id))}</code></td>
-      <td>${v.cliente || v.clienteNombre || '—'}</td>
-      <td style="color:#4ade80;font-weight:600">${fmtMoney(v.total)}</td>
+      <td>${v.cliente || v.clienteNombre || '—'} ${window.mayaCancelar ? window.mayaCancelar.etiqueta('ventas', v.id) : ''}</td>
+      <td class="mc-monto" style="color:#4ade80;font-weight:600">${fmtMoney(v.total)}</td>
       <td>
         <select onchange="cambiarEstatusVenta('${v.id}', this.value)" style="padding:4px;background:var(--surface);border:1px solid #3BBCD4;border-radius:4px;color:var(--white);font-size:12px">
           <option value="Pendiente" ${estatus === 'Pendiente' ? 'selected' : ''}>⏳ Pendiente</option>
@@ -2938,7 +2943,7 @@ function renderVentas() {
         </select>
       </td>
       <td>${fmtDate(v.createdAt)}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="abrirDetallesVenta('${v.id}')">👁️ Ver</button> ${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('ventas','${v.id}')">🗑</button>` : ''}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="abrirDetallesVenta('${v.id}')">👁️ Ver</button> ${window.mayaCancelar ? window.mayaCancelar.botones('ventas', v.id) : ''}</td>
     </tr>
   `;
   }).join('');
@@ -3026,19 +3031,20 @@ function renderCotizaciones() {
     const piezasCount = c.items ? c.items.length : (c.descripcion ? 1 : 0);
     const fechaStr = c.fecha ? window.mayaFecha(c.fecha) : '—';
     const cJson = encodeURIComponent(JSON.stringify(c));
+    const cancelada = window.mayaCancelar ? window.mayaCancelar.etiqueta('cotizaciones', c.id) : '';
     return `
-    <tr>
+    <tr class="${cancelada ? 'mc-cancelada' : ''}">
       <td><code style="color:#3BBCD4;font-size:12px">COT-${c.notaId || folio('',c.id)}</code></td>
       <td>${c.clienteNombre || c.cliente || '—'}</td>
       <td style="text-align:center">${piezasCount}</td>
-      <td style="color:#4ade80;font-weight:600">${fmtMoney(c.total)}</td>
+      <td class="mc-monto" style="color:#4ade80;font-weight:600">${fmtMoney(c.total)}</td>
       <td>${c.vendedor || '—'}</td>
-      <td><span class="badge badge-pending">Vigente</span></td>
+      <td>${cancelada || '<span class="badge badge-pending">Vigente</span>'}</td>
       <td>${fechaStr}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="generarCotizacionPDFById('${c.id}')" title="PDF">📄 PDF</button>
-        <button class="btn btn-success btn-sm" onclick="cotToVenta('${c.id}')" title="Convertir a venta">✅ Venta</button>
-        ${rol === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteItem('cotizaciones','${c.id}')">🗑</button>` : ''}
+        ${cancelada ? '' : `<button class="btn btn-success btn-sm" onclick="cotToVenta('${c.id}')" title="Convertir a venta">✅ Venta</button>`}
+        ${window.mayaCancelar ? window.mayaCancelar.botones('cotizaciones', c.id) : ''}
       </td>
     </tr>`;
   }).join('');
@@ -3047,13 +3053,14 @@ function renderCotizaciones() {
     notasBody.innerHTML = data.cotizaciones.map(escCopia).map(c => {
       const siniestros = c.siniestros || (c.items ? c.items.map(i=>i.numSiniestro||'').filter(s=>s).join(' | ') : '');
       const fechaStr = c.fecha ? window.mayaFecha(c.fecha) : '—';
-      return `<tr>
+      const cancelada = window.mayaCancelar ? window.mayaCancelar.etiqueta('cotizaciones', c.id) : '';
+      return `<tr class="${cancelada ? 'mc-cancelada' : ''}">
         <td><code style="color:#3BBCD4;font-size:12px">COT-${c.notaId || folio('',c.id)}</code></td>
         <td>${c.clienteNombre || c.cliente || '—'}</td>
         <td style="font-size:11px">${siniestros || '—'}</td>
-        <td style="color:#4ade80;font-weight:600">${fmtMoney(c.total)}</td>
+        <td class="mc-monto" style="color:#4ade80;font-weight:600">${fmtMoney(c.total)}</td>
         <td>${fechaStr}</td>
-        <td><span class="badge badge-pending">Vigente</span></td>
+        <td>${cancelada || '<span class="badge badge-pending">Vigente</span>'}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="generarCotizacionPDFById('${c.id}')">📄 PDF</button></td>
       </tr>`;
     }).join('');
@@ -3138,10 +3145,16 @@ window.cambiarRolUsuario = async function(id, nuevo, sel) {
   } catch (e) { sel.value = u.rol; toast('No se pudo cambiar el rol: ' + e.message, 'error'); }
 };
 
+// Lo cancelado se ve en las listas pero no suma (reglas en /diseno/cancelar.js)
+window.ventasVigentes = function(lista) {
+  if (window.mayaCancelar) return window.mayaCancelar.vigentes(lista || [], (window.data || {}).notasEntrega);
+  return (lista || []).filter(v => !/^cancel/i.test(v.estatus || ''));
+};
+
 // ── DASHBOARD ──
 function updateDashboard(envios = []) {
   const now = new Date();
-  const monthVentas = data.ventas.filter(v => {
+  const monthVentas = window.ventasVigentes(data.ventas).filter(v => {
     if (!v.createdAt) return false;
     const d = v.createdAt.toDate ? v.createdAt.toDate() : new Date(v.createdAt);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
@@ -3157,9 +3170,9 @@ function updateDashboard(envios = []) {
   const last5 = data.ventas.slice(0, 5);
   if (last5.length) {
     vEl.innerHTML = `<table style="width:100%"><tbody>${last5.map(escCopia).map(v => `
-      <tr>
-        <td style="padding:10px 16px;font-size:13px;color:#c5d0dd">${v.cliente || v.clienteNombre || '—'}</td>
-        <td style="padding:10px 16px;font-size:13px;color:#4ade80;font-weight:600;text-align:right">${fmtMoney(v.total)}</td>
+      <tr class="${window.mayaCancelar ? window.mayaCancelar.clase('ventas', v.id) : ''}">
+        <td style="padding:10px 16px;font-size:13px;color:#c5d0dd">${v.cliente || v.clienteNombre || '—'} ${window.mayaCancelar ? window.mayaCancelar.etiqueta('ventas', v.id) : ''}</td>
+        <td class="mc-monto" style="padding:10px 16px;font-size:13px;color:#4ade80;font-weight:600;text-align:right">${fmtMoney(v.total)}</td>
       </tr>`).join('')}</tbody></table>`;
   }
 
@@ -5049,18 +5062,18 @@ window.obtenerMLUserId = async function() {
         return mlUserId;
       }
     } catch (e) {
-      console.warn('config/ml_global no existe, buscando en ml_tokens...');
+      console.warn('No se pudo leer config/ml_global:', e.message);
     }
 
-    // FALLBACK: Buscar el primer token en ml_tokens
-    const tokensSnap = await getDocs(collection(db, 'ml_tokens'));
-    if (!tokensSnap.empty) {
-      const firstToken = tokensSnap.docs[0];
-      const mlUserId = firstToken.id;
-      sessionStorage.setItem('ml_user_id_cache', mlUserId);
-      console.log('ML User ID encontrado en ml_tokens:', mlUserId);
-      return mlUserId;
-    }
+    // Respaldo mientras no se peguen las reglas nuevas de Firebase (con ellas esta lectura se niega y se ignora)
+    try {
+      const tokensSnap = await getDocs(collection(db, 'ml_tokens'));
+      if (!tokensSnap.empty) {
+        const mlUserId = tokensSnap.docs[0].id;
+        sessionStorage.setItem('ml_user_id_cache', mlUserId);
+        return mlUserId;
+      }
+    } catch (e) { /* cerrado por las reglas */ }
 
     console.log('No se encontró ML User ID en Firestore');
     return null;
@@ -5414,56 +5427,7 @@ window.abrirSyncML = function(itemId) {
   syncInventarioML(itemId, parseInt(nuevaCantidad), parseFloat(nuevoPrice));
 };
 
-window.syncInventarioML = async function(itemId, cantidad, precio) {
-  try {
-    // Get ML User ID from localStorage (set when user connects with ML)
-    const mlUserId = localStorage.getItem('ml_user_id');
-    if (!mlUserId) {
-      window.toast('⚠️ Necesitas conectar con Mercado Libre primero', 'error');
-      return;
-    }
-
-    // Get ML token from Firestore (stored securely server-side)
-    const tokenDoc = await getDoc(doc(db, 'ml_tokens', mlUserId));
-    if (!tokenDoc.exists) {
-      window.toast('⚠️ Token de Mercado Libre no encontrado', 'error');
-      return;
-    }
-
-    const accessToken = tokenDoc.data().access_token;
-    if (!accessToken) {
-      window.toast('⚠️ Token de acceso inválido', 'error');
-      return;
-    }
-
-    const response = await fetch('/api/ml', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'sync',
-        mlUserId: mlUserId,
-        itemId: itemId,
-        quantity: cantidad,
-        price: precio
-      })
-    });
-
-    const data = await response.json();
-
-    if (data.error) {
-      window.toast('❌ Error: ' + data.error, 'error');
-    } else {
-      window.toast('✅ Producto sincronizado con Mercado Libre', 'success');
-      // Reload products list
-      if (window.cargarProductosML) {
-        cargarProductosML();
-      }
-    }
-  } catch (error) {
-    window.toast('❌ Error: ' + error.message, 'error');
-    console.error('Sync error:', error);
-  }
-};
+// syncInventarioML vive en /diseno/seguridad.js (el navegador no lee tokens de Mercado Libre)
 
 window.cargarOrdenesML = async function() {
   try {
@@ -5676,7 +5640,7 @@ function mostrarNotasDocumentos(lista) {
     <div onclick="docAbrirPreview('${n.id}')" style="background:#1A2B3C;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid rgba(59,188,212,0.2);cursor:pointer;transition:all 0.2s">
       <div style="color:#3BBCD4;font-weight:700;font-size:15px;margin-bottom:8px">
         📄 ${n.cli} — Nota ${n.n}
-        <span style="color:#22C55E;margin-left:10px">$${Number(n.tot).toLocaleString('es-MX')}</span>
+        <span style="color:#22C55E;margin-left:10px${/^cancel/i.test(n.st) ? ';text-decoration:line-through;opacity:0.6' : ''}">$${Number(n.tot).toLocaleString('es-MX')}</span>
         <span style="background:#3BBCD4;color:#0D1F2E;padding:3px 8px;border-radius:4px;font-size:10px;margin-left:8px">${n.st}</span>
       </div>
       <div style="color:#AADDEE;font-size:11px;margin-bottom:6px">👤 ${n.por}</div>
@@ -5932,6 +5896,7 @@ window.abrirDetallesVenta = async function(ventaId) {
     // Generar HTML de detalles
     let html = `
       <input type="hidden" id="detalles-venta-id" value="${ventaId}">
+      ${window.mayaCancelar && window.mayaCancelar.esAnulada('ventas', ventaId) ? '<div style="margin-bottom:12px">' + window.mayaCancelar.etiqueta('ventas', ventaId) + '</div>' : ''}
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
         <div>
@@ -6721,7 +6686,7 @@ window.showModule = function(name) {
 // ═══════════════════════════════════════
 function updateReportes() {
   const data = window.data || {};
-  const ventas = data.ventas || [];
+  const ventas = window.ventasVigentes(data.ventas);
   updateChartVentasPorMes(ventas);
   cargarVendedoresSelect();
   // --- Top Clientes ---
@@ -6903,7 +6868,7 @@ window.filtrarVentasVendedor = function() {
   const hastaMes  = parseInt(document.getElementById("rep-vend-hasta-mes").value) || 0;
   const hastaAno  = parseInt(document.getElementById("rep-vend-hasta-ano").value) || 0;
 
-  let ventas = (data.ventas || []).slice();
+  let ventas = window.ventasVigentes(data.ventas).slice();
   if (vendedor) ventas = ventas.filter(v => (v.vendedor || "") === vendedor);
 
   const parseFecha = v => {
@@ -8541,7 +8506,7 @@ window.renderNotasFacturas = async function(ventas) {
     }
 
     return `
-    <tr>
+    <tr class="${window.mayaCancelar ? window.mayaCancelar.clase('ventas', v.id) : ''}">
       <td style="font-weight:600;color:#3BBCD4">
         ${escHTML(v.notaNumero)}
         <button style="background:none;border:none;color:#3BBCD4;cursor:pointer;font-size:1.1em;padding:0;margin-left:6px" onclick="descargarNotaPorId('${v.id}')" title="Descargar nota">⬇️</button>
@@ -8552,11 +8517,11 @@ window.renderNotasFacturas = async function(ventas) {
       </td>
       <td>${escHTML(v.clienteNombre || v.cliente || '—')}</td>
       <td>${escHTML(siniestro || '—')}</td>
-      <td>$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+      <td class="mc-monto">$${(v.total || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
       <td style="text-align:center">${v.tipoEntrega === 'local' ? '🏠 Local' : v.tipoEntrega === 'paqueteria' ? '📦 Envío' : '🏪 Recolección'}</td>
       <td>${fmtDate(v.createdAt)}</td>
       <td style="text-align:center">
-        ${(v.tieneFactura || v.facturaId || v.facturaURL) ? '<span class="badge badge-g" style="background:#27AE60;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">✓ Facturada</span>' : '<span class="badge badge-o" style="background:#f39c12;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">Pendiente</span>'}
+        ${(window.mayaCancelar && window.mayaCancelar.etiqueta('ventas', v.id)) || ((v.tieneFactura || v.facturaId || v.facturaURL) ? '<span class="badge badge-g" style="background:#27AE60;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">✓ Facturada</span>' : '<span class="badge badge-o" style="background:#f39c12;color:white;padding:4px 8px;border-radius:4px;font-size:0.85em">Pendiente</span>')}
       </td>
     </tr>
   `;
@@ -8878,6 +8843,16 @@ window.generarNotaPDF = async function(venta, opciones) {
     doc.text('maya-autopartes.myshopify.com',mg,pageH-6);
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México',pageW/2,pageH-6,{align:'center'});
+    // Una nota cancelada lo dice en todas sus hojas (también en el PDF que manda Pepito)
+    if (/^cancel/i.test(venta.estatus || '') || venta.estado === 'cancelada' || (window.mayaCancelar && window.mayaCancelar.anulada(venta, (window.data || {}).notasEntrega))) {
+      for (var pc = 1; pc <= doc.internal.getNumberOfPages(); pc++) {
+        doc.setPage(pc); doc.setTextColor(220, 38, 38); doc.setFont(undefined, 'bold');
+        doc.setFontSize(11); doc.text('CANCELADA - sin validez', pageW - mg, 48, { align: 'right' });
+        try { doc.setGState(doc.GState({ opacity: 0.35 })); } catch (e5) {}
+        doc.setFontSize(80); doc.text('CANCELADA', 42, 190, { angle: 35 });
+        try { doc.setGState(doc.GState({ opacity: 1 })); } catch (e6) {}
+      }
+    }
     doc.save((venta.notaId||'nota')+(sinPrecio ? '_sin_precio' : '')+'.pdf');
     window.toast('Nota PDF generada','success');
   } catch(err) {
@@ -9179,7 +9154,7 @@ window.generarCotizacionPDFById = function(id) {
     doc.setFontSize(14); doc.setFont(undefined,'bold');
     doc.text(cot.clienteNombre||cot.cliente||'-', mg+7, y+10);
     doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(gris[0],gris[1],gris[2]);
-    doc.text('Cotización vigente  •  Sujeta a cambio sin previo aviso', mg+7, y+17);
+    doc.text(/^cancel/i.test(cot.estatus || '') ? 'Cotización CANCELADA' : 'Cotización vigente  •  Sujeta a cambio sin previo aviso', mg+7, y+17);
     doc.text('Vendedor: '+(cot.vendedor||'-'), mg+7, y+23);
 
     var sins = cot.siniestros||(cot.items?cot.items.map(function(i){return i.numSiniestro||'';}).filter(Boolean).join(' | '):'')||'';
@@ -9251,6 +9226,14 @@ window.generarCotizacionPDFById = function(id) {
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México',pageW/2,pageH-6,{align:'center'});
 
+    if (/^cancel/i.test(cot.estatus || '')) {
+      for (var pc = 1; pc <= doc.internal.getNumberOfPages(); pc++) {
+        doc.setPage(pc); doc.setTextColor(220,38,38); doc.setFont(undefined,'bold');
+        try { doc.setGState(doc.GState({opacity:0.35})); } catch(e) {}
+        doc.setFontSize(80); doc.text('CANCELADA', 42, 190, {angle:35});
+        try { doc.setGState(doc.GState({opacity:1})); } catch(e) {}
+      }
+    }
     doc.save('cotizacion-'+(cot.notaId||id.slice(-6))+'.pdf');
     toast('PDF de cotización generado','success');
   } catch(err) {
@@ -9373,12 +9356,17 @@ function neDesdeVenta(v) {
   };
 }
 
+// Las canceladas se ven en el listado (misma regla que /diseno/cancelar.js), pero no suman
+function neCancelada(d) {
+  return /^cancel/i.test(d.estatus || '') || d.estado === 'cancelada' || (d.etapa === 'cancelada' && !d.estatus);
+}
+
 function neRegistros() {
-  var lista = (window.data.notasEntrega || []).map(neDesdeEntrega);
+  var lista = (window.data.notasEntrega || []).map(function(n) { return Object.assign(neDesdeEntrega(n), { cancelada: neCancelada(n) }); });
   (window.data.ventas || []).forEach(function(v) {
-    // Las ventas creadas desde una nota de entrega ya están como NE; las canceladas no son venta
-    if (v.fuente === 'nota_entrega' || v.notaEntregaId || /^cancel/.test(neNorm(v.estatus))) return;
-    lista.push(neDesdeVenta(v));
+    // Las ventas creadas desde una nota de entrega ya están como NE
+    if (v.fuente === 'nota_entrega' || v.notaEntregaId) return;
+    lista.push(Object.assign(neDesdeVenta(v), { cancelada: neCancelada(v) }));
   });
   return lista;
 }
@@ -9448,8 +9436,10 @@ function neDuplicados(lista) {
   return pares;
 }
 
-function neResumen(lista) {
-  var r = { filas: lista, subtotal: 0, iva: 0, ajuste: 0, total: 0, piezas: 0, articulos: 0, entregas: 0, ventas: 0, desde: null, hasta: null };
+function neResumen(todas) {
+  // Las canceladas no entran en totales, Excel ni PDF del historial
+  var lista = todas.filter(function(x) { return !x.cancelada; });
+  var r = { filas: lista, canceladas: todas.length - lista.length, subtotal: 0, iva: 0, ajuste: 0, total: 0, piezas: 0, articulos: 0, entregas: 0, ventas: 0, desde: null, hasta: null };
   lista.forEach(function(x) {
     r.subtotal += x.subtotal;
     r.iva += x.iva;
@@ -9539,11 +9529,12 @@ function renderNotasEntrega() {
 function renderNotasEntregaFiltrado() {
   var tbody = document.getElementById('ne-body');
   if (!tbody) return;
-  var cuantas = neRegistros().length;
-  var r = neResumen(neFiltrarNotas(neFiltrosActuales()));
+  var cuantas = neRegistros().filter(function(x) { return !x.cancelada; }).length;
+  var todas = neFiltrarNotas(neFiltrosActuales()); // se ven todas; las canceladas no suman
+  var r = neResumen(todas);
 
   var countEl = document.getElementById('ne-filter-count');
-  if (countEl) countEl.textContent = r.filas.length + ' de ' + cuantas + ' notas' + (r.entregas && r.ventas ? ' (' + r.entregas + ' NE · ' + r.ventas + ' NV)' : '') + '  ·  Total ' + neDinero(r.total);
+  if (countEl) countEl.textContent = r.filas.length + ' de ' + cuantas + ' notas' + (r.entregas && r.ventas ? ' (' + r.entregas + ' NE · ' + r.ventas + ' NV)' : '') + '  ·  Total ' + neDinero(r.total) + (r.canceladas ? '  ·  ' + r.canceladas + (r.canceladas === 1 ? ' cancelada (no suma)' : ' canceladas (no suman)') : '');
   var avisoEl = document.getElementById('ne-filter-aviso');
   if (avisoEl) {
     var huecos = neHuecos();
@@ -9551,12 +9542,12 @@ function renderNotasEntregaFiltrado() {
     avisoEl.style.display = (r.duplicados.length || huecos) ? 'block' : 'none';
   }
 
-  if (!r.filas.length) {
+  if (!todas.length) {
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">' + (cuantas ? 'Sin resultados con esos filtros' : 'Sin notas') + '</div></div></td></tr>';
     return;
   }
   var isAdmin = window.currentRole === 'admin';
-  tbody.innerHTML = r.filas.map(function(x, i) {
+  tbody.innerHTML = todas.map(function(x, i) {
     // Botón de "la otra versión": si la nota sale sin precio por defecto ofrece la de con precio, y al revés
     var notaDoc = x.tipo === 'NE'
       ? (window.data.notasEntrega || []).find(function(n) { return n.id === x.id; })
@@ -9571,20 +9562,22 @@ function renderNotasEntregaFiltrado() {
       ? btn("window.previewNotaEntregaPDFById('" + x.id + "')", '👁', 'Ver', 'Ver la nota') +
         btn("window.generarNotaEntregaPDFById('" + x.id + "')", '📄', 'PDF', 'Descargar PDF') +
         btn("window.generarNotaEntregaPDFById('" + x.id + "'," + (!sinPrecioDef) + ")", otraIcono, otraTexto, 'Descargar la versión ' + otraTexto.toLowerCase()) +
-        (isAdmin ? btn("eliminarNotaEntrega('" + x.id + "')", '🗑', 'Eliminar', 'Eliminar nota', 'btn-danger') : '')
+        (window.mayaCancelar && !x.cancelada ? window.mayaCancelar.botones('notasEntrega', x.id) : '')
       : btn("window.abrirDetallesVenta('" + x.id + "')", '👁', 'Ver', 'Ver la nota') +
         btn("window.descargarNotaPorId('" + x.id + "')", '📄', 'PDF', 'Descargar PDF') +
         btn("window.descargarNotaPorId('" + x.id + "',{sinPrecio:" + (!sinPrecioDef) + "})", otraIcono, otraTexto, 'Descargar la versión ' + otraTexto.toLowerCase());
+    var col = x.tipo === 'NE' ? 'notasEntrega' : 'ventas';
+    if (x.cancelada && window.mayaCancelar) acciones += window.mayaCancelar.botones(col, x.id);
     // Siniestros como etiquetas (máx. 3 a la vista)
     var sins = String(x.siniestro || '').split('|').map(function(s) { return s.trim(); }).filter(Boolean);
     var sinsHtml = sins.length
       ? sins.slice(0, 3).map(function(s) { return '<span class="ne-sin">' + neEsc(s) + '</span>'; }).join('') + (sins.length > 3 ? '<span class="ne-sin" title="' + neEsc(sins.slice(3).join(' | ')) + '">+' + (sins.length - 3) + '</span>' : '')
       : '<span class="ne-sub">—</span>';
     var hora = neHora(x);
-    return '<tr>' +
+    return '<tr' + (x.cancelada ? ' class="mc-cancelada"' : '') + '>' +
       '<td><span class="ne-folio"><span class="ne-tipo ' + (x.tipo === 'NE' ? 'ne' : 'nv') + '">' + x.tipo + '</span>' + neEsc(String(x.folio).replace(/^(NV|NE)[s-]*/, '')) + '</span></td>' +
       '<td><span class="ne-fecha">' + neFmtFecha(x.fecha) + '</span>' + (hora && hora !== '-' ? '<span class="ne-sub">' + hora + '</span>' : '') + '</td>' +
-      '<td><span class="ne-cliente">' + neEsc(x.cliente || '-') + '</span>' + (x.vendedor ? '<span class="ne-sub">Vendedor: ' + neEsc(x.vendedor) + '</span>' : '') + '</td>' +
+      '<td><span class="ne-cliente">' + neEsc(x.cliente || '-') + '</span>' + (x.vendedor ? '<span class="ne-sub">Vendedor: ' + neEsc(x.vendedor) + '</span>' : '') + (x.cancelada && window.mayaCancelar ? window.mayaCancelar.etiqueta(col, x.id) : '') + '</td>' +
       '<td><div class="ne-sins">' + sinsHtml + '</div></td>' +
       '<td><span class="ne-total">' + neDinero(x.total) + '</span></td>' +
       '<td><div class="ne-acc">' + acciones + '</div></td>' +
@@ -10008,7 +10001,8 @@ window.descargarHistorialNEPDF = function() {
   if (r.ajuste) lineasCaja.push(['Ajustes', neAjusteTxt(r.ajuste)]);
   var notas = ['Cant., P. Unit., Subtotal, IVA y Total son los capturados en cada nota. Importe = Cant. × P. Unit.'];
   if (r.ventas) notas.push('En las notas de venta (NV) el importe es el precio capturado en cada partida; ahí no se guarda cantidad.');
-  if (f.tipo !== 'NE') notas.push('No incluye notas de venta canceladas ni las creadas desde una nota de entrega (esas ya aparecen como NE).');
+  notas.push('No incluye notas canceladas.');
+  if (f.tipo !== 'NE') notas.push('No incluye las notas de venta creadas desde una nota de entrega (esas ya aparecen como NE).');
   notas.push('Total general = suma de los totales de las ' + r.filas.length + ' notas.');
   var boxW = 92, bandaY = 7 + lineasCaja.length * 7, boxH = bandaY + 10, boxX = pageW - mg - boxW;
   doc.setFont(undefined, 'normal');
@@ -10489,6 +10483,16 @@ window.generarNotaEntregaPDF = function(nota, previewOnly, opciones) {
     doc.text('maya-autopartes.myshopify.com', mg, pageH-6);
     doc.setTextColor(blanco[0],blanco[1],blanco[2]);
     doc.text('Maya Autopartes  •  La parte que necesitas.  •  Ciudad de México', pageW/2, pageH-6, {align:'center'});
+    // Una nota cancelada lo dice en todas sus hojas (también en el PDF que manda Pepito)
+    if (nota.etapa === 'cancelada' || /^cancel/i.test(nota.estatus || '')) {
+      for (var pc = 1; pc <= doc.internal.getNumberOfPages(); pc++) {
+        doc.setPage(pc); doc.setTextColor(220, 38, 38); doc.setFont(undefined, 'bold');
+        doc.setFontSize(11); doc.text('CANCELADA - sin validez', pageW - mg, 48, { align: 'right' });
+        try { doc.setGState(doc.GState({ opacity: 0.35 })); } catch (e5) {}
+        doc.setFontSize(80); doc.text('CANCELADA', 42, 190, { angle: 35 });
+        try { doc.setGState(doc.GState({ opacity: 1 })); } catch (e6) {}
+      }
+    }
     if (previewOnly) return doc;
     doc.save('nota-entrega-' + (nota.notaId || 'NE') + (sinPrecio ? '_sin_precio' : '') + '.pdf');
     window.toast('PDF generado', 'success');
@@ -10660,5 +10664,7 @@ window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
 <script type="module" src="/diseno/edicion.js"></script>
 <script type="module" src="/diseno/interaccion.js"></script>
 <script type="module" src="/diseno/inventario.js"></script>
+<script type="module" src="/diseno/permisos.js"></script>
+<script type="module" src="/diseno/respaldos.js"></script>
 </body>
 </html>

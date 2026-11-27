@@ -1,6 +1,8 @@
 // Corregir lo ya capturado: clientes, proveedores, entregas, notas de entrega y cotizaciones.
 // Reutiliza las ventanas de alta en "modo edición". Solo se guarda lo que cambió; nunca se tocan folio, código ni createdAt.
 
+import { estaCancelada, ventasLigadas as ligadasDe } from './cancelar.js';
+
 // Las funciones que se envuelven las define el script principal: se espera a que existan
 const NECESARIAS = ['openModal', 'closeModal', 'saveCliente', 'saveProveedor', 'saveEntrega', 'saveCotizacion', 'saveNotaEntrega', 'mayaNoCorregible'];
 for (let i = 0; i < 200 && !NECESARIAS.every(n => window[n]); i++) await new Promise(r => setTimeout(r, 50));
@@ -19,7 +21,6 @@ const miNombre = () => texto(el('user-name-display') && el('user-name-display').
 // Los mensajes pueden traer nombres capturados: sin < > sirven igual si el aviso se pinta como texto o como HTML
 const aviso = (m, t) => window.toast(String(m).replace(/</g, '‹').replace(/>/g, '›'), t || 'success');
 const ref = (col, id) => window.doc(window.db, col, id);
-const estaCancelada = v => /^cancel/i.test(v.estatus || '') || v.etapa === 'cancelada' || v.estado === 'cancelada';
 // Historial igual al de las ventas: quién, cuándo, qué cambió y cómo estaba antes (últimas 20)
 const historial = (doc, cambios, antes) => (Array.isArray(doc.correcciones) ? doc.correcciones : [])
   .concat([{ por: miNombre(), uid: usuario().uid || '', cuando: Date.now(), motivo: '', cambios, antes }]).slice(-20);
@@ -308,6 +309,7 @@ const leerCot = () => ({ fecha: val('cot-fecha'), cliente: val('cot-cliente'), v
 
 function editarCotizacion(id) {
   return abrir('cotizaciones', id, c => {
+    if (estaCancelada(c)) return aviso('Esa cotización está cancelada. Reactívala para corregirla.', 'error');
     window.openModal('modal-cotizacion');
     window.inicializarFormularioCotizacion();
     if (c.fecha) poner('cot-fecha', window.mayaDiaVenta(c.fecha));
@@ -367,6 +369,7 @@ envolverGuardado('modal-cotizacion', async e => {
     lista.push(r2(e.doc.total) !== cambios.total ? 'Total: ' + pesos(e.doc.total) + ' → ' + pesos(cambios.total) : 'Piezas o siniestros');
   }
   const actual = await leerDoc('cotizaciones', e.id);
+  if (estaCancelada(actual)) return aviso('Esta cotización ya está cancelada; no se corrige.', 'error');
   const huella = c => JSON.stringify([c.items, c.total, c.clienteNombre, c.vendedor, (c.correcciones || []).length]);
   if (huella(actual) !== huella(e.doc)) return aviso('Alguien más cambió esta cotización. Ciérrala y ábrela de nuevo.', 'error');
   if (!sigue('modal-cotizacion', e)) return;
@@ -384,20 +387,16 @@ const CAMPOS_ANTES_VENTA = ['items', 'siniestros', 'subtotal', 'ivaTotal', 'ajus
 const fotoVenta = v => Object.assign({ ivaModo: null, anticipo: null, resta: null }, foto(v, CAMPOS_ANTES_VENTA));
 const CAMPOS_ANTES_NOTA = ['fecha', 'cliente', 'vendedor', 'items', 'siniestro', 'siniestros', 'subtotal', 'ivaTotal', 'total', 'anticipo', 'resta', 'ocultarPrecios'];
 
-// Ventas creadas desde la nota. Si el folio estuviera repetido, se distingue por cliente.
-function ventasLigadas(nota, ventas) {
-  let l = ventas.filter(v => nota.notaId && v.notaEntregaId === nota.notaId);
-  const repetido = (D().notasEntrega || []).filter(n => n.notaId === nota.notaId).length > 1;
-  if (repetido) l = l.filter(v => v.clienteNombre === nota.cliente);
-  return l;
-}
+// Ventas creadas desde la nota (la regla está en cancelar.js)
+const ventasLigadas = (nota, ventas) => ligadasDe(nota, ventas, D().notasEntrega);
 
 // Motivo por el que no se puede corregir la nota ('' = sí se puede)
 function noCorregible(nota, ligadas) {
+  if (estaCancelada(nota)) return (nota.notaId || 'La nota') + ' está cancelada; no se corrige.';
   const activa = ligadas.find(v => !estaCancelada(v));
   const propia = window.mayaNoCorregible({
     notaId: nota.notaId, vendedor: nota.vendedor, createdBy: nota.createdBy || (activa && activa.createdBy),
-    facturaId: nota.facturaId, estatus: estaCancelada(nota) ? 'Cancelado' : ''
+    facturaId: nota.facturaId, estatus: ''
   });
   if (propia) return propia.replace('NV #', '');
   if (nota.facturaId) return nota.notaId + ' ya está facturada. Cancela primero la factura.';
@@ -606,6 +605,8 @@ function ponerBotones(lista) {
     const id = idDeFila(lista, tr, i);
     const donde = lista.donde ? tr.querySelector(lista.donde) : tr.cells[tr.cells.length - 1];
     if (!id || !donde) return;
+    // Lo cancelado no se corrige: primero se reactiva
+    if (['cotizaciones', 'notasEntrega'].includes(lista.col) && estaCancelada((D()[lista.col] || []).find(x => x.id === id))) return;
     if (lista.col === 'notasEntrega') {
       // Solo a quien puede corregir esa nota; si está facturada o con pagos, al tocar se explica por qué
       const n = (D().notasEntrega || []).find(x => x.id === id);

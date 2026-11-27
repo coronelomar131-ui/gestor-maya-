@@ -3,6 +3,7 @@
 // lecturas de Firebase. Las facturas viven en la colección "facturas" y solo se escuchan al abrir estos módulos.
 import { icono } from './iconos.js';
 import { emparejar } from './emparejar.js';
+import { estaCancelada, cancelar, reactivar } from './cancelar.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -31,7 +32,7 @@ function registros() {
     fecha: ms(n.fecha) || ms(n.createdAt), total: Number(n.total) || 0
   }));
   const nv = (D().ventas || [])
-    .filter(v => !(v.fuente === 'nota_entrega' || v.notaEntregaId) && (!/^cancel/.test(norm(v.estatus)) || v.etapa === 'cancelada'))
+    .filter(v => !(v.fuente === 'nota_entrega' || v.notaEntregaId)) // las canceladas se ven con su etapa "Cancelada"
     .map(v => ({
       tipo: 'NV', col: 'ventas', id: v.id, folio: v.notaId ? 'NV #' + v.notaId : (v.notaNumero || 'NV'), raw: v,
       cliente: v.clienteNombre || v.cliente || '', siniestro: String(v.siniestros || (v.items || []).map(i => i.numSiniestro).filter(Boolean).join(' | ') || v.numeroReporte || ''),
@@ -71,7 +72,7 @@ function etapa(r) {
   const f = facturaDe(r);
   if (f && f.estatus !== 'cancelada') return f.estatus === 'pagada' ? 'pagada' : 'facturada';
   if (r.raw.facturaId && !facturas.length) return 'facturada';
-  if (r.raw.etapa === 'cancelada') return 'cancelada';
+  if (estaCancelada(r.raw)) return 'cancelada';
   if (r.raw.etapa && LOGISTICA.includes(r.raw.etapa)) return r.raw.etapa;
   const e = norm(r.raw.estatus);
   if (e === 'entregado') return 'entregada';
@@ -143,7 +144,7 @@ function pintarSeguimiento() {
     const alEnv = env && plazos() ? plazos().alertaEnvio(r.raw, et, Date.now(), desdeFac()) : null;
     const chipEnv = env && !['entregada', 'facturada', 'pagada', 'cancelada'].includes(et) ? ' ' + semaforoHtml(r.raw) : '';
     const alerta = (est && ['vencida', 'lista', 'por_vencer', 'sin_movimiento'].includes(est.clave) ? ` <span class="m-op-etapa e-${est.clave}" title="${escapar(est.detalle)}">${escapar(est.texto)}</span>` : '') + chipEnv;
-    return `<button type="button" class="m-op-fila m-vidrio" data-abrir="${escapar(r.id)}" data-col="${r.col}">
+    return `<button type="button" class="m-op-fila m-vidrio${et === 'cancelada' ? ' mc-cancelada' : ''}" data-abrir="${escapar(r.id)}" data-col="${r.col}">
       <span class="m-op-folio">${escapar(r.folio)}</span>
       <span class="m-op-info"><strong>${escapar(r.cliente || 'Sin cliente')}</strong><small>${escapar(r.piezas || '—')}${r.siniestro ? ' · Sin. ' + escapar(r.siniestro) : ''}${et === 'cancelada' && r.raw.cancelacion ? ' · ' + escapar(plazos() ? plazos().nombreMotivo(r.raw.cancelacion.motivo) : r.raw.cancelacion.motivo) : ''}</small>${alerta}</span>
       <span class="m-op-pasos" aria-label="${escapar(nombreEtapa(et))}">${ETAPAS.map((e, i) => `<i class="${i <= paso ? 'hecho' : ''}" title="${e.nombre}"></i>`).join('')}</span>
@@ -164,7 +165,7 @@ function abrirPieza(col, id) {
   const canc = r.raw.cancelacion;
   const envio = r.raw.envio || {};
   const P = plazos();
-  const puedeEnvio = P && (LOGISTICA.includes(et) || et === 'cancelada') && et !== 'entregada';
+  const puedeEnvio = P && LOGISTICA.includes(et) && et !== 'entregada'; // cancelada: primero se reactiva
   dialogo(`${r.folio} · ${r.cliente || 'Sin cliente'}`, `
     <p class="m-op-sub">${escapar(r.piezas || '—')}${r.siniestro ? ' · Siniestro ' + escapar(r.siniestro) : ''} · ${pesos(r.total)}</p>
     <ol class="m-op-linea">
@@ -178,7 +179,7 @@ function abrirPieza(col, id) {
     ${et === 'cancelada' ? `<p class="m-op-cancelada">${icono('x', 14)} Cancelada${canc ? ' · ' + escapar(plazos() ? plazos().nombreMotivo(canc.motivo) : canc.motivo) + (canc.detalle ? ' · ' + escapar(canc.detalle) : '') + ' · ' + escapar(canc.por || '') + ' · ' + fechaCorta(ms(canc.fecha)) : ''}. Para reactivarla, muévela a otra etapa.</p>` : ''}
     ${puedeMover ? `<div class="m-op-mover">
       <label>Mover a</label>
-      <select id="pz-etapa">${LOGISTICA.map(id => `<option value="${id}"${id === et ? ' selected' : ''}>${nombreEtapa(id)}</option>`).join('')}${et !== 'cancelada' && motivos.length ? '<option value="cancelada">Cancelar nota…</option>' : ''}</select>
+      <select id="pz-etapa">${et === 'cancelada' ? '<option value="cancelada" selected>Sigue cancelada</option>' : ''}${LOGISTICA.map(id => `<option value="${id}"${id === et ? ' selected' : ''}>${nombreEtapa(id)}</option>`).join('')}${et !== 'cancelada' && motivos.length ? '<option value="cancelada">Cancelar nota…</option>' : ''}</select>
       <input type="text" id="pz-nota" placeholder="Nota opcional (ej. guía, quién recibió)">
       <div id="pz-cancel" class="m-op-cancel" hidden>
         <label>Motivo de la cancelación (obligatorio)</label>
@@ -210,17 +211,18 @@ function abrirPieza(col, id) {
     if (nueva === et && !nota && !nuevoEnvio) return true;
     const ev = { etapa: nueva, fecha: Date.now(), por: yo() };
     const cambios = { etapa: nueva };
+    // Cancelar y reactivar van por cancelar.js: revisa factura y pagos, y mueve juntas la nota y su venta
+    if (nueva === 'cancelada' && et === 'cancelada') { aviso('Sigue cancelada. Para reactivarla elige otra etapa.', 'info'); return true; }
     if (nueva === 'cancelada') {
       const motivo = $('#pz-motivo').value, detalle = $('#pz-detalle').value.trim();
       if (!motivo) { aviso('Elige el motivo de la cancelación', 'error'); return false; }
       if (motivo === 'otra' && !detalle) { aviso('Escribe cuál es la otra causa', 'error'); return false; }
-      cambios.cancelacion = { motivo, detalle, por: yo(), fecha: ev.fecha };
-      if (col === 'ventas') cambios.estatus = 'Cancelado';
-      nota = plazos().nombreMotivo(motivo) + (detalle ? ' · ' + detalle : '') + (nota ? ' · ' + nota : '');
-    } else if (et === 'cancelada') {
-      cambios.cancelacion = null;
-      if (col === 'ventas') cambios.estatus = 'Pendiente';
-      nota = 'Reactivada' + (nota ? ' · ' + nota : '');
+      return cancelar(col, id, { motivo, detalle, nota });
+    }
+    if (et === 'cancelada') {
+      if (!(await reactivar(col, id, { sinPreguntar: true, etapa: nueva, nota }))) return false;
+      if (window.mayaAvisar) window.mayaAvisar('etapa', { col, id, etapa: nueva, nota: 'Reactivada' + (nota ? ' · ' + nota : '') });
+      return true;
     }
     if (nota) ev.nota = nota;
     // Si solo cambió el envío, la etapa no se repite en la línea de tiempo
@@ -237,7 +239,7 @@ function abrirPieza(col, id) {
         cambios.envio = Object.assign({}, envio, nuevoEnvio, { pasos: pasosEnv, actualizado: ahoraEnv, por: yo(), fechaGuia: envio.fechaGuia || (nuevoEnvio.guia ? ahoraEnv : null), fechaEnvio: envio.fechaEnvio || (['recoleccion', 'transito'].includes(nuevoEnvio.estatus) ? ahoraEnv : null), fechaEntrega: envio.fechaEntrega || (nuevoEnvio.estatus === 'entregado' ? ahoraEnv : null) });
         const etapaEnvio = { almacen: 'preparacion', recoleccion: 'transito', transito: 'transito', entregado: 'entregada' }[nuevoEnvio.estatus];
         const orden = ['registrada', 'preparacion', 'transito', 'entregada'];
-        if (etapaEnvio && orden.indexOf(etapaEnvio) > orden.indexOf(cambios.etapa) && cambios.etapa !== 'cancelada') {
+        if (etapaEnvio && orden.indexOf(etapaEnvio) > orden.indexOf(cambios.etapa)) {
           cambios.etapa = etapaEnvio;
           notaEnvio = (nuevoEnvio.paqueteria ? nuevoEnvio.paqueteria + ' ' : '') + (nuevoEnvio.guia ? 'guía ' + nuevoEnvio.guia : '');
           cambios.seguimiento = cambios.seguimiento.concat({ etapa: etapaEnvio, fecha: Date.now(), por: yo(), nota: notaEnvio });
@@ -251,7 +253,7 @@ function abrirPieza(col, id) {
     return true;
   } }] : []);
   // El motivo solo aparece cuando se elige "Cancelar nota…"
-  queueMicrotask(() => { const sel = $('#pz-etapa'); if (sel) sel.addEventListener('change', () => { const c = $('#pz-cancel'); if (c) c.hidden = sel.value !== 'cancelada'; }); });
+  queueMicrotask(() => { const sel = $('#pz-etapa'); if (sel) sel.addEventListener('change', () => { const c = $('#pz-cancel'); if (c) c.hidden = sel.value !== 'cancelada' || et === 'cancelada'; }); });
 }
 
 // ═══════════════════════ FACTURACIÓN (XML de CONTPAQi) ═══════════════════════
@@ -527,6 +529,9 @@ function confirmarFactura(cfdi) {
       </div>`,
     [{ texto: 'Guardar factura', principal: true, accion: async () => {
       const lista = pend.filter(r => marcadas.has(r.col + ':' + r.id));
+      // Pudo cancelarse mientras la ventana estaba abierta
+      const ya = registros().filter(r => etapa(r) === 'cancelada' && marcadas.has(r.col + ':' + r.id));
+      if (ya.length) { aviso(ya.map(r => r.folio).join(', ') + ' se canceló: quítala de esta factura', 'error'); return false; }
       const dias = Math.max(0, Number($('#cf-dias').value) || 0);
       const pagada = $('#cf-pagada').checked;
       const { textoCompleto, ...datosCfdi } = cfdi;
@@ -823,7 +828,7 @@ function estadoAreas() {
   const h = hoy0();
   const pc = porCobrar();
   const venc = pc.filter(f => inicioDia(f.vencimiento) < h);
-  const hoyRegs = regs.filter(r => r.fecha >= h);
+  const hoyRegs = regs.filter(r => r.fecha >= h && etapa(r) !== 'cancelada');
   const enCamino = regs.filter(r => ['preparacion', 'transito'].includes(etapa(r)));
   const porFacturar = regs.filter(r => facturable(r) && r.total > 0 && etapa(r) === 'entregada');
   return {

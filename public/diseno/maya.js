@@ -404,8 +404,8 @@ function datoDe(id) {
   const n = (lista, filtro) => (Array.isArray(lista) ? lista.filter(filtro).length : 0);
   let k = 0;
   switch (id) {
-    case 'ventas': k = n(d.ventas, v => !/^cancel/i.test(v.estatus || '') && delMes(v.fecha || v.createdAt)); return k ? `${k} este mes` : '';
-    case 'notas-entrega': k = n(d.notasEntrega, x => delMes(x.fecha || x.createdAt)); return k ? `${k} este mes` : '';
+    case 'ventas': k = n(d.ventas, v => !(window.mayaCancelar ? window.mayaCancelar.anulada(v, d.notasEntrega) : /^cancel/i.test(v.estatus || '')) && delMes(v.fecha || v.createdAt)); return k ? `${k} este mes` : '';
+    case 'notas-entrega': k = n(d.notasEntrega, x => x.etapa !== 'cancelada' && delMes(x.fecha || x.createdAt)); return k ? `${k} este mes` : '';
     case 'clientes': k = (d.clientes || []).length; return k ? `${k} registrados` : '';
     case 'inventario': k = n(d.productos, p => !p.archivado && p.tipo !== 'bajo_pedido' && Number(p.stockMin) > 0 && (Number(p.stock) || 0) <= Number(p.stockMin)); return k ? `${k} con poco stock` : '';
     case 'entregas': k = n(d.entregas, e => (e.estatus || 'pending') === 'pending'); return k ? `${k} pendientes` : '';

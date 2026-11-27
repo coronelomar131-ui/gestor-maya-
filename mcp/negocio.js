@@ -36,7 +36,6 @@ const desdeHasta = (a) => ({
   desde: a.desde ? ms(a.desde) - 12 * 3600000 : 0,
   hasta: a.hasta ? ms(a.hasta) + 12 * 3600000 - 1 : Infinity
 });
-const cancelada = v => /^cancel/.test(datos.norm(v.estatus)) || v.estado === 'cancelada';
 
 // ══════════════ 1. Registrar pago de una factura (igual que Cobranza → Registrar pago) ══════════════
 const folioNorm = s => datos.norm(s).replace(/[\s-]/g, '');
@@ -107,6 +106,7 @@ async function buscarCotizacion(a) {
 async function convertirCotizacion(u, a, opciones = {}) {
   const c = await buscarCotizacion(a);
   const folio = 'COT-' + (c.notaId || c.id);
+  if (/^cancel/.test(datos.norm(c.estatus))) throw new ErrorUsuario(folio + ' está cancelada; reactívala en el gestor antes de convertirla.');
   if (c.estatus === 'vendida' || c.ventaId) throw new ErrorUsuario(folio + ' ya se convirtió en venta' + (c.ventaFolio ? ' (' + c.ventaFolio + ')' : '') + '. Si algo cambió, corrige esa venta.');
   const items = Array.isArray(c.items) ? c.items : [];
   if (!items.length) throw new ErrorUsuario(folio + ' no tiene piezas.');
@@ -140,8 +140,7 @@ async function historialCostos(a) {
   if (!palabras.length) throw new ErrorUsuario('Dime qué pieza buscar (por ejemplo "facia versa 2020").');
   const coincide = t => { const n = datos.norm(t); return palabras.every(p => n.includes(p)); };
   const filas = [];
-  (await datos.leer('ventas')).forEach(v => {
-    if (cancelada(v)) return;
+  datos.vigentes(await datos.leer('ventas'), await datos.leer('notasEntrega')).forEach(v => {
     (Array.isArray(v.items) ? v.items : []).forEach(it => {
       if (it.costo == null || !coincide(it.pedido)) return;
       filas.push({
@@ -211,8 +210,8 @@ async function ventasDeComision(u, a) {
   const { desde, hasta } = desdeHasta(a);
   const propio = veTodo(u) ? '' : primera(u.nombre || u.email);
   const filtro = propio || primera(a.vendedor);
-  return (await fb().leerColeccion('ventas')).filter(v => {
-    if (cancelada(v)) return false;
+  const [todas, notas] = await Promise.all([fb().leerColeccion('ventas'), fb().leerColeccion('notasEntrega')]);
+  return datos.vigentes(todas, notas).filter(v => {
     const t = ms(v.fecha) || ms(v.createdAt);
     if (t < desde || t > hasta) return false;
     return !filtro || primera(v.vendedor) === filtro;

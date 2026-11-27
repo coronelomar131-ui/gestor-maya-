@@ -89,6 +89,21 @@ function desdeVenta(v) {
   };
 }
 
+// Ventas que sí cuentan: ni canceladas ni creadas desde una nota de entrega cancelada (misma regla que diseno/cancelar.js)
+function vigentes(ventas, notasEntrega) {
+  const porNota = new Map();
+  notasEntrega.forEach(n => porNota.set(n.notaId, (porNota.get(n.notaId) || []).concat(n)));
+  return ventas.filter(v => {
+    if (/^cancel/.test(norm(v.estatus)) || v.estado === 'cancelada') return false;
+    const l = (v.notaEntregaId && porNota.get(v.notaEntregaId)) || [];
+    const nota = l.length > 1 ? l.find(n => n.cliente === v.clienteNombre) : l[0];
+    if (!nota || nota.etapa !== 'cancelada') return true;
+    // Folio reutilizado: una venta de otro cliente y anterior a la nota (más de un día) no es de esa nota
+    const ms = f => (!f ? 0 : f.toMillis ? f.toMillis() : f._seconds || f.seconds ? (f._seconds || f.seconds) * 1000 : typeof f === 'number' ? f : Date.parse(f) || 0);
+    return v.clienteNombre !== nota.cliente && !!ms(v.createdAt) && ms(v.createdAt) < ms(nota.createdAt) - 86400000;
+  });
+}
+
 function armarRegistros(notasEntrega, ventas) {
   // Una nota cancelada con motivo (etapa "cancelada") ya no es venta: no cuenta en historial, resumen ni pendientes
   const lista = notasEntrega.filter(n => n.etapa !== 'cancelada').map(desdeEntrega);
@@ -380,8 +395,8 @@ async function utilidad(f) {
   const quien = norm(f.vendedor);
   const grupos = new Map();
   const sinCosto = [];
-  (await leer('ventas')).forEach(v => {
-    if (/^cancel/.test(norm(v.estatus)) || v.estado === 'cancelada') return;
+  const [todas, notas] = await Promise.all([leer('ventas'), leer('notasEntrega')]);
+  vigentes(todas, notas).forEach(v => {
     const x = desdeVenta(v);
     if ((desde || hasta) && !x.fecha) return;
     if (desde && x.fecha < desde) return;
@@ -430,10 +445,10 @@ async function ventas(f, limite) {
       return true;
     })
     .sort((a, b) => comparar(a.x, b.x));
-  const vigentes = lista.filter(({ v }) => !/^cancel/.test(norm(v.estatus)));
+  const cuentan = new Set(vigentes(lista.map(e => e.v), await leer('notasEntrega')));
   return {
     encontradas: lista.length,
-    total_sin_canceladas: pesos(vigentes.reduce((s, e) => s + e.x.total, 0)),
+    total_sin_canceladas: pesos(lista.filter(e => cuentan.has(e.v)).reduce((s, e) => s + e.x.total, 0)),
     mostrando: Math.min(limite, lista.length),
     ventas: lista.slice(0, limite).map(({ v, x }) => Object.assign(notaJSON(x, f.incluir_articulos), {
       estatus: v.estatus || 'Pendiente',
@@ -663,5 +678,5 @@ async function cobranza(f) {
 module.exports = {
   leer, pendientesFacturar, cobranza, compras,
   cargarRegistros, olvidarCache, filtrar, resumen, notaJSON, buscarFolio, agrupar, clientes, productos, productosML, ventas, utilidad, registros,
-  armarRegistros, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
+  armarRegistros, vigentes, desdeEntrega, desdeVenta, norm, centavos, pesos, fechaISO, MODULOS
 };

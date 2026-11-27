@@ -414,7 +414,19 @@ async function corregirVenta(u, a, opciones = {}) {
 // Igual que cambiarEstatusVenta(): solo cambia el estatus
 async function cambiarEstatusVenta(u, a) {
   const v = await encontrarVenta(a);
-  await fb().actualizar('ventas', v.id, { estatus: a.estatus });
+  const cambios = { estatus: a.estatus };
+  const estaba = /^cancel/i.test(v.estatus || '') || v.etapa === 'cancelada';
+  const queda = /^cancel/i.test(a.estatus || '');
+  if (estaba !== queda && v.notaEntregaId) throw new ErrorUsuario('Esta venta viene de la nota de entrega ' + v.notaEntregaId + ': cancélala o reactívala desde el gestor para que la nota cambie junto con ella.');
+  if (queda && !estaba) {
+    const factura = v.facturaId ? await fb().obtener('facturas', v.facturaId) : null;
+    if ((v.facturaId && !(factura && factura.estatus === 'cancelada')) || (v.tieneFactura && v.fuente !== 'factura_directa') || v.facturaURL) throw new ErrorUsuario('La venta ya está facturada. Cancela primero la factura.');
+    if ((v.pagos || []).length || Number(v.anticipo) > 0) throw new ErrorUsuario('La venta tiene pagos o anticipo registrados; no se puede cancelar.');
+    cambios.etapa = 'cancelada';
+    cambios.cancelacion = { motivo: 'otro', detalle: 'Cancelada con Pepito', por: (u && u.nombre) || 'Pepito', fecha: Date.now(), antes: { etapa: v.etapa || null, estatus: v.estatus || null } };
+  }
+  if (!queda && estaba) { cambios.etapa = null; cambios.cancelacion = null; }
+  await fb().actualizar('ventas', v.id, cambios);
   datos.olvidarCache();
   return { venta: registroVenta(v.id, v).folio, id: v.id, estatus_anterior: v.estatus || 'Pendiente', estatus_nuevo: a.estatus };
 }

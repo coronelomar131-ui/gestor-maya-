@@ -163,7 +163,7 @@ const diaCDMX = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Americ
 async function operaciones() {
   const [ne, nv, fs] = await Promise.all([datos.leer('notasEntrega'), datos.leer('ventas'), datos.leer('facturas')]);
   const facturas = new Map(fs.map(f => [f.id, f]));
-  const lista = ne.map(d => Object.assign(datos.desdeEntrega(d), { col: 'notasEntrega', etapa: etapaDe(d, facturas), facturaId: d.facturaId || null }));
+  const lista = ne.filter(d => d.etapa !== 'cancelada').map(d => Object.assign(datos.desdeEntrega(d), { col: 'notasEntrega', etapa: etapaDe(d, facturas), facturaId: d.facturaId || null }));
   nv.forEach(v => {
     if (v.fuente === 'nota_entrega' || v.notaEntregaId || /^cancel/.test(norm(v.estatus))) return;
     lista.push(Object.assign(datos.desdeVenta(v), { col: 'ventas', etapa: etapaDe(v, facturas), facturaId: v.facturaId || null }));

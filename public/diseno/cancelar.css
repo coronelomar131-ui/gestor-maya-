@@ -1,0 +1,13 @@
+/* Registros cancelados (cancelar.js): se ven atenuados y tachados, con su motivo */
+.mc-etiqueta { display: inline-block; margin: 2px 0 0; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(226, 59, 63, 0.15); color: #ff8a8d; border: 1px solid rgba(226, 59, 63, 0.4); white-space: nowrap; }
+.mc-motivo { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--m-texto-3, #8a9bb0); white-space: normal; overflow-wrap: anywhere; }
+tr.mc-cancelada > td:not(:last-child) { opacity: 0.65; }
+tr.mc-cancelada .mc-monto, tr.mc-cancelada .ne-total, tr.mc-cancelada .ne-folio { text-decoration: line-through; }
+tr.mc-cancelada .ne-total { color: var(--m-texto-3, #8a9bb0); }
+.m-op-fila.mc-cancelada { opacity: 0.7; }
+.m-op-fila.mc-cancelada .m-op-folio, .m-op-fila.mc-cancelada .m-op-info strong { text-decoration: line-through; }
+.mc-explica { margin: 0 0 12px; font-size: 13px; line-height: 1.4; }
+/* en el listado de notas, Dirección tiene Reactivar y Borrar */
+@media (min-width: 641px) {
+  tr.mc-cancelada .ne-acc { grid-template-columns: repeat(5, 38px); }
+}
