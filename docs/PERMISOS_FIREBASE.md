@@ -354,6 +354,10 @@ La pantalla de **Respaldos** (Dirección) lee casi todas las colecciones; en Niv
 de cada persona. En Nivel 1, esas colecciones del servidor y la configuración las puede leer cualquiera con sesión
 (no se pueden cambiar, salvo los documentos de configuración que usa la pantalla).
 
+**Fotos de piezas (hasta 6 por pieza):** cada foto es un documento de `productosFotos`. La portada es
+`productosFotos/{idDeLaPieza}` (como las de antes) y las demás son `productosFotos/{idDeLaPieza}_{clave}`; la pieza
+guarda su orden en `fotosExtra`. Las reglas de arriba ya las cubren y salen en el respaldo con fotos: no hay que cambiar nada.
+
 **Si se agrega una colección o un documento de `config` nuevo que use la pantalla, hay que agregarlo a las reglas**
 (en Nivel 2 todo lo no listado está cerrado; en Nivel 1 solo hace falta si es un documento de `config` que la
 pantalla guarda). Si es una colección nueva, agrégala también en `public/diseno/respaldos.js`.

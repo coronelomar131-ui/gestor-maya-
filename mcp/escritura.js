@@ -421,14 +421,16 @@ async function cambiarEstatusVenta(u, a) {
   if (queda && !estaba) {
     const factura = v.facturaId ? await fb().obtener('facturas', v.facturaId) : null;
     if ((v.facturaId && !(factura && factura.estatus === 'cancelada')) || (v.tieneFactura && v.fuente !== 'factura_directa') || v.facturaURL) throw new ErrorUsuario('La venta ya está facturada. Cancela primero la factura.');
-    if ((v.pagos || []).length || Number(v.anticipo) > 0) throw new ErrorUsuario('La venta tiene pagos o anticipo registrados; no se puede cancelar.');
+    if ((v.pagos || []).length) throw new ErrorUsuario('La venta tiene pagos registrados; no se puede cancelar.');
     cambios.etapa = 'cancelada';
     cambios.cancelacion = { motivo: 'otro', detalle: 'Cancelada con Pepito', por: (u && u.nombre) || 'Pepito', fecha: Date.now(), antes: { etapa: v.etapa || null, estatus: v.estatus || null } };
+    if (Number(v.anticipo) > 0) cambios.cancelacion.anticipo = Number(v.anticipo);
   }
   if (!queda && estaba) { cambios.etapa = null; cambios.cancelacion = null; }
   await fb().actualizar('ventas', v.id, cambios);
   datos.olvidarCache();
-  return { venta: registroVenta(v.id, v).folio, id: v.id, estatus_anterior: v.estatus || 'Pendiente', estatus_nuevo: a.estatus };
+  return { venta: registroVenta(v.id, v).folio, id: v.id, estatus_anterior: v.estatus || 'Pendiente', estatus_nuevo: a.estatus,
+    aviso: cambios.cancelacion && cambios.cancelacion.anticipo ? 'La venta tenía un anticipo de ' + pesos2(cambios.cancelacion.anticipo) + ': hay que devolverlo o acordarlo con el cliente.' : undefined };
 }
 
 const CAMPOS_CLIENTE = {

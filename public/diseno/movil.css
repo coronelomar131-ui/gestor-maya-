@@ -1,0 +1,88 @@
+/* Teléfono: que cada cosa responda al primer toque. Va después de todas las demás hojas de estilo.
+   Nada de esto cambia la vista de PC con ratón. Acompaña a movil.js. */
+
+/* Al salir de la cuenta, la barra de abajo no se queda encima de la pantalla de entrada */
+body:has(> #app[style*="display: none"]) > :is(#m-tabbar, #m-hoja, #m-hoja-fondo) { display: none !important; }
+
+/* Lo que se está yendo o no se ve no atrapa toques */
+body:not(.m-hoja-abierta) #m-hoja, body:not(.m-hoja-abierta) #m-hoja * { pointer-events: none !important; }
+.m-avisos-panel:not(.abierto) * { pointer-events: none !important; }
+#loading[style*="opacity: 0"] { pointer-events: none; }
+/* Los avisos que flotan abajo dejan pasar el toque a los botones que tapan */
+.toast-container, .toast-container * { pointer-events: none; }
+
+@media (pointer: coarse), (max-width: 768px) {
+  /* Sin la espera ni el acercamiento del doble toque */
+  html { touch-action: manipulation; }
+  :where(button, a, input, select, textarea, label, summary, [onclick], [role="button"], [data-ir]) {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Mantener el dedo sobre un botón no selecciona su texto */
+  .btn, .tab-btn, .m-tab, .m-btn-redondo, .m-hoja-mod, .m-acceso, .m-enlace, .modal-close {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* Respuesta visible al presionar lo que no es un botón con estilo propio */
+  :where(button:not([class]), a[onclick], span[onclick], td[onclick], tr[onclick], div[onclick]:not(.modal-overlay)):active { opacity: 0.6; }
+
+  /* Deslizar dentro de una ventana no mueve la pantalla de atrás */
+  html:has(.modal-overlay.open), html:has(.m-op-dialogo), html:has(body.m-hoja-abierta), html:has(.m-video-tutorial) { overflow: hidden; }
+  .modal-overlay, .modal, .modal-body, .m-op-contenido, #m-hoja, .m-tour-pop { overscroll-behavior: contain; }
+  /* La barra del navegador del teléfono no tapa el final de las ventanas */
+  @supports (height: 1dvh) {
+    .modal { max-height: 92dvh !important; }
+    #m-hoja { max-height: 88dvh; }
+  }
+}
+
+/* El teléfono acostado también: con letra de 16px el iPhone no se acerca al escribir */
+@media (pointer: coarse) {
+  input, select, textarea, .search-box { font-size: 16px !important; }
+}
+
+/* ── Zonas de toque de 44px ── */
+@media (pointer: coarse), (max-width: 640px) {
+  .m-btn-redondo { width: 44px; height: 44px; }
+  .m-topbar-extra { gap: 4px; }
+  .m-enlace, .btn-logout, .m-tour-acciones button, .m-avisos-ajustes, summary { min-height: 44px; }
+  .m-avisos-ajustes { height: 44px; border-radius: 22px; }
+  .m-avisos-panel header { flex-wrap: wrap; }
+  .m-op-x, .m-buzon-x, .m-compras-quitar-articulo { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  .m-of3d-giro button { width: 44px; height: 44px; }
+  /* Botones y enlaces pequeños dentro de las tablas */
+  td button:not(.btn):not([hidden]):not([style*="display: none"]):not([style*="display:none"]),
+  td a[onclick]:not([hidden]):not([style*="display: none"]):not([style*="display:none"]),
+  td span[onclick]:not([hidden]):not([style*="display: none"]):not([style*="display:none"]) {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  label:has(> input[type=checkbox]), label:has(> input[type=radio]) { min-height: 44px; }
+  .modal label:has(> input[type=checkbox]), .modal label:has(> input[type=radio]) { display: flex; align-items: center; gap: 8px; }
+  .modal input[type=checkbox] + label, .modal input[type=radio] + label { flex: 1; padding: 11px 0; }
+  /* Etapas, pestañas y enlaces de Seguimiento y Facturación */
+  .m-op-chips button, .m-op-tabs button, .m-op-link { min-height: 44px; }
+  /* Alfiler y equis chicos a la vista, con zona de toque más grande */
+  .m-hoja-celda .m-pin::after { content: ''; position: absolute; inset: -6px; }
+  .m-acceso-quitar::after { content: ''; position: absolute; inset: -7px; }
+  /* Inventario */
+  #mod-inventario .inv-chips button, #mod-inventario .inv-vistas button { min-width: 44px; min-height: 44px; }
+  #mod-inventario .inv-stock button { min-width: 44px; min-height: 44px; }
+  #mod-inventario .inv-item h3 button { position: relative; min-height: 44px; }
+  /* Título de la publicación de Mercado Libre (abre el anuncio) */
+  #mod-mercadolibre div[onclick][style*="text-overflow"] { padding: 10px 0; margin-bottom: 0 !important; }
+}
+
+/* ── Hoja de módulos: arrastrar el encabezado la cierra (sin esto el navegador se queda con el gesto) ── */
+@media (max-width: 1023px) {
+  #m-hoja .m-hoja-asa, #m-hoja .m-hoja-cab { touch-action: none; }
+}
+
+/* ── El encabezado de una ventana se queda arriba: la X siempre está a la mano ── */
+@media (max-width: 768px) {
+  .modal > .modal-head { position: sticky; top: 0; z-index: 5; background: #0f2036; }
+}

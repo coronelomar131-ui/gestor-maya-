@@ -71,10 +71,13 @@ export function bloqueo(items, facturas) {
     const marcada = doc.tieneFactura && !(doc.fuente === 'factura_directa' && doc.facturaId !== undefined);
     if ((doc.facturaId && !(f && f.estatus === 'cancelada')) || marcada || doc.facturaURL) return folio + ' ya está facturada. Cancela primero la factura.';
     if ((doc.pagos || []).length) return folio + ' tiene pagos registrados; no se puede cancelar.';
-    if (Number(doc.anticipo) > 0) return folio + ' tiene un anticipo de ' + pesos(doc.anticipo) + '. Si ya se devolvió, ' + (col === 'ventas' && !doc.notaEntregaId ? 'pide a Dirección que lo revise.' : 'quítalo con ✏️ Editar en la nota de entrega y vuelve a cancelar.');
   }
   return '';
 }
+
+// El anticipo no impide cancelar: se avisa para devolverlo y queda anotado
+export const anticipoDe = items => Math.max(0, ...items.map(x => (x.col === 'cotizaciones' ? 0 : Number(x.doc.anticipo) || 0)));
+const avisoAnticipo = n => (n > 0 ? 'Tiene un anticipo de ' + pesos(n) + ': recuerda devolverlo o acordarlo con el cliente. ' : '');
 
 const nombreMotivo = c => (plazos() ? plazos().nombreMotivo(c.motivo) : c.motivo || '');
 export const motivoTexto = d => {
@@ -205,15 +208,17 @@ export function cancelar(col, id, opciones) {
     let items = await revisar();
     if (!items) return false;
     let m = o.motivo ? { motivo: o.motivo, detalle: o.detalle || '' } : null;
+    if (m && anticipoDe(items) > 0 && !window.confirm(avisoAnticipo(anticipoDe(items)) + '¿Cancelar de todos modos?')) return false;
     if (!m) {
       const d = items[0].doc;
       m = await pedirMotivo('Cancelar ' + folioDe(col, d) + (clienteDe(d) ? ' · ' + clienteDe(d) : ''), col === 'cotizaciones' ? 'Cancelar la cotización' : col === 'ventas' ? 'Cancelar la venta' : 'Cancelar la nota',
-        (items.length > 1 ? 'También se cancela ' + lista(items.slice(1)) + '. ' : '') + 'Conserva su folio, se sigue viendo como Cancelada y deja de sumar.');
+        avisoAnticipo(anticipoDe(items)) + (items.length > 1 ? 'También se cancela ' + lista(items.slice(1)) + '. ' : '') + 'Conserva su folio, se sigue viendo como Cancelada y deja de sumar.');
       if (!m) return false;
       items = await revisar(); // pudo facturarse mientras elegían el motivo
       if (!items) return false;
     }
     const cancelacion = { motivo: m.motivo, detalle: m.detalle, por: yo(), fecha: Date.now() };
+    if (anticipoDe(items) > 0) cancelacion.anticipo = anticipoDe(items);
     const lote = window.writeBatch(window.db);
     items.forEach(x => lote.update(ref(x.col, x.doc.id), cambiosCancelar(x.col, x.doc, cancelacion, o.nota)));
     await lote.commit();

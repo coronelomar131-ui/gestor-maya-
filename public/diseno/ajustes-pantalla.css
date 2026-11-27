@@ -2,9 +2,9 @@
 
 /* ── 1. Al tacto: botones y campos cómodos de tocar ── */
 @media (pointer: coarse), (max-width: 640px) {
-  .btn, .btn-sm, .tab-btn, .m-btn { min-height: 42px; }
+  .btn, .btn-sm, .tab-btn, .m-btn { min-height: 44px; }
   .btn-sm { padding-top: 9px; padding-bottom: 9px; }
-  td .btn-danger, .btn.m-solo-icono { min-width: 42px; }
+  .btn, td .btn-danger, .btn.m-solo-icono { min-width: 44px; }
   select, textarea,
   input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]):not([type=range]) { min-height: 44px; }
   .modal-close { min-width: 44px; min-height: 44px; }

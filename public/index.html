@@ -902,6 +902,7 @@ tr:hover td { background: rgba(59,188,212,0.03); }
 <link rel="stylesheet" href="/diseno/edicion.css">
 <link rel="stylesheet" href="/diseno/respaldos.css">
 <link rel="stylesheet" href="/diseno/cancelar.css">
+<link rel="stylesheet" href="/diseno/movil.css">
 <script defer src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
@@ -8442,6 +8443,18 @@ function actualizarResumenFinanzas(pagos) {
 // ═══════════════════════════════════════════════════════════
 
 let notasFacturasActuales = [];
+// Números ya repartidos en esta sesión, para no escribir dos veces la misma venta
+const numerosEnCurso = new Map();
+
+function guardarNumerosNota(lista) {
+  for (let i = 0; i < lista.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const [id, numero] of lista.slice(i, i + 400)) {
+      batch.update(doc(db, 'ventas', id), { notaNumero: numero, facturaNumero: 'F-' + numero.replace('NV-', ''), tieneFactura: false });
+    }
+    batch.commit().catch(e => console.error('Error asignando número de nota:', e));
+  }
+}
 
 window.renderNotasFacturas = async function(ventas) {
   notasFacturasActuales = ventas || [];
@@ -8461,26 +8474,27 @@ window.renderNotasFacturas = async function(ventas) {
       }
     }
   }
+  for (const n of numerosEnCurso.values()) maxNum = Math.max(maxNum, parseInt(n.replace('NV-', ''), 10) || 0);
   let contador = maxNum + 1;
+  const porGuardar = [];
 
   for (const v of (ventas || [])) {
     const ventaActual = { ...v };
     if (!ventaActual.notaNumero) {
-      ventaActual.notaNumero = 'NV-' + String(contador).padStart(3, '0');
-      contador++;
-      // Guardar en Firestore
-      try {
-        await updateDoc(doc(db, 'ventas', v.id), {
-          notaNumero: ventaActual.notaNumero,
-          facturaNumero: 'F-' + ventaActual.notaNumero.replace('NV-', ''),
-          tieneFactura: false
-        });
-      } catch (e) {
-        console.error('Error asignando número de nota:', e);
+      let numero = numerosEnCurso.get(v.id);
+      if (!numero) {
+        numero = 'NV-' + String(contador).padStart(3, '0');
+        contador++;
+        numerosEnCurso.set(v.id, numero);
+        porGuardar.push([v.id, numero]);
       }
+      ventaActual.notaNumero = numero;
     }
     ventasConNotas.push(ventaActual);
   }
+
+  // Se guardan todos juntos, después de pintar y sin esperar: uno por uno congelaba la pantalla del teléfono
+  if (porGuardar.length) setTimeout(() => guardarNumerosNota(porGuardar), 0);
 
   const conNotas = ventasConNotas.filter(v => v.notaNumero);
   if (!conNotas.length) {
@@ -10666,5 +10680,6 @@ window.previewNotaEntregaPDFById = function(id, sinPrecio, soloActualizar) {
 <script type="module" src="/diseno/inventario.js"></script>
 <script type="module" src="/diseno/permisos.js"></script>
 <script type="module" src="/diseno/respaldos.js"></script>
+<script type="module" src="/diseno/movil.js"></script>
 </body>
 </html>

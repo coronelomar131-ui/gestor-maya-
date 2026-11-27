@@ -332,7 +332,12 @@ function cerrarHoja() {
   if (!document.body.classList.contains('m-hoja-abierta')) return;
   document.body.classList.remove('m-hoja-abierta');
   document.documentElement.style.overflow = '';
-  if (regresoFoco && regresoFoco.focus) regresoFoco.focus({ preventScroll: true });
+  devolverFoco(regresoFoco);
+}
+// El foco regresa a donde estaba, pero en pantallas táctiles nunca a un campo: abriría el teclado sin que nadie lo pida
+function devolverFoco(e) {
+  if (!e || !e.focus || (matchMedia('(pointer: coarse)').matches && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName))) return;
+  e.focus({ preventScroll: true });
 }
 // Arrastrar la hoja hacia abajo la cierra (sigue al dedo; cierra si se lanzó o pasó la mitad del camino)
 function arrastrarParaCerrar(hoja) {
@@ -420,6 +425,7 @@ function pintarResumen() {
   if (!cab) { cab = crear('div', 'm-saludo'); mod.prepend(cab); }
   const nombre = nombreUsuario();
   cab.innerHTML = `<h2>${saludo()}${nombre ? ', ' + escapar(nombre) : ''}</h2><p>${fechaLarga()}</p>`;
+  htmlOficina = '';
   let acc = $('#m-accesos');
   if (!acc) { acc = crear('section', 'm-accesos'); acc.id = 'm-accesos'; acc.setAttribute('aria-label', 'Tus accesos'); cab.after(acc); }
   const fij = fijados().filter(id => id !== 'dashboard');
@@ -447,15 +453,23 @@ function pintarResumen() {
   if (editandoAccesos) hacerOrdenable($('.m-accesos-grid', acc), '.m-acceso-celda[data-mod]', orden => ordenarFijados(['dashboard'].filter(x => fijados().includes(x)).concat(orden)));
 }
 let refresco = 0;
+let htmlOficina = '';
 function refrescarDatosResumen() {
   if (refresco) return;
   refresco = requestAnimationFrame(() => {
     refresco = 0;
     $$('#m-accesos .m-acceso-celda[data-mod]').forEach(b => {
-      if (b.dataset.mod === 'oficina') { if (!$('#m-accesos.editando')) b.outerHTML = accesoOficina(porId('oficina')); return; }
+      if (b.dataset.mod === 'oficina') {
+        // Solo se repinta si cambió: repintarla bajo el dedo hace que el toque se pierda
+        const html = accesoOficina(porId('oficina'));
+        if (!$('#m-accesos.editando') && html !== htmlOficina) { htmlOficina = html; b.outerHTML = html; }
+        return;
+      }
       const m = porId(b.dataset.mod);
       const s = $('small', b);
-      if (m && s) s.textContent = datoDe(m.id) || m.desc;
+      const texto = m ? datoDe(m.id) || m.desc : '';
+      // Escribir lo mismo vuelve a avisar al observador y esto se repetiría sin parar (gasta batería)
+      if (m && s && s.textContent !== texto) s.textContent = texto;
     });
   });
 }
@@ -765,7 +779,7 @@ function terminarTour(marcar, sinFoco) {
   }
   if (movimientoReducido() || !t.raiz.animate) t.raiz.remove();
   else t.raiz.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'ease-in' }).finished.then(() => t.raiz.remove(), () => t.raiz.remove());
-  if (!sinFoco && t.regreso && t.regreso.focus) t.regreso.focus({ preventScroll: true });
+  if (!sinFoco) devolverFoco(t.regreso);
 }
 function quitarAviso() {
   clearTimeout(temporizadorAviso);
@@ -790,6 +804,18 @@ function avisoTour(id) {
       if (b.dataset.aviso === 'ver') iniciarTour(def, id); else if (b.dataset.aviso === 'video') abrirVideo(id); else marcarTour(id);
     });
     document.body.appendChild(aviso);
+    if (esTelefono()) {
+      // En el teléfono tapa parte de la pantalla: se quita solo en cuanto la persona sigue usando lo de abajo
+      const y = window.scrollY;
+      const seguir = e => {
+        if (aviso.isConnected && (e.type === 'scroll' ? Math.abs(window.scrollY - y) < 40 : aviso.contains(e.target))) return;
+        aviso.remove();
+        window.removeEventListener('scroll', seguir);
+        document.removeEventListener('click', seguir, true);
+      };
+      window.addEventListener('scroll', seguir, { passive: true });
+      document.addEventListener('click', seguir, true);
+    }
     temporizadorAviso = setTimeout(() => aviso.remove(), 15000);
   }, 900);
 }
@@ -848,7 +874,8 @@ async function alMostrarApp() {
     escribirLocal();
     pintarTodo();
   }
-  if (!tourVisto('bienvenida')) setTimeout(() => { if (!tour && actual === 'dashboard') iniciarTour(BIENVENIDA, 'bienvenida'); }, 1300);
+  // En el teléfono no se abre solo: tapaba la pantalla y el primer toque no hacía nada. La ayuda sigue en el botón "?"
+  if (!esTelefono() && !tourVisto('bienvenida')) setTimeout(() => { if (!tour && actual === 'dashboard') iniciarTour(BIENVENIDA, 'bienvenida'); }, 1300);
 }
 
 // Cambios del DOM: íconos, etiquetas de tablas y datos del resumen, agrupados por cuadro de animación

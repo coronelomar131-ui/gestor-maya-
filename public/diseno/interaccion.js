@@ -39,21 +39,26 @@ function conCandado(nombre) {
 
 // ── 2. No perder lo capturado al tocar fuera o cancelar ──
 const conCambios = new WeakSet();
+const VENTANAS = '.modal-overlay, .m-op-dialogo';
+// Ventanas de solo ver: sus casillas y listas no son captura, cerrarlas nunca pregunta
+const SOLO_VER = '#modal-ne-preview, #modal-detalles-venta, #modal-vt-foto, #inv-m-ficha, #inv-m-zoom';
 ['input', 'change'].forEach(tipo => document.addEventListener(tipo, e => {
-  if (!e.isTrusted) return;
-  const v = e.target.closest && e.target.closest('.modal-overlay');
-  if (v) conCambios.add(v);
+  if (!e.isTrusted || !e.target.closest) return;
+  const v = e.target.closest(VENTANAS);
+  if (v && !v.matches(SOLO_VER) && !e.target.matches('input[type=search], .search-box')) conCambios.add(v);
 }, true));
 let bajoEn = null;
 document.addEventListener('pointerdown', e => { bajoEn = e.target; }, true);
 document.addEventListener('click', e => {
-  const ventana = e.target.closest && e.target.closest('.modal-overlay');
+  const ventana = e.target.closest && e.target.closest(VENTANAS);
   if (!ventana) return;
+  // Ya se está cerrando (p. ej. recién guardada): un segundo toque no vuelve a guardar ni pregunta si descartar
+  if (ventana.classList.contains('m-cerrando')) { e.stopPropagation(); e.preventDefault(); return; }
   const fondo = e.target === ventana;
   // seleccionar texto y soltar fuera no debe cerrar
   if (fondo && bajoEn && bajoEn !== ventana) { e.stopPropagation(); return; }
   const boton = e.target.closest('button');
-  const cierra = fondo || (boton && (boton.classList.contains('modal-close') || /^\s*(✕\s*)?(cancelar|cerrar)\s*$/i.test(boton.textContent)));
+  const cierra = fondo || (boton && (boton.matches('.modal-close, .m-op-x') || /^\s*(✕\s*)?(cancelar|cerrar)\s*$/i.test(boton.textContent)));
   if (!cierra || !conCambios.has(ventana)) return;
   if (window.confirm('¿Descartar lo que capturaste?')) conCambios.delete(ventana);
   else { e.stopPropagation(); e.preventDefault(); }
